@@ -1,0 +1,3276 @@
+import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
+import { Package, AlertCircle, CheckCircle2, FileText, Download, Trash2, PlayCircle, Database, AlertTriangle, TrendingDown, DollarSign, Calendar, Calculator, FileSpreadsheet, Settings, Upload, BarChart3, ChevronRight, ClipboardList } from 'lucide-react';
+import { dataService } from './services/dataService.js';
+
+// ============================================================
+// BASE DE CONOCIMIENTO INSTITUCIONAL IOCA
+// (Cargada desde dataService — futuro: Dataverse)
+// ============================================================
+
+const BUCKET_EOL = dataService.getBucketEOL();
+const TABLA_FASES = dataService.getTablaFases();
+const PAISES_IOCA = dataService.getPaises();
+const PERIODOS_ANALISIS = dataService.getPeriodos();
+const UMBRAL_MERMA_PCT = dataService.getUmbralMerma();
+const SEMANAS_POR_PERIODO = dataService.getSemanasPorPeriodo();
+const NOTA_INV_SEGURIDAD = dataService.getNotaInvSeguridadIOCA();
+const APP_VERSION = 'V1';
+const APP_NAME = 'IOCA Sell-Through Intelligence V1';
+
+// Helper: convierte el período seleccionado a número de semanas
+const obtenerSemanasPeriodo = (periodo, semanasPersonalizadas) => {
+  if (periodo === 'Personalizado') {
+    const v = parseFloat(semanasPersonalizadas);
+    return isNaN(v) || v <= 0 ? 4.33 : v;
+  }
+  return SEMANAS_POR_PERIODO[periodo] || 4.33;
+};
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const normalizeHeader = (h) => h.toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+
+const parseFecha = (s) => {
+  if (!s) return null;
+  const clean = s.trim();
+  let m;
+  if ((m = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) return new Date(+m[3], +m[2]-1, +m[1]);
+  if ((m = clean.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/))) return new Date(+m[3], +m[2]-1, +m[1]);
+  if ((m = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return new Date(+m[1], +m[2]-1, +m[3]);
+  return null;
+};
+
+const parseCosto = (s) => {
+  if (!s) return 0;
+  const clean = String(s).replace(/\$/g, '').replace(/,/g, '').trim();
+  const n = parseFloat(clean);
+  return isNaN(n) ? 0 : n;
+};
+
+const fmtUSD = (v) => {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const fmtPct = (v) => {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return `${(v * 100).toFixed(2)}%`;
+};
+
+const fmtIdx = (v) => {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return v.toFixed(2);
+};
+
+const colorIdxRotacion = (v) => {
+  // Color según interpretación del índice
+  if (v === null || v === undefined || isNaN(v)) return { bg: '#f5f5f0', fg: '#999' };
+  if (v < 1) return { bg: '#d1fae5', fg: '#065f46' };       // rotación alta — verde
+  if (v <= 3) return { bg: '#dbeafe', fg: '#1e40af' };      // normal — azul
+  if (v <= 10) return { bg: '#fef3c7', fg: '#92400e' };     // lenta — ámbar
+  return { bg: '#fee2e2', fg: '#7f1d1d' };                  // muy lenta — rojo
+};
+
+const primerDiaMes = () => {
+  const hoy = new Date();
+  return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+};
+
+const generarInformeEjecutivo = (resultados, config) => {
+  if (!resultados) return null;
+  
+  const recs = resultados.recs;
+  const pareto = resultados.analisisPareto;
+  const dT = resultados.distribucionTier;
+  const dC = resultados.distribucionCategoria;
+  const alertas = resultados.alertas;
+  const totales = resultados.totales;
+  
+  // ===== DIAGNÓSTICO DE ROTACIÓN =====
+  const altaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion < 1 && r.estado === 'ACTIVO');
+  const bajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 3 && r.indiceRotacion <= 10 && r.estado === 'ACTIVO');
+  const muyBajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 10 && r.estado === 'ACTIVO');
+  const sinMovimiento = recs.filter(r => r.ventas === 0 && r.invFinal > 0);
+  const sinMovValor = sinMovimiento.reduce((s, r) => s + r.valorInv, 0);
+  const sobreinventario = recs.filter(r => r.estado === 'ACTIVO' && r.indiceRotacion !== null && r.indiceRotacion > 5);
+  const subinventario = recs.filter(r => r.estado === 'ACTIVO' && r.invFinal < r.invSeguridad && r.invSeguridad > 0);
+  const enQuiebreActivo = alertas.skusEnQuiebre.filter(r => r.estado === 'ACTIVO');
+  const enQuiebreEOL = alertas.skusEnQuiebre.filter(r => r.estado === 'EOL');
+  const obsolescencia = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc >= 0 && r.invFinal > 0);
+  const obsolescenciaValor = obsolescencia.reduce((s, r) => s + r.valorInv, 0);
+  const requierenActivacion = recs.filter(r => r.estado === 'ACTIVO' && r.invFinal > 0 && r.ventas <= 1 && r.tier === 'BEST');
+  
+  // Métricas agregadas
+  const valorTotalInventario = totales.valorEOL + recs.filter(r => r.estado === 'ACTIVO').reduce((s, r) => s + r.valorInv, 0);
+  const pctValorEOL = valorTotalInventario > 0 ? (totales.valorEOL / valorTotalInventario) * 100 : 0;
+  const pctValorSinMov = valorTotalInventario > 0 ? (sinMovValor / valorTotalInventario) * 100 : 0;
+  
+  // SKU héroe (mayor venta)
+  const skuHeroe = pareto.skusParetoA[0] || null;
+  
+  // Categoría dominante en ventas
+  let categoriaDominante = null;
+  let maxVentasCat = 0;
+  Object.entries(dC.ventas.categorias).forEach(([cat, d]) => {
+    if (d.unidades > maxVentasCat) {
+      maxVentasCat = d.unidades;
+      categoriaDominante = { nombre: cat, pct: d.pctUnidades * 100, unidades: d.unidades };
+    }
+  });
+  
+  // Categorías en obsolescencia (100% EOL en el inventario)
+  const categoriasEnObsolescencia = [];
+  dC.lista.forEach(cat => {
+    const skusCat = recs.filter(r => r.categoria === cat && r.invFinal > 0);
+    if (skusCat.length > 0) {
+      const eolCount = skusCat.filter(r => r.estado === 'EOL').length;
+      const pctEOL = (eolCount / skusCat.length) * 100;
+      if (pctEOL >= 75) categoriasEnObsolescencia.push({ categoria: cat, pctEOL, totalSKUs: skusCat.length });
+    }
+  });
+  
+  // Reposición alineada o desalineada con ventas
+  const alineacionReposicion = [];
+  dC.lista.forEach(cat => {
+    const vts = dC.ventas.categorias[cat] ? dC.ventas.categorias[cat].pctUnidades : 0;
+    const rep = dC.reposicion.categorias[cat] ? dC.reposicion.categorias[cat].pctUnidades : 0;
+    const delta = (rep - vts) * 100;
+    alineacionReposicion.push({ categoria: cat, vts: vts * 100, rep: rep * 100, delta });
+  });
+  
+  // ===== HALLAZGOS CLAVE (5-10) =====
+  const hallazgos = [];
+  
+  if (pctValorEOL > 20) {
+    hallazgos.push({
+      titulo: 'Alto valor inmovilizado en SKUs descontinuados',
+      hallazgo: `El ${pctValorEOL.toFixed(0)}% del valor del inventario (${fmtUSD(totales.valorEOL)}) está en SKUs ya descontinuados (EOL Vencidos).`,
+      importa: 'Capital atrapado que no rota y deteriora la liquidez del cliente. Cada semana adicional sin liquidar acelera la obsolescencia comercial.',
+      impacto: `Pérdida potencial de margen del 30-50% si no se activa una liquidación estructurada en los próximos 60 días.`,
+      accion: `Lanzar campaña de liquidación con descuentos escalonados por fase (F1 → F3). IOCA aporta 20%, retailer 80%.`,
+      prioridad: 'CRÍTICA',
+    });
+  }
+  
+  if (enQuiebreActivo.length > 0) {
+    const valorQuiebre = enQuiebreActivo.reduce((s, r) => s + r.valorReposicion, 0);
+    hallazgos.push({
+      titulo: 'SKUs Activos en quiebre — pérdida de venta en curso',
+      hallazgo: `${enQuiebreActivo.length} SKUs Activos están bajo Inventario de Seguridad. Reposición estimada: ${fmtUSD(valorQuiebre)}.`,
+      importa: 'Cada día sin reponer estos SKUs es venta perdida — el cliente no puede vender lo que no tiene en piso.',
+      impacto: `Estimado ${alertas.totalReposicionUnid} unidades de venta potencial bloqueada. SKUs A en quiebre tienen el mayor costo de oportunidad.`,
+      accion: `Orden de compra urgente para los SKUs Pareto A en quiebre. Considerar aire express para SKUs USA y ajuste de lead time China.`,
+      prioridad: 'ALTA',
+    });
+  }
+  
+  if (sinMovimiento.length > 0 && pctValorSinMov > 10) {
+    hallazgos.push({
+      titulo: 'Inventario muerto — capital atrapado sin rotación',
+      hallazgo: `${sinMovimiento.length} SKUs sin ventas en el período con inventario en piso por ${fmtUSD(sinMovValor)} (${pctValorSinMov.toFixed(0)}% del valor total).`,
+      importa: 'Inventario sin movimiento genera costos de almacenamiento, ocupa espacio de exhibición y compromete la liquidez del comprador.',
+      impacto: `Liberar este capital permitiría reinvertir en SKUs Pareto A de alta rotación, mejorando el sell-through general.`,
+      accion: `Auditar exhibición, precio y ubicación en tienda. Para los EOL del grupo, liquidar. Para los Activos, considerar activación comercial o eliminación del surtido.`,
+      prioridad: 'ALTA',
+    });
+  }
+  
+  if (pareto.pctSKUsA <= 20 && pareto.totalSkusConVentas > 0) {
+    hallazgos.push({
+      titulo: 'Concentración de ventas saludable tipo Pareto',
+      hallazgo: `${pareto.skusParetoA.length} SKUs (${pareto.pctSKUsA.toFixed(0)}% del portafolio activo) generan el 80% de las ventas.`,
+      importa: 'Una concentración bajo el 20% indica un portafolio disciplinado donde los "vital few" son claros.',
+      impacto: 'Permite enfocar capital de trabajo y exhibición en pocos SKUs de alta rotación, optimizando margen y rotación.',
+      accion: `Asegurar disponibilidad permanente de los ${pareto.skusParetoA.length} SKUs A. Revisar racionalización de los ${pareto.skusParetoB.length} SKUs B con menor velocidad.`,
+      prioridad: 'OPORTUNIDAD',
+    });
+  } else if (pareto.pctSKUsA > 35 && pareto.totalSkusConVentas > 0) {
+    hallazgos.push({
+      titulo: 'Portafolio plano — dispersión alta de ventas',
+      hallazgo: `${pareto.skusParetoA.length} SKUs (${pareto.pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas — dispersión más alta que Pareto clásico.`,
+      importa: 'Cobertura amplia con pocos best-sellers claros dificulta el foco comercial y aumenta costos de gestión.',
+      impacto: 'Oportunidad de racionalizar el portafolio reduciendo SKUs marginales y enfocando ejecución en los más rentables.',
+      accion: `Revisar surtido: eliminar SKUs con bajo movimiento sostenido y reforzar exhibición de los Pareto A.`,
+      prioridad: 'MEDIA',
+    });
+  }
+  
+  categoriasEnObsolescencia.forEach(c => {
+    hallazgos.push({
+      titulo: `Categoría ${c.categoria} en obsolescencia comercial`,
+      hallazgo: `El ${c.pctEOL.toFixed(0)}% de los SKUs en piso de la categoría ${c.categoria} están descontinuados (${c.totalSKUs} SKUs en piso).`,
+      importa: 'Una categoría con alta concentración de EOL indica que la marca está retirándose del segmento o que el surtido no se ha refrescado.',
+      impacto: 'Pérdida de relevancia de categoría en la góndola, riesgo de canibalización por competidores con líneas activas.',
+      accion: `Validar con HQ disponibilidad de SKUs activos para refrescar la categoría. Si no hay reemplazo, planificar exit ordenado.`,
+      prioridad: 'ALTA',
+    });
+  });
+  
+  const desalineacionFuerte = alineacionReposicion.filter(a => Math.abs(a.delta) >= 10);
+  if (desalineacionFuerte.length > 0) {
+    const lista = desalineacionFuerte.map(d => `${d.categoria} (Δ ${d.delta > 0 ? '+' : ''}${d.delta.toFixed(0)} pp)`).join(', ');
+    hallazgos.push({
+      titulo: 'Reposición desalineada con demanda real',
+      hallazgo: `En ${desalineacionFuerte.length} categoría(s), la reposición sugerida difiere de las ventas en más de 10 pp: ${lista}.`,
+      importa: 'Si la reposición no sigue al mercado, perpetúa los desbalances actuales en lugar de corregirlos.',
+      impacto: 'Riesgo de sobreinventario en categorías débiles y subinventario en categorías fuertes.',
+      accion: 'Revisar lógica de Safety Stock y ponderar la reposición por velocidad de ventas reciente, no por inventario actual.',
+      prioridad: 'MEDIA',
+    });
+  }
+  
+  if (skuHeroe) {
+    const valorHeroe = skuHeroe.ventas * skuHeroe.costo;
+    hallazgos.push({
+      titulo: 'SKU héroe — concentra la oportunidad de crecimiento',
+      hallazgo: `${skuHeroe.sku} (${skuHeroe.modelo}) lidera ventas con ${skuHeroe.ventas} unidades (${(skuHeroe.pctVentas * 100).toFixed(1)}% del total), tier ${skuHeroe.tier}.`,
+      importa: 'El SKU héroe es la mejor vitrina de la marca en el punto de venta — su disponibilidad afecta la percepción de la categoría.',
+      impacto: 'Asegurar zero-quiebre y exhibición premium del SKU héroe maximiza el sell-through general.',
+      accion: `Posición prioritaria en góndola, bundles con accesorios complementarios, training a vendedores sobre beneficios diferenciadores.`,
+      prioridad: 'OPORTUNIDAD',
+    });
+  }
+  
+  if (alertas.skusConMerma.length > 0 && alertas.totalMermaValor > 0) {
+    hallazgos.push({
+      titulo: 'Merma operativa por encima del umbral',
+      hallazgo: `${alertas.skusConMerma.length} SKUs con merma superior al ${(alertas.umbralMermaPct * 100).toFixed(0)}% (${alertas.totalMermaUnid} unidades · ${fmtUSD(alertas.totalMermaValor)}).`,
+      importa: 'Merma alta puede indicar pérdida operativa, robo, error de conteo o problemas en la cadena de custodia.',
+      impacto: 'Impacto directo en margen y en la confiabilidad del reporte de inventario del cliente.',
+      accion: 'Auditoría conjunta IOCA-cliente del proceso de recepción y conteo. Calibrar el umbral si es estructural.',
+      prioridad: 'MEDIA',
+    });
+  }
+  
+  // ===== CAUSAS RAÍZ =====
+  const causasRaiz = [];
+  if (pctValorEOL > 20) causasRaiz.push({ causa: 'Compra inicial mal calculada', evidencia: `${pctValorEOL.toFixed(0)}% del valor en EOL sugiere sobre-compra del ciclo anterior.` });
+  if (sobreinventario.length > 5) causasRaiz.push({ causa: 'Exceso de SKUs sin movimiento', evidencia: `${sobreinventario.length} SKUs con índice de rotación > 5 — surtido inflado.` });
+  if (requierenActivacion.length > 0) causasRaiz.push({ causa: 'Falta de comunicación de beneficios', evidencia: `${requierenActivacion.length} SKUs BEST con inventario y sin venta — exhibición o entrenamiento débil.` });
+  if (categoriasEnObsolescencia.length > 0) causasRaiz.push({ causa: 'Portafolio no alineado al consumidor', evidencia: `${categoriasEnObsolescencia.length} categoría(s) con +75% EOL — el cliente no ha refrescado el surtido.` });
+  if (enQuiebreActivo.length > 0) causasRaiz.push({ causa: 'Falta de reposición / lead time mal estimado', evidencia: `${enQuiebreActivo.length} SKUs Activos en sub-stock — el ciclo de orden no anticipa la velocidad real.` });
+  if (desalineacionFuerte.length > 0) causasRaiz.push({ causa: 'Mal surtido por categoría', evidencia: 'Reposición sigue inventario en lugar de ventas reales.' });
+  
+  // Top 5 SKUs a reponer (Pareto A activos en quiebre o sub-stock)
+  const topReponer = [...enQuiebreActivo, ...recs.filter(r => r.estado === 'ACTIVO' && r.reposicionSugerida > 0 && !r.alertaQuiebre)]
+    .sort((a, b) => b.ventas - a.ventas)
+    .slice(0, 5);
+  
+  // Top 5 SKUs a liquidar (EOL Vencidos con mayor valor inmovilizado)
+  const topLiquidar = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc >= 0 && r.invFinal > 0)
+    .sort((a, b) => b.valorInv - a.valorInv)
+    .slice(0, 5);
+  
+  // Top 5 SKUs a eliminar del surtido (Activos sin movimiento)
+  const topEliminar = sinMovimiento.filter(r => r.estado === 'ACTIVO')
+    .sort((a, b) => b.valorInv - a.valorInv)
+    .slice(0, 5);
+  
+  return {
+    altaRotacion, bajaRotacion, muyBajaRotacion,
+    sinMovimiento, sinMovValor, pctValorSinMov,
+    sobreinventario, subinventario,
+    enQuiebreActivo, enQuiebreEOL,
+    obsolescencia, obsolescenciaValor,
+    requierenActivacion,
+    valorTotalInventario, pctValorEOL,
+    skuHeroe, categoriaDominante,
+    categoriasEnObsolescencia,
+    alineacionReposicion,
+    hallazgos, causasRaiz,
+    topReponer, topLiquidar, topEliminar,
+  };
+};
+
+const diasEntre = (a, b) => {
+  if (!a || !b) return null;
+  return Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
+};
+
+const buscarFase = (marca, origen, diasDesc) => {
+  if (diasDesc === null || diasDesc < 90) return null;
+  const candidatos = TABLA_FASES.filter(f =>
+    f.marca === marca.toUpperCase() && f.origen === origen.toUpperCase()
+  );
+  if (candidatos.length === 0) return null;
+  const ordenados = [...candidatos].sort((a, b) => b.diasMin - a.diasMin);
+  for (const f of ordenados) {
+    if (diasDesc >= f.diasMin) return f;
+  }
+  return null;
+};
+
+const asignarBucketPreEOL = (diasDesc) => {
+  if (diasDesc === null) return null;
+  if (diasDesc >= 0) return BUCKET_EOL[0]; // Vencido
+  const diasHacia = Math.abs(diasDesc);
+  if (diasHacia <= 27) return BUCKET_EOL[1];   // Crítico
+  if (diasHacia <= 83) return BUCKET_EOL[2];   // Próximo
+  if (diasHacia <= 360) return BUCKET_EOL[3];  // Planificado
+  return BUCKET_EOL[3];
+};
+
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
+
+export default function App() {
+  const [rawMaestro, setRawMaestro] = useState('');
+  const [rawInventario, setRawInventario] = useState('');
+  const [resultados, setResultados] = useState(null);
+  const [error, setError] = useState(null);
+  const [showActivos, setShowActivos] = useState(false);
+  const [showLogica, setShowLogica] = useState(false);
+  
+  // Estado: Tab activo
+  const [activeTab, setActiveTab] = useState('config');
+  
+  // Estado: Configuración del análisis
+  const hoyISO = new Date().toISOString().slice(0, 10);
+  const [config, setConfig] = useState({
+    codigoCliente: '',
+    nombreCliente: '',
+    pais: 'Guatemala',
+    fechaCorte: hoyISO,
+    periodoAnalizado: 'Mensual',
+    periodoDetalle: '',
+    semanasPersonalizadas: 4,
+    safetyStockSemanas: 4,
+    leadTimeUSA: 4,
+    leadTimeCHINA: 12,
+  });
+  
+  const updateConfig = (campo, valor) => {
+    setConfig(prev => ({ ...prev, [campo]: valor }));
+  };
+  
+  // Validaciones para habilitar navegación
+  const configCompleta = config.codigoCliente.trim() !== '' && config.nombreCliente.trim() !== '';
+  const dataCargada = rawMaestro.trim() !== '' && rawInventario.trim() !== '';
+
+  const procesar = () => {
+    setError(null);
+    try {
+      if (!rawMaestro.trim()) {
+        setError("Falta cargar el Maestro de Productos.");
+        return;
+      }
+      if (!rawInventario.trim()) {
+        setError("Falta cargar el Inventario del Cliente.");
+        return;
+      }
+
+      // ===== PARSER MAESTRO =====
+      const mLines = rawMaestro.trim().split('\n').filter(l => l.trim());
+      const mHeaders = mLines[0].split(/\t|,|;/).map(h => normalizeHeader(h));
+      const findM = (...kws) => {
+        for (const k of kws) { const i = mHeaders.findIndex(h => h === k); if (i >= 0) return i; }
+        for (const k of kws) { const i = mHeaders.findIndex(h => h.includes(k)); if (i >= 0) return i; }
+        return -1;
+      };
+      const mCols = {
+        marca: findM('marca'),
+        sku: findM('sku'),
+        modelo: findM('modelos', 'modelo', 'nombre', 'descripcion'),
+        categoria: findM('categorias', 'categoria', 'category', 'cat'),
+        fecha: findM('fechadescontinuacion', 'fechaeol', 'fecha'),
+        estado: findM('estado', 'status'),
+        usa: findM('usa', 'exwmia'),
+        china: findM('china'),
+      };
+      
+      if (mCols.sku < 0) {
+        setError("El Maestro necesita columna 'SKU'. Detecté: " + mLines[0]);
+        return;
+      }
+
+      const maestro = {};
+      mLines.slice(1).forEach(line => {
+        const v = line.split(/\t|,|;/).map(x => x.trim());
+        const sku = (v[mCols.sku] || '').trim();
+        if (!sku) return;
+        const estadoRaw = mCols.estado >= 0 ? (v[mCols.estado] || '').trim().toUpperCase() : 'ACTIVO';
+        const estado = (estadoRaw === 'EOL' || estadoRaw === 'DESCONTINUADO') ? 'EOL' : 'ACTIVO';
+        const fechaStr = mCols.fecha >= 0 ? (v[mCols.fecha] || '').trim() : '';
+        const fecha = estado === 'EOL' ? parseFecha(fechaStr) : null;
+        const categoriaRaw = (mCols.categoria >= 0 ? v[mCols.categoria] : '').trim().toUpperCase();
+        const categoria = categoriaRaw || 'SIN CATEGORIA';
+        maestro[sku] = {
+          sku,
+          marca: (mCols.marca >= 0 ? v[mCols.marca] : '').trim().toUpperCase(),
+          modelo: (mCols.modelo >= 0 ? v[mCols.modelo] : '').trim(),
+          categoria,
+          estado,
+          fecha,
+          fechaStr: fechaStr === '-' ? '' : fechaStr,
+          costoUSA: mCols.usa >= 0 ? parseCosto(v[mCols.usa]) : 0,
+          costoCHINA: mCols.china >= 0 ? parseCosto(v[mCols.china]) : 0,
+        };
+      });
+
+      // ===== PARSER INVENTARIO =====
+      const iLines = rawInventario.trim().split('\n').filter(l => l.trim());
+      const iHeaders = iLines[0].split(/\t|,|;/).map(h => normalizeHeader(h));
+      const findI = (...kws) => {
+        for (const k of kws) { const i = iHeaders.findIndex(h => h === k); if (i >= 0) return i; }
+        for (const k of kws) { const i = iHeaders.findIndex(h => h.includes(k)); if (i >= 0) return i; }
+        return -1;
+      };
+      const iCols = {
+        tienda: findI('tienda', 'cuenta', 'sucursal'),
+        codigo: findI('codigo', 'codigocliente'),
+        ean13: findI('ean13', 'ean'),
+        sku: findI('sku'),
+        marca: findI('marca'),
+        tier: findI('tier'),
+        eol: findI('eol'),
+        nombre: findI('nombre', 'modelo', 'descripcion'),
+        origenInv: findI('origen'),
+        invSeguridad: findI('inventarioseguridad', 'invseguridad', 'safetystock'),
+        invInicial: findI('invinicial', 'inventarioinicial'),
+        compra: findI('compra', 'compras', 'recibido'),
+        ventas: findI('ventas', 'sales'),
+        invProyectado: findI('invproyectado', 'inventarioproyectado', 'proyectado'),
+        invFinal: findI('invfinal', 'inventariofinal', 'final'),
+      };
+
+      if (iCols.sku < 0) {
+        setError("El Inventario necesita columna 'SKU'. Detecté: " + iLines[0]);
+        return;
+      }
+      if (iCols.invFinal < 0) {
+        setError("El Inventario necesita columna 'Inv Final' o equivalente.");
+        return;
+      }
+
+      // ===== CRUCE Y CÁLCULO =====
+      const fechaBase = primerDiaMes();
+      const recs = [];
+      const parseIntSafe = (s) => parseInt(String(s || '0').replace(/[^\d-]/g, '')) || 0;
+      
+      iLines.slice(1).forEach(line => {
+        const v = line.split(/\t|,|;/).map(x => x.trim());
+        const sku = (v[iCols.sku] || '').trim();
+        if (!sku) return;
+        
+        const tienda = iCols.tienda >= 0 ? (v[iCols.tienda] || 'N/A').trim() : 'N/A';
+        const codigo = iCols.codigo >= 0 ? (v[iCols.codigo] || '').trim() : '';
+        const ean13 = iCols.ean13 >= 0 ? (v[iCols.ean13] || '').trim() : '';
+        const nombreInv = iCols.nombre >= 0 ? (v[iCols.nombre] || '').trim() : '';
+        const tier = iCols.tier >= 0 ? (v[iCols.tier] || '').trim().toUpperCase() : '';
+        const eolInvRaw = iCols.eol >= 0 ? (v[iCols.eol] || '').trim().toUpperCase() : '';
+        const origenInv = iCols.origenInv >= 0 ? (v[iCols.origenInv] || '').trim().toUpperCase() : '';
+        
+        const invSeguridad = iCols.invSeguridad >= 0 ? parseIntSafe(v[iCols.invSeguridad]) : 0;
+        const invInicial = iCols.invInicial >= 0 ? parseIntSafe(v[iCols.invInicial]) : 0;
+        const compra = iCols.compra >= 0 ? parseIntSafe(v[iCols.compra]) : 0;
+        const ventas = iCols.ventas >= 0 ? parseIntSafe(v[iCols.ventas]) : 0;
+        const invProyectado = iCols.invProyectado >= 0 ? parseIntSafe(v[iCols.invProyectado]) : (invInicial + compra - ventas);
+        const invFinal = parseIntSafe(v[iCols.invFinal]);
+        
+        // Merma = lo que debería quedar vs lo que realmente quedó
+        const merma = invProyectado - invFinal;
+        const mermaPct = invInicial > 0 ? merma / invInicial : 0;
+        const alertaMerma = invInicial > 0 && mermaPct > UMBRAL_MERMA_PCT;
+        
+        // Índice de Rotación = Inv. Inicial / Ventas
+        // null si ventas = 0 (división indefinida)
+        const indiceRotacion = ventas > 0 ? invInicial / ventas : null;
+        
+        const m = maestro[sku];
+        if (!m) {
+          const sinMaestroAlertaQuiebre = invSeguridad > 0 && invFinal < invSeguridad;
+          recs.push({
+            sku, tienda, codigo, ean13, modelo: nombreInv || '(sin info)',
+            marca: 'SIN MAESTRO', estado: 'SIN MAESTRO', tier,
+            categoria: 'SIN CATEGORIA',
+            fechaStr: '—', diasDesc: null, bucket: null, fase: null,
+            origen: origenInv || '—', sinOrigenInv: !origenInv,
+            costo: 0, costoUSA: 0, costoCHINA: 0,
+            descPct: 0, descUSD: 0, ioaUSD: 0, retailUSD: 0,
+            invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
+            invSeguridadIOCA: invSeguridad, deltaInvSeguridad: 0, fuenteInvSeguridad: 'Cliente',
+            semanasPeriodo: obtenerSemanasPeriodo(config.periodoAnalizado, config.semanasPersonalizadas),
+            leadTimeAplicado: 0,
+            merma, mermaPct, alertaMerma,
+            indiceRotacion,
+            reposicionSugerida: 0,
+            alertaQuiebre: sinMaestroAlertaQuiebre,
+            accionSugerida: sinMaestroAlertaQuiebre ? 'Agregar al Maestro y decidir' : '',
+            valorInv: 0,
+            valorVentas: 0,
+            descTotal: 0, ioaTotal: 0, retailTotal: 0,
+          });
+          return;
+        }
+
+        // ===== REGLA NUEVA: Origen viene del Inventario (no del Maestro) =====
+        // Si el inventario no trae Origen para este SKU, asumir USA por default + alertar
+        const sinOrigenInv = !origenInv;
+        const origen = (origenInv === 'CHINA') ? 'CHINA' : 'USA'; // default USA
+        
+        const costo = origen === 'CHINA' ? m.costoCHINA : m.costoUSA;
+        let diasDesc = null;
+        let bucket = null;
+        let fase = null;
+        let descPct = 0, ioaPct = 0, retailPct = 0;
+        
+        if (m.estado === 'EOL' && m.fecha) {
+          diasDesc = diasEntre(fechaBase, m.fecha);
+          if (diasDesc >= 0) {
+            bucket = BUCKET_EOL[0]; // Vencido
+            const f = buscarFase(m.marca, origen, diasDesc);
+            if (f) {
+              fase = f.fase;
+              descPct = f.descConsumidor;
+              ioaPct = f.aporteIOCA;
+              retailPct = f.aporteRetail;
+            }
+          } else {
+            bucket = asignarBucketPreEOL(diasDesc);
+          }
+        }
+        
+        const descUSD = costo * descPct;
+        const ioaUSD = descUSD * ioaPct;
+        const retailUSD = descUSD * retailPct;
+        
+        // ===== MOTOR INV. SEGURIDAD IOCA V1 =====
+        // Fórmula: Inv. Seguridad IOCA = (Ventas ÷ Semanas del período) × (Safety Stock semanas + Lead Time del origen)
+        // Condiciones:
+        //   - Ventas > 0 → aplica fórmula IOCA (Fuente: IOCA)
+        //   - Ventas = 0 → fallback al valor reportado por el cliente (Fuente: Cliente)
+        //   - Lead Time se toma según origen del SKU (USA o China)
+        const semanasPeriodo = obtenerSemanasPeriodo(config.periodoAnalizado, config.semanasPersonalizadas);
+        const leadTimeAplicado = origen === 'CHINA' ? config.leadTimeCHINA : config.leadTimeUSA;
+        let invSeguridadIOCA;
+        let fuenteInvSeguridad;
+        if (ventas > 0 && semanasPeriodo > 0) {
+          invSeguridadIOCA = Math.ceil((ventas / semanasPeriodo) * (config.safetyStockSemanas + leadTimeAplicado));
+          fuenteInvSeguridad = 'IOCA';
+        } else {
+          invSeguridadIOCA = invSeguridad; // fallback al cliente
+          fuenteInvSeguridad = 'Cliente';
+        }
+        const deltaInvSeguridad = invSeguridadIOCA - invSeguridad;
+        
+        // Reposición sugerida y alerta de quiebre usan el Inv. Seguridad IOCA
+        // (no el del cliente) para reflejar la política institucional IOCA V1
+        const reposicionSugerida = m.estado === 'ACTIVO' 
+          ? Math.max(0, invSeguridadIOCA - invFinal) 
+          : 0;
+        const alertaQuiebre = invSeguridadIOCA > 0 && invFinal < invSeguridadIOCA;
+        
+        // Acción sugerida dinámica según estado y bucket EOL
+        let accionSugerida = '';
+        if (alertaQuiebre) {
+          if (m.estado === 'ACTIVO') {
+            accionSugerida = `Reponer ${invSeguridadIOCA - invFinal} u (orden de compra)`;
+          } else if (m.estado === 'EOL') {
+            const bucketName = bucket ? bucket.bucket : 'EOL Sin Fecha';
+            if (bucketName === 'EOL Planificado') {
+              accionSugerida = 'Rebalanceo C→A — traer de otra tienda/bodega';
+            } else if (bucketName === 'EOL Próximo') {
+              accionSugerida = 'Rebalanceo C→A o aceptar quiebre';
+            } else if (bucketName === 'EOL Crítico') {
+              accionSugerida = 'Aceptar quiebre — liquidar lo que queda';
+            } else if (bucketName === 'EOL Vencido') {
+              accionSugerida = 'Quiebre — dejar morir';
+            } else {
+              accionSugerida = 'Verificar Maestro y decidir';
+            }
+          }
+        }
+
+        recs.push({
+          sku, tienda, codigo, ean13,
+          modelo: m.modelo || nombreInv,
+          marca: m.marca,
+          estado: m.estado,
+          tier,
+          categoria: m.categoria || 'SIN CATEGORIA',
+          fechaStr: m.fechaStr || '—',
+          diasDesc,
+          bucket: bucket ? bucket.bucket : null,
+          fase,
+          origen,
+          sinOrigenInv,
+          costo,
+          costoUSA: m.costoUSA,
+          costoCHINA: m.costoCHINA,
+          descPct, descUSD,
+          ioaPct, ioaUSD,
+          retailPct, retailUSD,
+          invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
+          invSeguridadIOCA, deltaInvSeguridad, fuenteInvSeguridad,
+          semanasPeriodo, leadTimeAplicado,
+          merma, mermaPct, alertaMerma,
+          indiceRotacion,
+          reposicionSugerida, alertaQuiebre, accionSugerida,
+          valorInv: costo * invFinal,
+          valorVentas: costo * ventas,
+          valorReposicion: costo * reposicionSugerida,
+          descTotal: descUSD * invFinal,
+          ioaTotal: ioaUSD * invFinal,
+          retailTotal: retailUSD * invFinal,
+        });
+      });
+
+      // ===== AGRUPACIÓN =====
+      const eolVencidos = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc >= 0)
+        .sort((a, b) => b.diasDesc - a.diasDesc || b.descUSD - a.descUSD);
+      const eolFuturos = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc < 0)
+        .sort((a, b) => b.diasDesc - a.diasDesc);
+      const activos = recs.filter(r => r.estado === 'ACTIVO')
+        .sort((a, b) => b.valorInv - a.valorInv);
+      const sinMaestro = recs.filter(r => r.estado === 'SIN MAESTRO');
+
+      const totalUnidEOL = eolVencidos.reduce((s, r) => s + r.invFinal, 0);
+      const totalValorEOL = eolVencidos.reduce((s, r) => s + r.valorInv, 0);
+      const totalDescEOL = eolVencidos.reduce((s, r) => s + r.descTotal, 0);
+      const totalIOAEOL = eolVencidos.reduce((s, r) => s + r.ioaTotal, 0);
+      const totalRetailEOL = eolVencidos.reduce((s, r) => s + r.retailTotal, 0);
+      
+      // ===== ALERTAS OPERATIVAS =====
+      const skusSinOrigen = recs.filter(r => r.sinOrigenInv && r.estado !== 'SIN MAESTRO');
+      const skusConMerma = recs.filter(r => r.alertaMerma);
+      const totalMermaUnid = skusConMerma.reduce((s, r) => s + r.merma, 0);
+      const totalMermaValor = skusConMerma.reduce((s, r) => s + r.merma * r.costo, 0);
+      const skusEnQuiebre = recs.filter(r => r.alertaQuiebre);
+      const quiebreActivos = skusEnQuiebre.filter(r => r.estado === 'ACTIVO').length;
+      const quiebreEOL = skusEnQuiebre.filter(r => r.estado === 'EOL').length;
+      const totalReposicionUnid = activos.reduce((s, r) => s + r.reposicionSugerida, 0);
+      const totalReposicionValor = activos.reduce((s, r) => s + r.valorReposicion, 0);
+      
+      // ===== DISTRIBUCIÓN POR TIER (GBB) =====
+      const calcDistribTier = (records, unidField, valorField) => {
+        const tiers = ['GOOD', 'BETTER', 'BEST'];
+        const result = {};
+        let totalU = 0, totalV = 0, totalSKUs = 0;
+        tiers.forEach(t => { result[t] = { unidades: 0, valor: 0, skus: 0, pctUnidades: 0, pctValor: 0, pctSKUs: 0 }; });
+        records.forEach(r => {
+          const t = (r.tier || '').toUpperCase();
+          const validTier = tiers.includes(t) ? t : 'GOOD';
+          const u = r[unidField] || 0;
+          const v = r[valorField] || 0;
+          if (u > 0) {
+            result[validTier].unidades += u;
+            result[validTier].valor += v;
+            result[validTier].skus += 1;
+            totalU += u;
+            totalV += v;
+            totalSKUs += 1;
+          }
+        });
+        tiers.forEach(t => {
+          result[t].pctUnidades = totalU > 0 ? result[t].unidades / totalU : 0;
+          result[t].pctValor = totalV > 0 ? result[t].valor / totalV : 0;
+          result[t].pctSKUs = totalSKUs > 0 ? result[t].skus / totalSKUs : 0;
+        });
+        return { tiers: result, totalU, totalV, totalSKUs };
+      };
+      
+      const distribucionTier = {
+        inventario: calcDistribTier(recs, 'invFinal', 'valorInv'),
+        ventas: calcDistribTier(recs, 'ventas', 'valorVentas'),
+        reposicion: calcDistribTier(activos, 'reposicionSugerida', 'valorReposicion'),
+      };
+      
+      // ===== DISTRIBUCIÓN POR CATEGORÍA =====
+      const todasCategoriasSet = new Set();
+      recs.forEach(r => { if (r.categoria && r.categoria !== 'SIN CATEGORIA') todasCategoriasSet.add(r.categoria); });
+      const listaCategorias = Array.from(todasCategoriasSet).sort();
+      if (recs.some(r => r.categoria === 'SIN CATEGORIA')) listaCategorias.push('SIN CATEGORIA');
+      
+      const calcDistribCategoria = (records, listaCats, unidField, valorField) => {
+        const result = {};
+        let totalU = 0, totalV = 0, totalSKUs = 0;
+        listaCats.forEach(c => {
+          result[c] = { unidades: 0, valor: 0, skus: 0, pctUnidades: 0, pctValor: 0, pctSKUs: 0 };
+        });
+        records.forEach(r => {
+          const c = r.categoria || 'SIN CATEGORIA';
+          const u = r[unidField] || 0;
+          const v = r[valorField] || 0;
+          if (u > 0 && result[c]) {
+            result[c].unidades += u;
+            result[c].valor += v;
+            result[c].skus += 1;
+            totalU += u;
+            totalV += v;
+            totalSKUs += 1;
+          }
+        });
+        listaCats.forEach(c => {
+          result[c].pctUnidades = totalU > 0 ? result[c].unidades / totalU : 0;
+          result[c].pctValor = totalV > 0 ? result[c].valor / totalV : 0;
+          result[c].pctSKUs = totalSKUs > 0 ? result[c].skus / totalSKUs : 0;
+        });
+        return { categorias: result, totalU, totalV, totalSKUs };
+      };
+      
+      const distribucionCategoria = {
+        lista: listaCategorias,
+        inventario: calcDistribCategoria(recs, listaCategorias, 'invFinal', 'valorInv'),
+        ventas: calcDistribCategoria(recs, listaCategorias, 'ventas', 'valorVentas'),
+        reposicion: calcDistribCategoria(activos, listaCategorias, 'reposicionSugerida', 'valorReposicion'),
+      };
+      
+      // ===== ANÁLISIS PARETO 80/20 (basado en VENTAS) =====
+      const conVentas = recs.filter(r => r.ventas > 0)
+        .sort((a, b) => b.ventas - a.ventas);
+      const totalVentasPareto = conVentas.reduce((s, r) => s + r.ventas, 0);
+      
+      let acumulado = 0;
+      const skusConPareto = conVentas.map(r => {
+        const pctVentas = totalVentasPareto > 0 ? r.ventas / totalVentasPareto : 0;
+        const pctAcumAntes = totalVentasPareto > 0 ? acumulado / totalVentasPareto : 0;
+        acumulado += r.ventas;
+        const pctAcum = totalVentasPareto > 0 ? acumulado / totalVentasPareto : 0;
+        // Clase A: SKUs cuyo acumulado anterior aún no superaba el 80%
+        const paretoClase = pctAcumAntes < 0.80 ? 'A' : 'B';
+        return { ...r, pctVentas, pctAcum, paretoClase };
+      });
+      
+      const skusParetoA = skusConPareto.filter(r => r.paretoClase === 'A');
+      const skusParetoB = skusConPareto.filter(r => r.paretoClase === 'B');
+      const totalSkusConVentas = skusConPareto.length;
+      const pctSKUsA = totalSkusConVentas > 0 ? (skusParetoA.length / totalSkusConVentas) * 100 : 0;
+      const ventasA = skusParetoA.reduce((s, r) => s + r.ventas, 0);
+      const ventasB = skusParetoB.reduce((s, r) => s + r.ventas, 0);
+      const pctVentasA = totalVentasPareto > 0 ? (ventasA / totalVentasPareto) * 100 : 0;
+      const pctVentasB = totalVentasPareto > 0 ? (ventasB / totalVentasPareto) * 100 : 0;
+      
+      // Interpretación automática (máximo 2 líneas)
+      let paretoInterpretacion;
+      if (totalSkusConVentas === 0) {
+        paretoInterpretacion = {
+          titulo: 'Sin datos de ventas',
+          linea1: 'No hay SKUs con ventas en el período analizado.',
+          linea2: 'Validar el archivo de inventario o el período del análisis.',
+          color: '#92400e', bg: '#fef3c7',
+        };
+      } else if (pctSKUsA <= 20) {
+        paretoInterpretacion = {
+          titulo: 'Concentración saludable (Pareto clásico)',
+          linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}% del portafolio activo) generan el 80% de las ventas.`,
+          linea2: `Reposición agresiva y prioritaria de estos SKUs A; stock mínimo y revisión de racionalización para los ${skusParetoB.length} SKUs B.`,
+          color: '#065f46', bg: '#d1fae5',
+        };
+      } else if (pctSKUsA <= 35) {
+        paretoInterpretacion = {
+          titulo: 'Mix balanceado',
+          linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas — distribución algo más amplia que Pareto clásico.`,
+          linea2: `Mantener disponibilidad sostenida de los SKUs A y evaluar SKUs B con menor velocidad para evitar sobre-stock.`,
+          color: '#1e40af', bg: '#dbeafe',
+        };
+      } else {
+        paretoInterpretacion = {
+          titulo: 'Distribución plana — portafolio disperso',
+          linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas, dispersión alta.`,
+          linea2: `Cobertura amplia necesaria; oportunidad clara de racionalizar SKUs marginales en la cola larga.`,
+          color: '#92400e', bg: '#fef3c7',
+        };
+      }
+      
+      const analisisPareto = {
+        skusParetoA, skusParetoB,
+        totalSkusConVentas, totalVentas: totalVentasPareto,
+        pctSKUsA, pctSKUsB: 100 - pctSKUsA,
+        ventasA, ventasB, pctVentasA, pctVentasB,
+        interpretacion: paretoInterpretacion,
+      };
+
+      const semanasPeriodoUsadas = obtenerSemanasPeriodo(config.periodoAnalizado, config.semanasPersonalizadas);
+      
+      setResultados({
+        fechaCalculo: fechaBase,
+        recs, eolVencidos, eolFuturos, activos, sinMaestro,
+        distribucionTier,
+        distribucionCategoria,
+        analisisPareto,
+        semanasPeriodoUsadas,
+        configSnapshot: {
+          periodoAnalizado: config.periodoAnalizado,
+          semanasPeriodo: semanasPeriodoUsadas,
+          safetyStockSemanas: config.safetyStockSemanas,
+          leadTimeUSA: config.leadTimeUSA,
+          leadTimeCHINA: config.leadTimeCHINA,
+        },
+        alertas: {
+          skusSinOrigen,
+          skusConMerma,
+          totalMermaUnid,
+          totalMermaValor,
+          skusEnQuiebre,
+          quiebreActivos,
+          quiebreEOL,
+          totalReposicionUnid,
+          totalReposicionValor,
+          umbralMermaPct: UMBRAL_MERMA_PCT,
+        },
+        totales: {
+          totalSKUs: recs.length,
+          activos: activos.length,
+          eolVencidos: eolVencidos.length,
+          eolFuturos: eolFuturos.length,
+          sinMaestro: sinMaestro.length,
+          unidEOL: totalUnidEOL,
+          valorEOL: totalValorEOL,
+          descEOL: totalDescEOL,
+          ioaEOL: totalIOAEOL,
+          retailEOL: totalRetailEOL,
+        },
+      });
+      // Saltar automáticamente al dashboard cuando termina el procesamiento
+      setActiveTab('dashboard');
+    } catch (e) {
+      setError("Error procesando datos: " + e.message);
+    }
+  };
+
+  const cargarEjemplo = () => {
+    setRawMaestro(dataService.getMaestroSample());
+    setRawInventario(dataService.getInventarioSample());
+    setError(null);
+  };
+
+  const limpiar = () => {
+    setRawMaestro(''); setRawInventario(''); setResultados(null); setError(null);
+  };
+
+  const exportarCSV = () => {
+    if (!resultados) return;
+    const headers = ['SKU','Tienda','Modelo','Marca','Estado','Fecha EOL','Dias Desc','Bucket','Fase','Origen','Costo USD','Inv Inicial','Ventas','Inv Final','Indice Rotacion','Desc %','Desc Consumi $','Aporte IOCA %','Aporte IOCA $','Aporte Retail %','Aporte Retail $','Desc Total $'];
+    const rows = resultados.recs.map(r => [
+      r.sku, r.tienda, r.modelo, r.marca, r.estado, r.fechaStr,
+      r.diasDesc ?? '', r.bucket ?? '', r.fase ?? '', r.origen,
+      r.costo.toFixed(2), r.invInicial, r.ventas, r.invFinal,
+      r.indiceRotacion !== null ? r.indiceRotacion.toFixed(2) : '—',
+      (r.descPct*100).toFixed(2)+'%', r.descUSD.toFixed(2),
+      (r.ioaPct*100).toFixed(2)+'%', r.ioaUSD.toFixed(2),
+      (r.retailPct*100).toFixed(2)+'%', r.retailUSD.toFixed(2),
+      r.descTotal.toFixed(2)
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `IOCA_Fases_EOL_${resultados.fechaCalculo.toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportarExcel = () => {
+    if (!resultados) return;
+    const wb = XLSX.utils.book_new();
+    const fechaStr = resultados.fechaCalculo.toISOString().slice(0,10);
+    const fechaLegible = resultados.fechaCalculo.toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' });
+    
+    const aplicarFormato = (ws, formatosPorCol) => {
+      if (!ws['!ref']) return;
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      Object.entries(formatosPorCol).forEach(([colIdx, fmt]) => {
+        const c = parseInt(colIdx);
+        for (let row = range.s.r + 1; row <= range.e.r; row++) {
+          const ref = XLSX.utils.encode_cell({ r: row, c });
+          if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = fmt;
+        }
+      });
+    };
+    
+    // ===== HOJA 1: RESUMEN EJECUTIVO =====
+    const resumenData = [
+      ['IOCA SELL-THROUGH INTELLIGENCE V1 — ANÁLISIS DE FASES EOL Y MOTOR INV. SEGURIDAD IOCA'],
+      [`Fecha de cálculo: ${fechaLegible}`],
+      [],
+      ['CONTEXTO DEL CLIENTE', ''],
+      ['Campo', 'Valor'],
+      ['Código del cliente', config.codigoCliente || '—'],
+      ['Nombre del cliente', config.nombreCliente || '—'],
+      ['País', config.pais],
+      ['Fecha de corte', config.fechaCorte],
+      ['Período analizado', config.periodoAnalizado + (config.periodoDetalle ? ` (${config.periodoDetalle})` : '')],
+      ['Semanas del período (motor V1)', resultados.semanasPeriodoUsadas],
+      ['Safety stock (semanas)', config.safetyStockSemanas],
+      ['Lead time USA (semanas)', config.leadTimeUSA],
+      ['Lead time China (semanas)', config.leadTimeCHINA],
+      [],
+      ['MOTOR INV. SEGURIDAD IOCA V1', ''],
+      ['Fórmula aplicada', NOTA_INV_SEGURIDAD.formula],
+      ['Condición 1', 'Si Ventas > 0 en el período → aplica fórmula IOCA (Fuente: IOCA)'],
+      ['Condición 2', 'Si Ventas = 0 en el período → se mantiene valor reportado por cliente (Fuente: Cliente)'],
+      ['Condición 3', 'Lead Time se toma según origen del SKU: USA o China'],
+      ['Condición 4', 'Reposición Sugerida y alertas de quiebre se calculan contra el Inv. Seguridad IOCA'],
+      ['Tabla de semanas por período', NOTA_INV_SEGURIDAD.tablaSemanas],
+      [],
+      ['DISTRIBUCIÓN DEL PORTAFOLIO', ''],
+      ['Métrica', 'Valor'],
+      ['Total SKUs en inventario', resultados.totales.totalSKUs],
+      ['SKUs Activos', resultados.totales.activos],
+      ['SKUs EOL Vencidos (ya descontinuados)', resultados.totales.eolVencidos],
+      ['SKUs EOL Futuros (aún por descontinuarse)', resultados.totales.eolFuturos],
+      ['SKUs Sin Maestro', resultados.totales.sinMaestro],
+      [],
+      ['IMPACTO FINANCIERO EOL', ''],
+      ['Métrica', 'Valor USD'],
+      ['Inventario EOL en piso (unidades)', resultados.totales.unidEOL],
+      ['Valor del Inventario EOL', resultados.totales.valorEOL],
+      ['Descuento Total al Consumidor', resultados.totales.descEOL],
+      ['Absorbe IOCA (20%)', resultados.totales.ioaEOL],
+      ['Absorbe Retail (80%)', resultados.totales.retailEOL],
+      [],
+      ['ALERTAS OPERATIVAS', ''],
+      ['Alerta', 'Cantidad'],
+      ['SKUs sin Origen en Inv (asumidos USA)', resultados.alertas.skusSinOrigen.length],
+      [`SKUs con Merma > ${(resultados.alertas.umbralMermaPct*100).toFixed(0)}%`, resultados.alertas.skusConMerma.length],
+      ['Total unidades de Merma', resultados.alertas.totalMermaUnid],
+      ['Valor total de Merma (USD)', resultados.alertas.totalMermaValor],
+      ['SKUs Activos bajo Inv. Seguridad', resultados.alertas.skusEnQuiebre.length],
+      ['Total unidades de Reposición Sugerida', resultados.alertas.totalReposicionUnid],
+      ['Valor total Reposición (USD)', resultados.alertas.totalReposicionValor],
+    ];
+    const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
+    wsResumen['!cols'] = [{ wch: 48 }, { wch: 28 }];
+    // Formato moneda en filas específicas (con offset de 11 por sección Cliente agregada)
+    [25, 26, 27, 28, 35, 38].forEach(r => {
+      const ref = XLSX.utils.encode_cell({ r, c: 1 });
+      if (wsResumen[ref] && typeof wsResumen[ref].v === 'number') wsResumen[ref].z = '$#,##0.00';
+    });
+    XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
+    
+    // ===== HOJA 2: EOL CON FASE ACTIVA =====
+    if (resultados.eolVencidos.length > 0) {
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Fecha EOL', 'Días Desc.', 'Fase', 'Origen', 'Costo', 'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $', 'Inv. Inicial', 'Ventas', 'Inv. Final', 'Índice Rotación', 'Desc. Total $', 'Valor Inv.'];
+      const rows = resultados.eolVencidos.map(r => [
+        r.sku, r.modelo, r.marca, r.fechaStr, r.diasDesc,
+        r.fase !== null ? `F${r.fase}` : '—', r.origen,
+        r.costo, r.descPct, r.descUSD,
+        r.ioaPct, r.ioaUSD, r.retailPct, r.retailUSD,
+        r.invInicial, r.ventas, r.invFinal,
+        r.indiceRotacion !== null ? r.indiceRotacion : '—',
+        r.descTotal, r.valorInv
+      ]);
+      // Fila de totales
+      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', resultados.totales.unidEOL, '', resultados.totales.descEOL, resultados.totales.valorEOL]);
+      const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 7 }, { wch: 9 }, { wch: 11 }, { wch: 9 }, { wch: 15 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 15 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 13 }];
+      aplicarFormato(ws, { 7: '$#,##0.00', 8: '0.00%', 9: '$#,##0.00', 10: '0.00%', 11: '$#,##0.00', 12: '0.00%', 13: '$#,##0.00', 17: '0.00', 18: '$#,##0.00', 19: '$#,##0.00' });
+      XLSX.utils.book_append_sheet(wb, ws, 'EOL Fase Activa');
+    }
+    
+    // ===== HOJA 3: EOL POR DESCONTINUARSE =====
+    if (resultados.eolFuturos.length > 0) {
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Fecha EOL', 'Días hasta EOL', 'Bucket', 'Origen', 'Costo', 'Inv. Inicial', 'Ventas', 'Inv. Final', 'Índice Rotación', 'Valor Inv.'];
+      const rows = resultados.eolFuturos.map(r => [
+        r.sku, r.modelo, r.marca, r.fechaStr,
+        Math.abs(r.diasDesc), r.bucket, r.origen,
+        r.costo, r.invInicial, r.ventas, r.invFinal,
+        r.indiceRotacion !== null ? r.indiceRotacion : '—',
+        r.valorInv
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 18 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
+      aplicarFormato(ws, { 7: '$#,##0.00', 11: '0.00', 12: '$#,##0.00' });
+      XLSX.utils.book_append_sheet(wb, ws, 'EOL Por Descontinuarse');
+    }
+    
+    // ===== HOJA 4: BAJO INV. SEGURIDAD IOCA V1 (paralelo comparativo) =====
+    if (resultados.alertas.skusEnQuiebre.length > 0) {
+      const notaInfo = [
+        ['MOTOR INV. SEGURIDAD IOCA V1 — PARALELO COMPARATIVO', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        [NOTA_INV_SEGURIDAD.formula, '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        [`Semanas del período aplicadas: ${resultados.semanasPeriodoUsadas} · Safety Stock: ${config.safetyStockSemanas} sem · Lead Time USA: ${config.leadTimeUSA} sem · Lead Time China: ${config.leadTimeCHINA} sem`, '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['Condiciones: Si Ventas > 0 → aplica fórmula IOCA (Fuente: IOCA). Si Ventas = 0 → se mantiene valor del cliente (Fuente: Cliente).', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ];
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Bucket EOL', 'Origen', 'Ventas', 'Inv. Seg. Cliente', 'Inv. Seg. IOCA', 'Δ IOCA-Cliente', 'Fuente', 'Inv. Final', 'Reposición Sugerida', 'Acción Sugerida'];
+      const rows = resultados.alertas.skusEnQuiebre.map(r => [
+        r.sku, r.modelo, r.marca, r.estado, r.bucket || '—', r.origen, r.ventas,
+        r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
+        r.invFinal,
+        r.estado === 'ACTIVO' ? r.reposicionSugerida : 0,
+        r.accionSugerida,
+      ]);
+      const totalRepoActivos = resultados.alertas.skusEnQuiebre
+        .filter(r => r.estado === 'ACTIVO')
+        .reduce((s, r) => s + r.reposicionSugerida, 0);
+      rows.push(['', '', '', '', '', '', '', '', '', '', '', 'TOTAL Reposición (solo Activos)', totalRepoActivos, '']);
+      const ws = XLSX.utils.aoa_to_sheet([...notaInfo, hdr, ...rows]);
+      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 18 }, { wch: 9 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 20 }, { wch: 42 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'Bajo Inv Seguridad V1');
+    }
+    
+    // ===== HOJA 5: MERMA OPERATIVA =====
+    if (resultados.alertas.skusConMerma.length > 0) {
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Merma (u)', 'Merma %', 'Costo', 'Costo Merma'];
+      const rows = resultados.alertas.skusConMerma.map(r => [
+        r.sku, r.modelo, r.marca, r.estado,
+        r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
+        r.merma, r.mermaPct, r.costo, r.merma * r.costo
+      ]);
+      rows.push(['', '', '', '', '', '', '', '', 'TOTAL', resultados.alertas.totalMermaUnid, '', '', resultados.alertas.totalMermaValor]);
+      const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 13 }];
+      aplicarFormato(ws, { 10: '0.00%', 11: '$#,##0.00', 12: '$#,##0.00' });
+      XLSX.utils.book_append_sheet(wb, ws, 'Merma Operativa');
+    }
+    
+    // ===== HOJA 6: ACTIVOS COMPLETOS =====
+    if (resultados.activos.length > 0) {
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Tier', 'Origen', 'Inv. Seguridad', 'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Índice Rotación', 'Costo', 'Valor Inv.', 'Reposición Sugerida', 'Valor Reposición'];
+      const rows = resultados.activos.map(r => [
+        r.sku, r.modelo, r.marca, r.tier, r.origen,
+        r.invSeguridad, r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
+        r.indiceRotacion !== null ? r.indiceRotacion : '—',
+        r.costo, r.valorInv, r.reposicionSugerida, r.valorReposicion
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 15 }, { wch: 11 }, { wch: 14 }, { wch: 11 }, { wch: 14 }, { wch: 20 }, { wch: 17 }];
+      aplicarFormato(ws, { 11: '0.00', 12: '$#,##0.00', 13: '$#,##0.00', 15: '$#,##0.00' });
+      XLSX.utils.book_append_sheet(wb, ws, 'Activos');
+    }
+    
+    // ===== HOJA 8: SIN MAESTRO =====
+    if (resultados.sinMaestro.length > 0) {
+      const hdr = ['SKU', 'Modelo (del Inventario)', 'Tienda', 'Inv. Final', 'Acción Sugerida'];
+      const rows = resultados.sinMaestro.map(r => [
+        r.sku, r.modelo, r.tienda, r.invFinal, 'Agregar al Maestro IOCA'
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+      ws['!cols'] = [{ wch: 18 }, { wch: 45 }, { wch: 14 }, { wch: 11 }, { wch: 28 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'Sin Maestro');
+    }
+    
+    // ===== HOJA 9: SIN ORIGEN EN INV =====
+    if (resultados.alertas.skusSinOrigen.length > 0) {
+      const hdr = ['SKU', 'Modelo', 'Estado', 'Costo USA (aplicado)', 'Costo CHINA (alterno)', 'Delta USA-CHINA'];
+      const rows = resultados.alertas.skusSinOrigen.map(r => [
+        r.sku, r.modelo, r.estado, r.costoUSA, r.costoCHINA, r.costoUSA - r.costoCHINA
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
+      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 11 }, { wch: 20 }, { wch: 22 }, { wch: 18 }];
+      aplicarFormato(ws, { 3: '$#,##0.00', 4: '$#,##0.00', 5: '$#,##0.00' });
+      XLSX.utils.book_append_sheet(wb, ws, 'Sin Origen en Inv');
+    }
+    
+    // ===== HOJA 10: DATOS COMPLETOS (auditoría) =====
+    const hdrAll = [
+      'SKU', 'Tienda', 'Modelo', 'Marca', 'Categoría', 'Estado', 'Tier',
+      'Fecha EOL', 'Días Desc.', 'Bucket', 'Fase', 'Origen', 'Sin Origen Inv',
+      'Inv. Seguridad Cliente', 'Inv. Seguridad IOCA', 'Δ IOCA-Cliente', 'Fuente Inv. Seg.',
+      'Semanas Período', 'Lead Time Aplicado',
+      'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final',
+      'Índice Rotación',
+      'Merma', 'Merma %', 'Alerta Merma',
+      'Reposición Sug.', 'Alerta Quiebre', 'Acción Sugerida',
+      'Costo USA', 'Costo CHINA', 'Costo Aplicado',
+      'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $',
+      'Valor Inv.', 'Valor Ventas', 'Valor Reposición', 'Desc. Total $'
+    ];
+    const rowsAll = resultados.recs.map(r => [
+      r.sku, r.tienda, r.modelo, r.marca, r.categoria || 'SIN CATEGORIA', r.estado, r.tier,
+      r.fechaStr, r.diasDesc, r.bucket, r.fase !== null ? `F${r.fase}` : '', r.origen, r.sinOrigenInv ? 'SI' : 'NO',
+      r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
+      r.semanasPeriodo, r.leadTimeAplicado,
+      r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
+      r.indiceRotacion !== null ? r.indiceRotacion : '',
+      r.merma, r.mermaPct, r.alertaMerma ? 'SI' : 'NO',
+      r.reposicionSugerida, r.alertaQuiebre ? 'SI' : 'NO', r.accionSugerida || '',
+      r.costoUSA, r.costoCHINA, r.costo,
+      r.descPct, r.descUSD, r.ioaPct, r.ioaUSD, r.retailPct, r.retailUSD,
+      r.valorInv, r.valorVentas || 0, r.valorReposicion, r.descTotal
+    ]);
+    const wsAll = XLSX.utils.aoa_to_sheet([hdrAll, ...rowsAll]);
+    XLSX.utils.book_append_sheet(wb, wsAll, 'Datos Completos');
+    
+    // ===== HOJA: DISTRIBUCIÓN POR TIER (GBB) =====
+    const dT = resultados.distribucionTier;
+    const tiersGBB = ['GOOD', 'BETTER', 'BEST'];
+    const distribData = [
+      ['DISTRIBUCIÓN POR TIER — GOOD / BETTER / BEST', '', '', '', '', ''],
+      [`Cliente analizado · Fecha: ${fechaLegible}`, '', '', '', '', ''],
+      ['', '', '', '', '', ''],
+      ['INVENTARIO ACTUAL DEL CLIENTE', '', '', '', '', ''],
+      [`Total: ${dT.inventario.totalU} unidades · ${dT.inventario.totalSKUs} SKUs`, '', '', '', '', ''],
+      ['Tier', 'SKUs', 'Unidades', '% Unidades', 'Valor USD', '% Valor'],
+      ...tiersGBB.map(t => {
+        const d = dT.inventario.tiers[t];
+        return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
+      }),
+      ['TOTAL', dT.inventario.totalSKUs, dT.inventario.totalU, 1, dT.inventario.totalV, 1],
+      ['', '', '', '', '', ''],
+      ['VENTAS DEL CLIENTE', '', '', '', '', ''],
+      [`Total: ${dT.ventas.totalU} unidades · ${dT.ventas.totalSKUs} SKUs con venta`, '', '', '', '', ''],
+      ['Tier', 'SKUs', 'Unidades', '% Unidades', 'Valor USD', '% Valor'],
+      ...tiersGBB.map(t => {
+        const d = dT.ventas.tiers[t];
+        return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
+      }),
+      ['TOTAL', dT.ventas.totalSKUs, dT.ventas.totalU, 1, dT.ventas.totalV, 1],
+      ['', '', '', '', '', ''],
+      ['REPOSICIÓN SUGERIDA', '', '', '', '', ''],
+      [`Total: ${dT.reposicion.totalU} unidades · ${dT.reposicion.totalSKUs} SKUs`, '', '', '', '', ''],
+      ['Tier', 'SKUs', 'Unidades', '% Unidades', 'Valor USD', '% Valor'],
+      ...tiersGBB.map(t => {
+        const d = dT.reposicion.tiers[t];
+        return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
+      }),
+      ['TOTAL', dT.reposicion.totalSKUs, dT.reposicion.totalU, 1, dT.reposicion.totalV, 1],
+      ['', '', '', '', '', ''],
+      ['COMPARATIVA: ¿La reposición sigue al inventario o a las ventas?', '', '', '', '', ''],
+      ['Tier', '% Inv. Actual', '% Ventas', '% Reposición', 'Lectura', ''],
+      ...tiersGBB.map(t => {
+        const inv = dT.inventario.tiers[t].pctUnidades;
+        const vts = dT.ventas.tiers[t].pctUnidades;
+        const rep = dT.reposicion.tiers[t].pctUnidades;
+        const deltaRepVtas = (rep - vts) * 100;
+        const deltaRepInv = (rep - inv) * 100;
+        let lectura = '';
+        if (Math.abs(deltaRepVtas) < 2 && Math.abs(deltaRepInv) < 2) lectura = `Mix balanceado en ${t}`;
+        else if (Math.abs(deltaRepVtas) < Math.abs(deltaRepInv)) lectura = `Reposición sigue las VENTAS en ${t}`;
+        else lectura = `Reposición sigue al INVENTARIO en ${t}`;
+        return [t, inv, vts, rep, lectura, ''];
+      }),
+    ];
+    const wsDistrib = XLSX.utils.aoa_to_sheet(distribData);
+    wsDistrib['!cols'] = [{ wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 42 }, { wch: 10 }];
+    const fmtCell = (r, c, fmt) => {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      if (wsDistrib[ref] && typeof wsDistrib[ref].v === 'number') wsDistrib[ref].z = fmt;
+    };
+    // Inventario Actual: filas 6,7,8,9
+    [6, 7, 8, 9].forEach(r => {
+      fmtCell(r, 3, '0.00%');
+      fmtCell(r, 4, '$#,##0.00');
+      fmtCell(r, 5, '0.00%');
+    });
+    // Ventas: filas 13,14,15,16
+    [13, 14, 15, 16].forEach(r => {
+      fmtCell(r, 3, '0.00%');
+      fmtCell(r, 4, '$#,##0.00');
+      fmtCell(r, 5, '0.00%');
+    });
+    // Reposición: filas 20,21,22,23
+    [20, 21, 22, 23].forEach(r => {
+      fmtCell(r, 3, '0.00%');
+      fmtCell(r, 4, '$#,##0.00');
+      fmtCell(r, 5, '0.00%');
+    });
+    // Comparativa: filas 27,28,29
+    [27, 28, 29].forEach(r => {
+      fmtCell(r, 1, '0.00%');
+      fmtCell(r, 2, '0.00%');
+      fmtCell(r, 3, '0.00%');
+    });
+    XLSX.utils.book_append_sheet(wb, wsDistrib, 'Distribución Tier');
+    
+    // ===== HOJA: DISTRIBUCIÓN POR CATEGORÍA =====
+    const dC = resultados.distribucionCategoria;
+    const listaCats = dC.lista;
+    const distribCatData = [
+      ['DISTRIBUCIÓN POR CATEGORÍA', '', '', '', '', ''],
+      [`Cliente analizado · Fecha: ${fechaLegible}`, '', '', '', '', ''],
+      [`Categorías detectadas: ${listaCats.join(' · ')}`, '', '', '', '', ''],
+      ['', '', '', '', '', ''],
+      ['INVENTARIO ACTUAL DEL CLIENTE', '', '', '', '', ''],
+      [`Total: ${dC.inventario.totalU} unidades · ${dC.inventario.totalSKUs} SKUs`, '', '', '', '', ''],
+      ['Categoría', 'SKUs', 'Unidades', '% Unidades', 'Valor USD', '% Valor'],
+    ];
+    listaCats.forEach(c => {
+      const d = dC.inventario.categorias[c];
+      if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
+    });
+    distribCatData.push(['TOTAL', dC.inventario.totalSKUs, dC.inventario.totalU, 1, dC.inventario.totalV, 1]);
+    const invStart = 6; // primera fila de datos (tiers) en 0-indexed
+    const invEnd = invStart + listaCats.length; // incluye fila TOTAL
+    
+    distribCatData.push(['', '', '', '', '', '']);
+    distribCatData.push(['VENTAS DEL CLIENTE', '', '', '', '', '']);
+    distribCatData.push([`Total: ${dC.ventas.totalU} unidades · ${dC.ventas.totalSKUs} SKUs con venta`, '', '', '', '', '']);
+    distribCatData.push(['Categoría', 'SKUs', 'Unidades', '% Unidades', 'Valor USD', '% Valor']);
+    const vtsStart = distribCatData.length;
+    listaCats.forEach(c => {
+      const d = dC.ventas.categorias[c];
+      if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
+    });
+    distribCatData.push(['TOTAL', dC.ventas.totalSKUs, dC.ventas.totalU, 1, dC.ventas.totalV, 1]);
+    const vtsEnd = vtsStart + listaCats.length;
+    
+    distribCatData.push(['', '', '', '', '', '']);
+    distribCatData.push(['REPOSICIÓN SUGERIDA', '', '', '', '', '']);
+    distribCatData.push([`Total: ${dC.reposicion.totalU} unidades · ${dC.reposicion.totalSKUs} SKUs`, '', '', '', '', '']);
+    distribCatData.push(['Categoría', 'SKUs', 'Unidades', '% Unidades', 'Valor USD', '% Valor']);
+    const repStart = distribCatData.length;
+    listaCats.forEach(c => {
+      const d = dC.reposicion.categorias[c];
+      if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
+    });
+    distribCatData.push(['TOTAL', dC.reposicion.totalSKUs, dC.reposicion.totalU, 1, dC.reposicion.totalV, 1]);
+    const repEnd = repStart + listaCats.length;
+    
+    // Comparativa
+    distribCatData.push(['', '', '', '', '', '']);
+    distribCatData.push(['COMPARATIVA: ¿La reposición sigue al inventario o a las ventas?', '', '', '', '', '']);
+    distribCatData.push(['Categoría', '% Inv. Actual', '% Ventas', '% Reposición', 'Lectura', '']);
+    const compStart = distribCatData.length;
+    listaCats.forEach(c => {
+      const inv = dC.inventario.categorias[c] ? dC.inventario.categorias[c].pctUnidades : 0;
+      const vts = dC.ventas.categorias[c] ? dC.ventas.categorias[c].pctUnidades : 0;
+      const rep = dC.reposicion.categorias[c] ? dC.reposicion.categorias[c].pctUnidades : 0;
+      const deltaRepVtas = (rep - vts) * 100;
+      const deltaRepInv = (rep - inv) * 100;
+      let lectura = '';
+      if (vts === 0 && rep > 0) lectura = `${c}: reponiendo sin venta — alerta`;
+      else if (rep === 0 && vts > 0) lectura = `${c}: vendiendo sin reposición — alerta`;
+      else if (Math.abs(deltaRepVtas) < 2 && Math.abs(deltaRepInv) < 2) lectura = `${c}: mix balanceado`;
+      else if (Math.abs(deltaRepVtas) < Math.abs(deltaRepInv)) lectura = `${c}: reposición sigue VENTAS`;
+      else lectura = `${c}: reposición sigue INVENTARIO`;
+      distribCatData.push([c, inv, vts, rep, lectura, '']);
+    });
+    
+    const wsDistribCat = XLSX.utils.aoa_to_sheet(distribCatData);
+    wsDistribCat['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 40 }, { wch: 10 }];
+    const fmtCellCat = (r, c, fmt) => {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      if (wsDistribCat[ref] && typeof wsDistribCat[ref].v === 'number') wsDistribCat[ref].z = fmt;
+    };
+    // Aplicar formato a los tres bloques de datos
+    for (let r = invStart; r <= invEnd; r++) {
+      fmtCellCat(r, 3, '0.00%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0.00%');
+    }
+    for (let r = vtsStart; r <= vtsEnd; r++) {
+      fmtCellCat(r, 3, '0.00%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0.00%');
+    }
+    for (let r = repStart; r <= repEnd; r++) {
+      fmtCellCat(r, 3, '0.00%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0.00%');
+    }
+    for (let r = compStart; r < compStart + listaCats.length; r++) {
+      fmtCellCat(r, 1, '0.00%'); fmtCellCat(r, 2, '0.00%'); fmtCellCat(r, 3, '0.00%');
+    }
+    XLSX.utils.book_append_sheet(wb, wsDistribCat, 'Distribución Categoría');
+    
+    // ===== HOJA: ANÁLISIS PARETO 80/20 =====
+    const pareto = resultados.analisisPareto;
+    if (pareto.totalSkusConVentas > 0) {
+      const paretoData = [
+        ['ANÁLISIS PARETO 80/20 — DISTRIBUCIÓN DE VENTAS POR SKU', '', '', '', '', '', '', '', '', '', ''],
+        [`Cliente analizado · Fecha: ${fechaLegible}`, '', '', '', '', '', '', '', '', '', ''],
+        ['', '', '', '', '', '', '', '', '', '', ''],
+        ['RESUMEN', '', '', '', '', '', '', '', '', '', ''],
+        ['Métrica', 'Valor', '', '', '', '', '', '', '', '', ''],
+        ['SKUs con ventas en el período', pareto.totalSkusConVentas, '', '', '', '', '', '', '', '', ''],
+        ['Total unidades vendidas', pareto.totalVentas, '', '', '', '', '', '', '', '', ''],
+        ['SKUs Pareto A (acumulan 80% ventas)', pareto.skusParetoA.length, '', '', '', '', '', '', '', '', ''],
+        ['SKUs Pareto B (resto 20% ventas)', pareto.skusParetoB.length, '', '', '', '', '', '', '', '', ''],
+        ['% del portafolio que es Clase A', pareto.pctSKUsA / 100, '', '', '', '', '', '', '', '', ''],
+        ['% del portafolio que es Clase B', pareto.pctSKUsB / 100, '', '', '', '', '', '', '', '', ''],
+        ['', '', '', '', '', '', '', '', '', '', ''],
+        ['INTERPRETACIÓN Y SUGERENCIA DE REPOSICIÓN', '', '', '', '', '', '', '', '', '', ''],
+        [pareto.interpretacion.titulo, '', '', '', '', '', '', '', '', '', ''],
+        [pareto.interpretacion.linea1, '', '', '', '', '', '', '', '', '', ''],
+        [pareto.interpretacion.linea2, '', '', '', '', '', '', '', '', '', ''],
+        ['', '', '', '', '', '', '', '', '', '', ''],
+        ['DETALLE SKU POR SKU (ordenado por velocidad de ventas)', '', '', '', '', '', '', '', '', '', ''],
+        ['Clase', 'SKU', 'Modelo', 'Marca', 'Estado', 'Tier', 'Ventas (u)', '% Ventas', '% Acum.', 'Inv. Final', 'Acción Reposición'],
+      ];
+      
+      const todosSkusOrdenados = [...pareto.skusParetoA, ...pareto.skusParetoB];
+      todosSkusOrdenados.forEach(r => {
+        const esA = r.paretoClase === 'A';
+        let accionRepo = '';
+        if (esA && r.estado === 'ACTIVO') accionRepo = 'Reposición prioritaria';
+        else if (esA && r.estado === 'EOL') accionRepo = 'Clase A pero EOL — rebalancear';
+        else if (!esA && r.estado === 'ACTIVO') accionRepo = 'Stock mínimo';
+        else accionRepo = 'Liquidar / no reponer';
+        
+        paretoData.push([
+          r.paretoClase, r.sku, r.modelo, r.marca, r.estado, r.tier || 'GOOD',
+          r.ventas, r.pctVentas, r.pctAcum, r.invFinal, accionRepo
+        ]);
+      });
+      
+      const wsPareto = XLSX.utils.aoa_to_sheet(paretoData);
+      wsPareto['!cols'] = [
+        { wch: 8 }, { wch: 16 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 9 },
+        { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 32 }
+      ];
+      
+      // Formatos del resumen (filas 9,10 = % portafolio)
+      const fmtParetoCell = (r, c, fmt) => {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (wsPareto[ref] && typeof wsPareto[ref].v === 'number') wsPareto[ref].z = fmt;
+      };
+      fmtParetoCell(9, 1, '0.00%');
+      fmtParetoCell(10, 1, '0.00%');
+      
+      // Formato del detalle: % Ventas, % Acum
+      const detalleStartRow = 19; // primera fila de datos
+      const detalleEndRow = detalleStartRow + todosSkusOrdenados.length - 1;
+      for (let r = detalleStartRow; r <= detalleEndRow; r++) {
+        fmtParetoCell(r, 7, '0.00%'); // % Ventas
+        fmtParetoCell(r, 8, '0.00%'); // % Acum
+      }
+      
+      XLSX.utils.book_append_sheet(wb, wsPareto, 'Análisis Pareto 80-20');
+    }
+    
+    // ===== HOJA 11: REF BUCKET EOL =====
+    const bucketData = [
+      ['Bucket', 'Días Desde', 'Días Hasta', 'Umbral', 'Estrategia Comercial', 'Descuento Base', 'Prioridad'],
+      ...BUCKET_EOL.map(b => [b.bucket, b.diasDesde, b.diasHasta, b.umbral, b.estrategia, b.descuentoBase, b.prioridad])
+    ];
+    const wsBucket = XLSX.utils.aoa_to_sheet(bucketData);
+    wsBucket['!cols'] = [{ wch: 18 }, { wch: 11 }, { wch: 11 }, { wch: 22 }, { wch: 48 }, { wch: 16 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, wsBucket, 'Ref Bucket EOL');
+    
+    // ===== HOJA 12: REF TABLA FASES =====
+    const fasesData = [
+      ['Marca', 'Fase', 'Días Mín.', 'Origen', 'Desc. Consumidor', 'Aporte IOCA', 'Aporte Retail'],
+      ...TABLA_FASES.map(f => [f.marca, f.fase, f.diasMin, f.origen, f.descConsumidor, f.aporteIOCA, f.aporteRetail])
+    ];
+    const wsFases = XLSX.utils.aoa_to_sheet(fasesData);
+    wsFases['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 11 }, { wch: 9 }, { wch: 18 }, { wch: 14 }, { wch: 14 }];
+    aplicarFormato(wsFases, { 4: '0.00%', 5: '0.00%', 6: '0.00%' });
+    XLSX.utils.book_append_sheet(wb, wsFases, 'Ref Tabla Fases');
+    
+    // Descargar
+    const codigoSafe = (config.codigoCliente || 'SC').replace(/[^A-Za-z0-9_-]/g, '');
+    XLSX.writeFile(wb, `IOCA_STI_V1_${codigoSafe}_${fechaStr}.xlsx`);
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+
+  return (
+    <div className="min-h-screen" style={{ background: '#faf8f3', fontFamily: 'Arial, sans-serif' }}>
+      {/* HEADER */}
+      <div style={{ background: '#0a2540', color: '#faf8f3' }} className="px-8 py-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="text-xs tracking-widest" style={{ color: '#d4af37' }}>IOCA GROUP</div>
+              <h1 className="text-2xl mt-1 flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif' }}>
+                Sell-Through Intelligence
+                <span className="text-xs font-bold px-2 py-0.5" style={{ background: '#d4af37', color: '#0a2540', fontFamily: 'Arial, sans-serif' }}>V1</span>
+              </h1>
+              <div className="text-xs mt-1 opacity-80">
+                Motor Inv. Seguridad IOCA · Análisis de Fases EOL · Distribución por Tier y Categoría · Informe Ejecutivo Consultivo
+              </div>
+            </div>
+            <div className="text-right text-xs">
+              <div className="opacity-70">Fecha de cálculo</div>
+              <div className="font-bold text-base" style={{ color: '#d4af37' }}>
+                {primerDiaMes().toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
+              </div>
+              <div className="opacity-60 mt-1">(primer día del mes en curso)</div>
+            </div>
+          </div>
+          <div style={{ background: '#d4af37', height: '3px' }} className="mt-4" />
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-8 py-6 space-y-6">
+
+        {/* BARRA DE NAVEGACIÓN POR TABS */}
+        <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+          <nav className="flex">
+            {[
+              { id: 'config', label: 'Configuración', icon: Settings, done: configCompleta },
+              { id: 'carga', label: 'Carga de Información', icon: Upload, done: dataCargada },
+              { id: 'dashboard', label: 'Dashboard', icon: BarChart3, done: !!resultados },
+              { id: 'informe', label: 'Informe Ejecutivo', icon: FileText, done: !!resultados },
+            ].map((tab, idx) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className="flex-1 px-6 py-4 flex items-center justify-center gap-3 border-r last:border-r-0 transition-all"
+                  style={{
+                    borderColor: '#e5e0d5',
+                    background: isActive ? '#0a2540' : '#faf8f3',
+                    color: isActive ? '#faf8f3' : '#0a2540',
+                    borderBottom: isActive ? '3px solid #d4af37' : '3px solid transparent',
+                  }}
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-full font-bold text-xs"
+                    style={{
+                      background: isActive ? '#d4af37' : (tab.done ? '#d1fae5' : '#e5e0d5'),
+                      color: isActive ? '#0a2540' : (tab.done ? '#065f46' : '#666'),
+                    }}>
+                    {tab.done ? '✓' : (idx + 1)}
+                  </div>
+                  <Icon className="w-4 h-4" />
+                  <span className="text-sm font-bold uppercase tracking-wider hidden md:inline">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* ========================= TAB 1: CONFIGURACIÓN ========================= */}
+        {activeTab === 'config' && (
+          <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+            <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+              <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                <ClipboardList className="w-5 h-5" style={{ color: '#d4af37' }} />
+                Configuración del análisis
+              </h2>
+              <div className="text-xs text-stone-500 mt-1">
+                Define los parámetros del cliente y del análisis. Esta información aparece en el dashboard y en todas las exportaciones a Excel.
+              </div>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+              {/* Identificación del cliente */}
+              <div className="md:col-span-2">
+                <div className="text-[11px] uppercase tracking-wider font-bold mb-3" style={{ color: '#7f1d1d' }}>
+                  Identificación del cliente
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>
+                  Código del cliente <span className="text-red-700">*</span>
+                </label>
+                <input type="text" value={config.codigoCliente}
+                  onChange={e => updateConfig('codigoCliente', e.target.value)}
+                  placeholder="Ej: DIST-GT-001"
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>
+                  Nombre del cliente <span className="text-red-700">*</span>
+                </label>
+                <input type="text" value={config.nombreCliente}
+                  onChange={e => updateConfig('nombreCliente', e.target.value)}
+                  placeholder="Ej: DISTELSA Guatemala"
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>País</label>
+                <select value={config.pais}
+                  onChange={e => updateConfig('pais', e.target.value)}
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                  {PAISES_IOCA.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+
+              <div></div>
+
+              {/* Periodo y fechas */}
+              <div className="md:col-span-2 mt-2">
+                <div className="text-[11px] uppercase tracking-wider font-bold mb-3" style={{ color: '#7f1d1d' }}>
+                  Período de análisis
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>Fecha de corte</label>
+                <input type="date" value={config.fechaCorte}
+                  onChange={e => updateConfig('fechaCorte', e.target.value)}
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+                <div className="text-[10px] text-stone-500 mt-1">Fecha de cierre del inventario y ventas reportados.</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>Período analizado</label>
+                <select value={config.periodoAnalizado}
+                  onChange={e => updateConfig('periodoAnalizado', e.target.value)}
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                  {PERIODOS_ANALISIS.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <div className="text-[10px] text-stone-500 mt-1">
+                  Conversión IOCA: Semanal=1 · Quincenal=2 · Mensual=4.33 · Bimestral=8.67 · Trimestral=13 · Semestral=26 · Anual=52
+                </div>
+              </div>
+
+              {config.periodoAnalizado === 'Personalizado' && (
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold mb-1.5" style={{ color: '#7f1d1d' }}>
+                    Semanas del período (personalizado) <span className="text-red-700">*</span>
+                  </label>
+                  <input type="number" min="0.1" step="0.1" value={config.semanasPersonalizadas}
+                    onChange={e => updateConfig('semanasPersonalizadas', parseFloat(e.target.value) || 4.33)}
+                    className="w-full px-3 py-2 border text-sm"
+                    style={{ borderColor: '#7f1d1d', background: '#fef3c7' }} />
+                  <div className="text-[10px] text-stone-600 mt-1">Requerido para el motor Inv. Seguridad IOCA V1 cuando el período es Personalizado.</div>
+                </div>
+              )}
+
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>Detalle del período (opcional)</label>
+                <input type="text" value={config.periodoDetalle}
+                  onChange={e => updateConfig('periodoDetalle', e.target.value)}
+                  placeholder="Ej: Octubre 2025 · Sem 40-43 · Q3 2025"
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+              </div>
+
+              {/* Parámetros operativos */}
+              <div className="md:col-span-2 mt-2">
+                <div className="text-[11px] uppercase tracking-wider font-bold mb-3" style={{ color: '#7f1d1d' }}>
+                  Parámetros operativos
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>Safety stock (semanas)</label>
+                <input type="number" min="0" step="1" value={config.safetyStockSemanas}
+                  onChange={e => updateConfig('safetyStockSemanas', parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+                <div className="text-[10px] text-stone-500 mt-1">Cobertura mínima en piso para evitar quiebres.</div>
+              </div>
+
+              <div></div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>Lead time USA (semanas)</label>
+                <input type="number" min="0" step="1" value={config.leadTimeUSA}
+                  onChange={e => updateConfig('leadTimeUSA', parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+                <div className="text-[10px] text-stone-500 mt-1">Ruta aérea Miami → mercado.</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>Lead time China (semanas)</label>
+                <input type="number" min="0" step="1" value={config.leadTimeCHINA}
+                  onChange={e => updateConfig('leadTimeCHINA', parseInt(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+                <div className="text-[10px] text-stone-500 mt-1">Ruta marítima China → mercado.</div>
+              </div>
+
+              {/* Bloque explicativo del Motor Inv. Seguridad IOCA V1 */}
+              <div className="md:col-span-2 mt-2 border-l-4 p-4" style={{ borderColor: '#d4af37', background: '#faf8f3' }}>
+                <div className="text-[11px] uppercase tracking-wider font-bold mb-2 flex items-center gap-2" style={{ color: '#0a2540' }}>
+                  <Calculator className="w-3.5 h-3.5" style={{ color: '#d4af37' }} />
+                  {NOTA_INV_SEGURIDAD.titulo}
+                </div>
+                <div className="text-[11px] font-mono mb-2 p-2" style={{ background: '#0a2540', color: '#d4af37' }}>
+                  {NOTA_INV_SEGURIDAD.formula}
+                </div>
+                <div className="text-[11px] font-bold mb-1" style={{ color: '#7f1d1d' }}>Condiciones que aplican:</div>
+                <ul className="text-[11px] mb-2" style={{ color: '#444', paddingLeft: '18px', listStyle: 'disc' }}>
+                  {NOTA_INV_SEGURIDAD.condiciones.map((c, i) => <li key={i}>{c}</li>)}
+                </ul>
+                <div className="text-[10px] italic" style={{ color: '#666' }}>
+                  <strong>Propósito consultivo:</strong> {NOTA_INV_SEGURIDAD.propositoConsultivo}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t flex items-center justify-between flex-wrap gap-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+              <div className="text-xs text-stone-600">
+                {configCompleta 
+                  ? <span style={{ color: '#065f46' }}><CheckCircle2 className="w-3.5 h-3.5 inline" /> Configuración completa — listo para cargar información</span>
+                  : <span style={{ color: '#92400e' }}>Completa código y nombre del cliente para continuar</span>}
+              </div>
+              <button onClick={() => setActiveTab('carga')}
+                disabled={!configCompleta}
+                className="px-5 py-2 text-sm font-bold flex items-center gap-2 shadow-sm"
+                style={{
+                  background: configCompleta ? '#d4af37' : '#cbd5e1',
+                  color: configCompleta ? '#0a2540' : '#666',
+                  cursor: configCompleta ? 'pointer' : 'not-allowed',
+                }}>
+                Siguiente: Carga de Información
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ========================= TAB 2: CARGA DE INFORMACIÓN ========================= */}
+        {activeTab === 'carga' && (
+        <>
+        {/* INSUMOS */}
+        <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+          <div className="px-6 py-4 border-b flex items-center justify-between flex-wrap gap-2" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+            <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+              <Database className="w-5 h-5" style={{ color: '#d4af37' }} />
+              Insumos requeridos
+            </h2>
+            <div className="flex gap-2">
+              <button onClick={cargarEjemplo} className="px-3 py-1.5 text-xs border flex items-center gap-1.5 hover:opacity-80" style={{ borderColor: '#0a2540', color: '#0a2540' }}>
+                <PlayCircle className="w-3.5 h-3.5" />Cargar ejemplo
+              </button>
+              <button onClick={limpiar} className="px-3 py-1.5 text-xs border flex items-center gap-1.5 hover:opacity-80" style={{ borderColor: '#999', color: '#666' }}>
+                <Trash2 className="w-3.5 h-3.5" />Limpiar
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* MAESTRO */}
+            <div>
+              <label className="block text-sm font-bold mb-2" style={{ color: '#0a2540' }}>
+                1. Maestro de Productos IOCA
+              </label>
+              <div className="text-[11px] text-stone-500 mb-2">
+                Columnas: <code className="bg-stone-100 px-1">MARCA</code> · <code className="bg-stone-100 px-1">SKU</code> · <code className="bg-stone-100 px-1">Modelos</code> · <code className="bg-stone-100 px-1">CATEGORIAS</code> · <code className="bg-stone-100 px-1">Fecha Descontinuacion</code> · <code className="bg-stone-100 px-1">ESTADO</code> · <code className="bg-stone-100 px-1">USA</code> · <code className="bg-stone-100 px-1">CHINA</code>
+              </div>
+              <textarea
+                value={rawMaestro}
+                onChange={e => setRawMaestro(e.target.value)}
+                placeholder="Pega aquí el Maestro de Productos consolidado IOCA..."
+                className="w-full h-44 p-3 border font-mono text-[10px]"
+                style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}
+              />
+            </div>
+
+            {/* INVENTARIO */}
+            <div>
+              <label className="block text-sm font-bold mb-2" style={{ color: '#0a2540' }}>
+                2. Inventario del Cliente
+              </label>
+              <div className="text-[11px] text-stone-500 mb-2">
+                Mínimo: <code className="bg-stone-100 px-1">SKU</code> · <code className="bg-stone-100 px-1">INV FINAL</code>. Opcionales: <code className="bg-stone-100 px-1">Tienda</code> · <code className="bg-stone-100 px-1">MARCA</code> · <code className="bg-stone-100 px-1">Nombre</code>
+              </div>
+              <textarea
+                value={rawInventario}
+                onChange={e => setRawInventario(e.target.value)}
+                placeholder="Pega aquí el inventario del cliente..."
+                className="w-full h-44 p-3 border font-mono text-[10px]"
+                style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}
+              />
+            </div>
+          </div>
+
+          <div className="px-6 pb-6 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2 text-xs text-stone-600 max-w-2xl">
+              <Database className="w-4 h-4 flex-shrink-0" style={{ color: '#d4af37' }} />
+              <span>
+                El <strong>Origen</strong> de cada SKU (USA o CHINA) se lee de la columna <code className="bg-stone-100 px-1">Origen</code> del <strong>Inventario del cliente</strong>. La herramienta usa el Costo USA o CHINA del Maestro según corresponda. Si no se declara Origen, se asume USA por default.
+              </span>
+            </div>
+
+            <button onClick={procesar}
+              className="px-6 py-2.5 text-sm font-bold flex items-center gap-2 shadow-sm hover:opacity-90"
+              style={{ background: '#d4af37', color: '#0a2540' }}>
+              <Calculator className="w-4 h-4" />
+              Calcular y ver dashboard
+            </button>
+          </div>
+        </div>
+
+        {/* ERROR */}
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-700 p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-700 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-red-900">{error}</div>
+          </div>
+        )}
+        </>
+        )}
+
+        {/* ========================= TAB 3: DASHBOARD ========================= */}
+        {activeTab === 'dashboard' && !resultados && (
+          <div className="bg-white border shadow-sm p-12 text-center" style={{ borderColor: '#e5e0d5' }}>
+            <BarChart3 className="w-12 h-12 mx-auto mb-3" style={{ color: '#cbd5e1' }} />
+            <div className="text-sm font-bold mb-1" style={{ color: '#0a2540' }}>Dashboard sin datos</div>
+            <div className="text-xs text-stone-500 mb-4">Primero carga el Maestro e Inventario, y presiona "Calcular".</div>
+            <button onClick={() => setActiveTab('carga')}
+              className="px-5 py-2 text-sm font-bold inline-flex items-center gap-2"
+              style={{ background: '#0a2540', color: '#faf8f3' }}>
+              <Upload className="w-4 h-4" /> Ir a Carga de Información
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'dashboard' && resultados && (
+          <>
+            {/* HEADER DEL DASHBOARD CON CONTEXTO DEL CLIENTE */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#0a2540' }}>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest" style={{ color: '#d4af37' }}>Cliente analizado</div>
+                    <div className="text-xl font-bold mt-1" style={{ fontFamily: '"Times New Roman", serif', color: '#faf8f3' }}>
+                      {config.nombreCliente || '(sin nombre)'}
+                    </div>
+                    <div className="text-xs mt-0.5" style={{ color: '#d4af37' }}>
+                      Código: {config.codigoCliente || '—'} · {config.pais}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs" style={{ color: '#faf8f3' }}>
+                    <div className="opacity-70">Fecha de corte</div>
+                    <div className="font-bold text-sm" style={{ color: '#d4af37' }}>
+                      {config.fechaCorte}
+                    </div>
+                    <div className="opacity-70 mt-1">{config.periodoAnalizado}{config.periodoDetalle ? ` · ${config.periodoDetalle}` : ''}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="px-6 py-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs" style={{ background: '#faf8f3' }}>
+                <div>
+                  <div className="text-stone-500 uppercase text-[10px] tracking-wider">Safety Stock</div>
+                  <div className="font-bold" style={{ color: '#0a2540' }}>{config.safetyStockSemanas} semanas</div>
+                </div>
+                <div>
+                  <div className="text-stone-500 uppercase text-[10px] tracking-wider">Lead Time USA</div>
+                  <div className="font-bold" style={{ color: '#0a2540' }}>{config.leadTimeUSA} semanas</div>
+                </div>
+                <div>
+                  <div className="text-stone-500 uppercase text-[10px] tracking-wider">Lead Time China</div>
+                  <div className="font-bold" style={{ color: '#0a2540' }}>{config.leadTimeCHINA} semanas</div>
+                </div>
+                <div>
+                  <div className="text-stone-500 uppercase text-[10px] tracking-wider">SKUs en cruce</div>
+                  <div className="font-bold" style={{ color: '#0a2540' }}>{resultados.totales.totalSKUs}</div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'dashboard' && resultados && (
+          <>
+            {/* KPIs */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b flex items-center justify-between flex-wrap gap-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <TrendingDown className="w-5 h-5" style={{ color: '#d4af37' }} />
+                  Resumen ejecutivo
+                </h2>
+                <div className="flex gap-2">
+                  <button onClick={exportarExcel} 
+                    className="px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 shadow-sm hover:opacity-90"
+                    style={{ background: '#0a2540', color: '#faf8f3' }}>
+                    <FileSpreadsheet className="w-3.5 h-3.5" />Exportar Excel (todas las hojas)
+                  </button>
+                  <button onClick={exportarCSV} 
+                    className="px-3 py-1.5 text-xs border flex items-center gap-1.5 hover:opacity-80"
+                    style={{ borderColor: '#0a2540', color: '#0a2540' }}>
+                    <Download className="w-3.5 h-3.5" />Exportar CSV
+                  </button>
+                </div>
+              </div>
+              <div className="p-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <KPI label="Total SKUs" value={resultados.totales.totalSKUs} />
+                <KPI label="Activos" value={resultados.totales.activos} color="#065f46" bg="#d1fae5" />
+                <KPI label="EOL Vencidos" value={resultados.totales.eolVencidos} color="#7f1d1d" bg="#fee2e2" />
+                <KPI label="EOL Futuros" value={resultados.totales.eolFuturos} color="#92400e" bg="#fef3c7" />
+                <KPI label="Sin Maestro" value={resultados.totales.sinMaestro} color="#92400e" bg="#fef3c7" />
+                <KPI label="Unid. EOL en piso" value={resultados.totales.unidEOL} />
+              </div>
+
+              <div className="px-6 pb-6 grid grid-cols-1 md:grid-cols-4 gap-3 border-t pt-5" style={{ borderColor: '#e5e0d5' }}>
+                <KPIBig label="Valor Inv. EOL" value={fmtUSD(resultados.totales.valorEOL)} sub="Costo × Unidades" />
+                <KPIBig label="Descuento Consumi total" value={fmtUSD(resultados.totales.descEOL)} sub="Descuento × Unidades" color="#d4af37" />
+                <KPIBig label="Absorbe IOCA (20%)" value={fmtUSD(resultados.totales.ioaEOL)} sub="Exposición financiera IOCA" color="#1e40af" />
+                <KPIBig label="Absorbe Retail (80%)" value={fmtUSD(resultados.totales.retailEOL)} sub="Carga del cliente" color="#065f46" />
+              </div>
+            </div>
+
+            {/* PANEL DE ALERTAS OPERATIVAS */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <AlertTriangle className="w-5 h-5" style={{ color: '#92400e' }} />
+                  Alertas operativas
+                </h2>
+                <div className="text-xs text-stone-500 mt-1">
+                  Detección automática: conflictos de origen · merma operativa · quiebres bajo Inventario Seguridad · reposición sugerida
+                </div>
+              </div>
+
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <AlertaCard 
+                  titulo="Sin Origen en Inv." 
+                  valor={resultados.alertas.skusSinOrigen.length}
+                  sub="Asumidos como USA por default"
+                  color={resultados.alertas.skusSinOrigen.length > 0 ? '#92400e' : '#065f46'}
+                  bg={resultados.alertas.skusSinOrigen.length > 0 ? '#fef3c7' : '#d1fae5'}
+                />
+                <AlertaCard 
+                  titulo={`Merma > ${(resultados.alertas.umbralMermaPct * 100).toFixed(0)}%`}
+                  valor={resultados.alertas.skusConMerma.length}
+                  sub={`${resultados.alertas.totalMermaUnid} u · ${fmtUSD(resultados.alertas.totalMermaValor)}`}
+                  color={resultados.alertas.skusConMerma.length > 0 ? '#92400e' : '#065f46'}
+                  bg={resultados.alertas.skusConMerma.length > 0 ? '#fef3c7' : '#d1fae5'}
+                />
+                <AlertaCard 
+                  titulo="Bajo Inv. Seguridad" 
+                  valor={resultados.alertas.skusEnQuiebre.length}
+                  sub={`${resultados.alertas.quiebreActivos} Activos · ${resultados.alertas.quiebreEOL} EOL`}
+                  color={resultados.alertas.skusEnQuiebre.length > 0 ? '#7f1d1d' : '#065f46'}
+                  bg={resultados.alertas.skusEnQuiebre.length > 0 ? '#fee2e2' : '#d1fae5'}
+                />
+                <AlertaCard 
+                  titulo="Reposición Sugerida" 
+                  valor={resultados.alertas.totalReposicionUnid}
+                  sub={fmtUSD(resultados.alertas.totalReposicionValor)}
+                  color="#1e40af"
+                  bg="#dbeafe"
+                />
+              </div>
+
+              {resultados.alertas.skusSinOrigen.length > 0 && (
+                <div className="p-6 border-b" style={{ borderColor: '#e5e0d5' }}>
+                  <div className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: '#92400e' }}>
+                    <AlertCircle className="w-4 h-4" />
+                    SKUs sin Origen declarado en el Inventario
+                  </div>
+                  <div className="text-xs text-stone-600 mb-3">
+                    El Inventario del cliente no especifica si el surtido fue vía USA o CHINA para estos SKUs. La herramienta asumió <strong>USA por default</strong> y aplicó el Costo USA del Maestro. Validar con el KAM o solicitar al cliente que actualice esta información.
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+                      <thead style={{ background: '#92400e', color: 'white' }}>
+                        <tr>
+                          <Th>SKU</Th><Th>Modelo</Th><Th>Estado</Th>
+                          <Th align="right">Costo USA aplicado</Th><Th align="right">Costo CHINA (alterno)</Th>
+                          <Th align="right">Delta</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultados.alertas.skusSinOrigen.map((r, i) => (
+                          <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                            <Td bold>{r.sku}</Td>
+                            <Td className="text-stone-600">{r.modelo}</Td>
+                            <Td>{r.estado}</Td>
+                            <Td align="right" bold style={{ color: '#1e40af' }}>{fmtUSD(r.costoUSA)}</Td>
+                            <Td align="right" className="text-stone-600">{fmtUSD(r.costoCHINA)}</Td>
+                            <Td align="right" bold style={{ color: r.costoUSA > r.costoCHINA ? '#7f1d1d' : '#065f46' }}>
+                              {fmtUSD(r.costoUSA - r.costoCHINA)}
+                            </Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {resultados.alertas.skusConMerma.length > 0 && (
+                <div className="p-6 border-b" style={{ borderColor: '#e5e0d5' }}>
+                  <div className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: '#92400e' }}>
+                    <TrendingDown className="w-4 h-4" />
+                    SKUs con merma operativa &gt; {(resultados.alertas.umbralMermaPct * 100).toFixed(0)}%
+                  </div>
+                  <div className="text-xs text-stone-600 mb-3">
+                    Merma = Inv Proyectado − Inv Final. Causas posibles: ventas no captadas, transferencias no reportadas, mermas físicas, ajustes de inventario. Validar con el KAM y el cliente.
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+                      <thead style={{ background: '#92400e', color: 'white' }}>
+                        <tr>
+                          <Th>SKU</Th><Th>Modelo</Th>
+                          <Th align="center">Inv Inicial</Th><Th align="center">Compra</Th>
+                          <Th align="center">Ventas</Th><Th align="center">Proyectado</Th>
+                          <Th align="center">Inv Final</Th><Th align="center">Merma (u)</Th>
+                          <Th align="center">Merma %</Th><Th align="right">Costo Merma</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultados.alertas.skusConMerma.map((r, i) => (
+                          <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                            <Td bold>{r.sku}</Td>
+                            <Td className="text-stone-600">{r.modelo}</Td>
+                            <Td align="center">{r.invInicial}</Td>
+                            <Td align="center">{r.compra}</Td>
+                            <Td align="center">{r.ventas}</Td>
+                            <Td align="center">{r.invProyectado}</Td>
+                            <Td align="center">{r.invFinal}</Td>
+                            <Td align="center" bold style={{ background: '#fef3c7', color: '#92400e' }}>{r.merma}</Td>
+                            <Td align="center" bold style={{ color: '#92400e' }}>{(r.mermaPct * 100).toFixed(1)}%</Td>
+                            <Td align="right" bold>{fmtUSD(r.merma * r.costo)}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {resultados.alertas.skusEnQuiebre.length > 0 && (
+                <div className="p-6">
+                  <div className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: '#7f1d1d' }}>
+                    <AlertCircle className="w-4 h-4" />
+                    SKUs bajo Inventario Seguridad IOCA — Motor V1 · paralelo comparativo
+                  </div>
+                  <div className="text-xs text-stone-600 mb-2">
+                    La alerta se dispara contra el <strong>Inv. Seguridad IOCA</strong> calculado por el motor institucional. Se muestra en paralelo el valor reportado por el cliente y el delta.
+                  </div>
+
+                  {/* Nota compacta de la fórmula IOCA V1 */}
+                  <div className="mb-3 p-3 border-l-4 text-[11px]" style={{ borderColor: '#d4af37', background: '#faf8f3', color: '#444' }}>
+                    <div className="font-bold mb-1" style={{ color: '#0a2540' }}>Motor Inv. Seguridad IOCA V1 — fórmula aplicada:</div>
+                    <div className="font-mono text-[10px] mb-1 p-1.5" style={{ background: '#0a2540', color: '#d4af37' }}>
+                      {NOTA_INV_SEGURIDAD.formula}
+                    </div>
+                    <div>
+                      <strong>Condiciones:</strong> Si Ventas &gt; 0 → aplica fórmula IOCA (Fuente: IOCA). Si Ventas = 0 → se mantiene el valor del cliente (Fuente: Cliente). Lead Time según origen del SKU.
+                    </div>
+                    <div className="mt-1">
+                      <strong>Semanas del período aplicadas:</strong> {resultados.semanasPeriodoUsadas} · <strong>Safety Stock:</strong> {config.safetyStockSemanas} sem · <strong>Lead Time USA:</strong> {config.leadTimeUSA} sem · <strong>Lead Time China:</strong> {config.leadTimeCHINA} sem
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+                      <thead style={{ background: '#7f1d1d', color: 'white' }}>
+                        <tr>
+                          <Th>SKU</Th><Th>Modelo</Th>
+                          <Th align="center">Estado</Th><Th align="center">Origen</Th>
+                          <Th align="center">Inv. Seg. Cliente</Th>
+                          <Th align="center">Inv. Seg. IOCA</Th>
+                          <Th align="center">Δ IOCA-Cliente</Th>
+                          <Th align="center">Fuente</Th>
+                          <Th align="center">Inv. Final</Th>
+                          <Th align="center">Reposición Sug.</Th>
+                          <Th>Acción Sugerida</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultados.alertas.skusEnQuiebre.map((r, i) => {
+                          const esActivo = r.estado === 'ACTIVO';
+                          const deltaColor = r.deltaInvSeguridad > 0 ? '#7f1d1d' : (r.deltaInvSeguridad < 0 ? '#065f46' : '#666');
+                          return (
+                            <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                              <Td bold>{r.sku}</Td>
+                              <Td className="text-stone-600">{r.modelo}</Td>
+                              <Td align="center" bold>
+                                <span className="px-2 py-0.5 text-[10px]" style={{
+                                  background: esActivo ? '#d1fae5' : '#fee2e2',
+                                  color: esActivo ? '#065f46' : '#7f1d1d',
+                                }}>{r.estado}</span>
+                              </Td>
+                              <Td align="center" className="text-stone-600">{r.origen}</Td>
+                              <Td align="center">{r.invSeguridad}</Td>
+                              <Td align="center" bold style={{ background: '#faf8f3', color: '#0a2540' }}>{r.invSeguridadIOCA}</Td>
+                              <Td align="center" bold style={{ color: deltaColor }}>
+                                {r.deltaInvSeguridad > 0 ? '+' : ''}{r.deltaInvSeguridad}
+                              </Td>
+                              <Td align="center">
+                                <span className="px-2 py-0.5 text-[10px] font-bold" style={{
+                                  background: r.fuenteInvSeguridad === 'IOCA' ? '#d4af37' : '#e5e0d5',
+                                  color: r.fuenteInvSeguridad === 'IOCA' ? '#0a2540' : '#666',
+                                }}>{r.fuenteInvSeguridad}</span>
+                              </Td>
+                              <Td align="center" bold style={{ color: '#7f1d1d' }}>{r.invFinal}</Td>
+                              <Td align="center" bold style={{
+                                background: esActivo ? '#dbeafe' : '#f5f5f0',
+                                color: esActivo ? '#1e40af' : '#999'
+                              }}>
+                                {esActivo ? r.reposicionSugerida : '🔒'}
+                              </Td>
+                              <Td bold style={{
+                                color: esActivo ? '#1e40af' : '#92400e',
+                                fontSize: '10px'
+                              }}>{r.accionSugerida}</Td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* PANEL DE DISTRIBUCIÓN POR TIER (GBB) */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <Package className="w-5 h-5" style={{ color: '#d4af37' }} />
+                  Distribución por Tier (Good / Better / Best)
+                </h2>
+                <div className="text-xs text-stone-500 mt-1">
+                  Tres vistas paralelas: lo que el cliente <strong>tiene en piso</strong>, lo que <strong>está vendiendo</strong>, y lo que IOCA <strong>sugiere reponer</strong>. Permite ver si la reposición sigue al mercado o al inventario actual.
+                </div>
+              </div>
+
+              <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <DistribTierPanel
+                  titulo="Inventario Actual del Cliente"
+                  subtitulo={`${resultados.distribucionTier.inventario.totalU} unidades · ${fmtUSD(resultados.distribucionTier.inventario.totalV)} · ${resultados.distribucionTier.inventario.totalSKUs} SKUs`}
+                  data={resultados.distribucionTier.inventario.tiers}
+                />
+                <DistribTierPanel
+                  titulo="Ventas del Cliente"
+                  subtitulo={`${resultados.distribucionTier.ventas.totalU} unidades · ${fmtUSD(resultados.distribucionTier.ventas.totalV)} · ${resultados.distribucionTier.ventas.totalSKUs} SKUs con venta`}
+                  data={resultados.distribucionTier.ventas.tiers}
+                />
+                <DistribTierPanel
+                  titulo="Reposición Sugerida"
+                  subtitulo={`${resultados.distribucionTier.reposicion.totalU} unidades · ${fmtUSD(resultados.distribucionTier.reposicion.totalV)} · ${resultados.distribucionTier.reposicion.totalSKUs} SKUs`}
+                  data={resultados.distribucionTier.reposicion.tiers}
+                />
+              </div>
+            </div>
+
+            {/* PANEL DE DISTRIBUCIÓN POR CATEGORÍA */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <Package className="w-5 h-5" style={{ color: '#d4af37' }} />
+                  Distribución por Categoría
+                </h2>
+                <div className="text-xs text-stone-500 mt-1">
+                  Tres vistas paralelas por categoría del Maestro: lo que el cliente <strong>tiene en piso</strong>, lo que <strong>está vendiendo</strong>, y lo que IOCA <strong>sugiere reponer</strong>. Categorías detectadas: <strong>{resultados.distribucionCategoria.lista.join(' · ')}</strong>
+                </div>
+              </div>
+
+              <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <DistribCategoriaPanel
+                  titulo="Inventario Actual del Cliente"
+                  subtitulo={`${resultados.distribucionCategoria.inventario.totalU} unidades · ${fmtUSD(resultados.distribucionCategoria.inventario.totalV)} · ${resultados.distribucionCategoria.inventario.totalSKUs} SKUs`}
+                  data={resultados.distribucionCategoria.inventario}
+                  listaCategorias={resultados.distribucionCategoria.lista}
+                />
+                <DistribCategoriaPanel
+                  titulo="Ventas del Cliente"
+                  subtitulo={`${resultados.distribucionCategoria.ventas.totalU} unidades · ${fmtUSD(resultados.distribucionCategoria.ventas.totalV)} · ${resultados.distribucionCategoria.ventas.totalSKUs} SKUs con venta`}
+                  data={resultados.distribucionCategoria.ventas}
+                  listaCategorias={resultados.distribucionCategoria.lista}
+                />
+                <DistribCategoriaPanel
+                  titulo="Reposición Sugerida"
+                  subtitulo={`${resultados.distribucionCategoria.reposicion.totalU} unidades · ${fmtUSD(resultados.distribucionCategoria.reposicion.totalV)} · ${resultados.distribucionCategoria.reposicion.totalSKUs} SKUs`}
+                  data={resultados.distribucionCategoria.reposicion}
+                  listaCategorias={resultados.distribucionCategoria.lista}
+                />
+              </div>
+            </div>
+
+            {/* PANEL DE ANÁLISIS PARETO 80/20 */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <TrendingDown className="w-5 h-5" style={{ color: '#d4af37' }} />
+                  Análisis Pareto 80/20 (basado en ventas)
+                </h2>
+                <div className="text-xs text-stone-500 mt-1">
+                  Identifica los SKUs que concentran el 80% de las ventas (Clase A) vs el 20% restante (Clase B). Base para decisiones de reposición prioritaria.
+                </div>
+              </div>
+
+              {/* KPIs de Pareto */}
+              <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <AlertaCard
+                  titulo="Pareto A — Los pocos vitales"
+                  valor={`${resultados.analisisPareto.skusParetoA.length} SKUs`}
+                  sub={`${resultados.analisisPareto.pctSKUsA.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas`}
+                  color="#065f46"
+                  bg="#d1fae5"
+                />
+                <AlertaCard
+                  titulo="Pareto B — La cola larga"
+                  valor={`${resultados.analisisPareto.skusParetoB.length} SKUs`}
+                  sub={`${resultados.analisisPareto.pctSKUsB.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasB.toFixed(0)}% de las ventas`}
+                  color="#92400e"
+                  bg="#fef3c7"
+                />
+                <AlertaCard
+                  titulo="Tipo de distribución"
+                  valor={resultados.analisisPareto.interpretacion.titulo}
+                  sub={`${resultados.analisisPareto.totalSkusConVentas} SKUs con ventas · ${resultados.analisisPareto.totalVentas} unidades`}
+                  color={resultados.analisisPareto.interpretacion.color}
+                  bg={resultados.analisisPareto.interpretacion.bg}
+                />
+              </div>
+
+              {/* Interpretación de 2 líneas */}
+              <div className="p-6 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <div className="text-[10px] uppercase tracking-wider text-stone-500 mb-2">Interpretación y sugerencia de reposición</div>
+                <div className="p-4 border-l-4" style={{
+                  background: resultados.analisisPareto.interpretacion.bg,
+                  borderColor: resultados.analisisPareto.interpretacion.color,
+                }}>
+                  <div className="text-sm font-bold mb-1" style={{ color: resultados.analisisPareto.interpretacion.color }}>
+                    {resultados.analisisPareto.interpretacion.linea1}
+                  </div>
+                  <div className="text-sm" style={{ color: resultados.analisisPareto.interpretacion.color }}>
+                    {resultados.analisisPareto.interpretacion.linea2}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabla de SKUs ordenados */}
+              {resultados.analisisPareto.totalSkusConVentas > 0 && (
+                <div className="p-6">
+                  <div className="text-[10px] uppercase tracking-wider text-stone-500 mb-2">SKUs ordenados por velocidad de ventas</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+                      <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                        <tr>
+                          <Th align="center">Clase</Th>
+                          <Th>SKU</Th><Th>Modelo</Th><Th>Marca</Th>
+                          <Th align="center">Estado</Th><Th align="center">Tier</Th>
+                          <Th align="right">Ventas (u)</Th>
+                          <Th align="right">% Ventas</Th>
+                          <Th align="right">% Acum.</Th>
+                          <Th align="right">Inv. Final</Th>
+                          <Th align="center">Acción Reposición</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...resultados.analisisPareto.skusParetoA, ...resultados.analisisPareto.skusParetoB].map((r, i) => {
+                          const esA = r.paretoClase === 'A';
+                          const tierColor = TIER_COLORS[r.tier?.toUpperCase()] || TIER_COLORS.GOOD;
+                          let accionRepo = '';
+                          let accionColor = '#999';
+                          if (esA && r.estado === 'ACTIVO') {
+                            accionRepo = 'Reposición prioritaria';
+                            accionColor = '#065f46';
+                          } else if (esA && r.estado === 'EOL') {
+                            accionRepo = 'A — pero EOL: rebalancear';
+                            accionColor = '#7f1d1d';
+                          } else if (!esA && r.estado === 'ACTIVO') {
+                            accionRepo = 'Stock mínimo';
+                            accionColor = '#92400e';
+                          } else {
+                            accionRepo = 'Liquidar / no reponer';
+                            accionColor = '#999';
+                          }
+                          return (
+                            <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                              <Td align="center">
+                                <span className="px-2 py-0.5 text-[10px] font-bold" style={{
+                                  background: esA ? '#065f46' : '#94a3b8',
+                                  color: 'white',
+                                }}>{r.paretoClase}</span>
+                              </Td>
+                              <Td bold>{r.sku}</Td>
+                              <Td className="text-stone-600">{r.modelo}</Td>
+                              <Td>{r.marca}</Td>
+                              <Td align="center">
+                                <span className="px-2 py-0.5 text-[10px]" style={{
+                                  background: r.estado === 'ACTIVO' ? '#d1fae5' : '#fee2e2',
+                                  color: r.estado === 'ACTIVO' ? '#065f46' : '#7f1d1d',
+                                }}>{r.estado}</span>
+                              </Td>
+                              <Td align="center">
+                                <span className="px-2 py-0.5 text-[10px] font-bold" style={{
+                                  background: tierColor.bg, color: tierColor.textColor,
+                                }}>{r.tier || 'GOOD'}</span>
+                              </Td>
+                              <Td align="right" bold>{r.ventas}</Td>
+                              <Td align="right">{(r.pctVentas * 100).toFixed(2)}%</Td>
+                              <Td align="right" bold style={{
+                                background: esA ? '#d1fae5' : '#fef3c7',
+                                color: esA ? '#065f46' : '#92400e',
+                              }}>{(r.pctAcum * 100).toFixed(1)}%</Td>
+                              <Td align="right" bold>{r.invFinal}</Td>
+                              <Td align="center" bold style={{ color: accionColor, fontSize: '10px' }}>{accionRepo}</Td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* TABLA EOL CON FASE */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <div>
+                  <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                    <Package className="w-5 h-5" style={{ color: '#7f1d1d' }} />
+                    SKUs EOL ya descontinuados — con fase activa
+                  </h2>
+                  <div className="text-xs text-stone-500 mt-1">
+                    Ordenados por días descontinuados descendente. El <strong>Origen</strong> aplicado por SKU viene del Inventario.
+                  </div>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                    <tr>
+                      <Th>SKU</Th><Th>Modelo</Th><Th>Marca</Th><Th>Fecha EOL</Th>
+                      <Th align="center">Días Desc.</Th><Th align="center">Fase</Th><Th align="center">Origen</Th>
+                      <Th align="right">Costo</Th><Th align="center">Desc. %</Th>
+                      <Th align="right">Desc. Consumi $</Th><Th align="right">Aporte IOCA $</Th>
+                      <Th align="right">Aporte Retail $</Th><Th align="center">Inv. Final</Th>
+                      <Th align="center">Índice Rot.</Th>
+                      <Th align="right">Desc. Total $</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultados.eolVencidos.length === 0 && (
+                      <tr><td colSpan={15} className="p-6 text-center text-stone-500">No hay SKUs EOL ya descontinuados en este inventario.</td></tr>
+                    )}
+                    {resultados.eolVencidos.map((r, i) => {
+                      const colorRot = colorIdxRotacion(r.indiceRotacion);
+                      return (
+                      <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
+                        <Td bold>{r.sku}</Td>
+                        <Td className="text-stone-600">{r.modelo}</Td>
+                        <Td>{r.marca}</Td>
+                        <Td align="center">{r.fechaStr}</Td>
+                        <Td align="center">
+                          <span className="px-2 py-0.5 font-bold" style={{
+                            background: r.diasDesc >= 240 ? '#fee2e2' : r.diasDesc >= 150 ? '#fef3c7' : '#dbeafe',
+                            color: r.diasDesc >= 240 ? '#7f1d1d' : r.diasDesc >= 150 ? '#92400e' : '#1e40af',
+                          }}>{r.diasDesc}</span>
+                        </Td>
+                        <Td align="center">
+                          {r.fase !== null ? (
+                            <span className="px-2 py-0.5 font-bold" style={{
+                              background: r.fase === 3 ? '#fee2e2' : r.fase === 2 ? '#fef3c7' : r.fase === 1 ? '#dbeafe' : '#faf8f3',
+                              color: r.fase === 3 ? '#7f1d1d' : r.fase === 2 ? '#92400e' : r.fase === 1 ? '#1e40af' : '#0a2540',
+                            }}>F{r.fase}</span>
+                          ) : <span className="text-stone-400">—</span>}
+                        </Td>
+                        <Td align="center" bold>
+                          <span className="px-2 py-0.5 text-[10px]" style={{
+                            background: r.origen === 'CHINA' ? '#fef3c7' : '#dbeafe',
+                            color: r.origen === 'CHINA' ? '#92400e' : '#1e40af',
+                          }}>{r.origen}</span>
+                        </Td>
+                        <Td align="right">{fmtUSD(r.costo)}</Td>
+                        <Td align="center" bold>{r.descPct > 0 ? fmtPct(r.descPct) : <span className="text-stone-400 font-normal">—</span>}</Td>
+                        <Td align="right" bold style={{ background: '#faf8f3', color: '#0a2540' }}>
+                          {r.descUSD > 0 ? fmtUSD(r.descUSD) : <span className="text-stone-400 font-normal">—</span>}
+                        </Td>
+                        <Td align="right" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                          {r.ioaUSD > 0 ? fmtUSD(r.ioaUSD) : '—'}
+                        </Td>
+                        <Td align="right" style={{ background: '#d1fae5', color: '#065f46' }}>
+                          {r.retailUSD > 0 ? fmtUSD(r.retailUSD) : '—'}
+                        </Td>
+                        <Td align="center" bold>{r.invFinal}</Td>
+                        <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
+                          {fmtIdx(r.indiceRotacion)}
+                        </Td>
+                        <Td align="right" bold>{fmtUSD(r.descTotal)}</Td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                  {resultados.eolVencidos.length > 0 && (
+                    <tfoot>
+                      <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
+                        <td colSpan={12} className="px-3 py-2 text-right font-bold">TOTALES</td>
+                        <td className="px-3 py-2 text-center font-bold">{resultados.totales.unidEOL}</td>
+                        <td className="px-3 py-2 text-center font-bold">—</td>
+                        <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.descEOL)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+
+            {/* TABLA EOL FUTUROS */}
+            {resultados.eolFuturos.length > 0 && (
+              <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+                <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                  <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                    <Calendar className="w-5 h-5" style={{ color: '#92400e' }} />
+                    SKUs EOL aún por descontinuarse — gestión preventiva
+                  </h2>
+                  <div className="text-xs text-stone-500 mt-1">
+                    Aún no aplica fase de descuento. Se gestionan según el Bucket EOL pre-vencido.
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                      <tr>
+                        <Th>SKU</Th><Th>Modelo</Th><Th>Marca</Th><Th>Fecha EOL</Th>
+                        <Th align="center">Días hasta EOL</Th><Th align="center">Bucket Pre-EOL</Th>
+                        <Th align="center">Origen</Th>
+                        <Th align="right">Costo</Th><Th align="center">Inv. Final</Th>
+                        <Th align="center">Índice Rot.</Th>
+                        <Th align="right">Valor Inv.</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resultados.eolFuturos.map((r, i) => {
+                        const colorRot = colorIdxRotacion(r.indiceRotacion);
+                        return (
+                        <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
+                          <Td bold>{r.sku}</Td>
+                          <Td className="text-stone-600">{r.modelo}</Td>
+                          <Td>{r.marca}</Td>
+                          <Td align="center">{r.fechaStr}</Td>
+                          <Td align="center">
+                            <span className="px-2 py-0.5 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>
+                              {Math.abs(r.diasDesc)}
+                            </span>
+                          </Td>
+                          <Td align="center" bold>
+                            <span className="px-2 py-0.5" style={{
+                              background: r.bucket === 'EOL Crítico' ? '#fee2e2' : r.bucket === 'EOL Próximo' ? '#fef3c7' : '#dbeafe',
+                              color: r.bucket === 'EOL Crítico' ? '#7f1d1d' : r.bucket === 'EOL Próximo' ? '#92400e' : '#1e40af',
+                            }}>{r.bucket}</span>
+                          </Td>
+                          <Td align="center" bold>
+                            <span className="px-2 py-0.5 text-[10px]" style={{
+                              background: r.origen === 'CHINA' ? '#fef3c7' : '#dbeafe',
+                              color: r.origen === 'CHINA' ? '#92400e' : '#1e40af',
+                            }}>{r.origen}</span>
+                          </Td>
+                          <Td align="right">{fmtUSD(r.costo)}</Td>
+                          <Td align="center" bold>{r.invFinal}</Td>
+                          <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
+                            {fmtIdx(r.indiceRotacion)}
+                          </Td>
+                          <Td align="right" bold>{fmtUSD(r.valorInv)}</Td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* SIN MAESTRO */}
+            {resultados.sinMaestro.length > 0 && (
+              <div className="bg-amber-50 border-l-4 border-amber-700 p-5">
+                <div className="flex items-start gap-3 mb-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-amber-900">
+                      ⚠ {resultados.sinMaestro.length} SKUs en inventario NO existen en el Maestro
+                    </h3>
+                    <div className="text-xs text-amber-800 mt-1">
+                      Estos códigos están en el inventario del cliente pero no aparecen en el Maestro IOCA cargado. Acción: actualizar el Maestro con su estado correcto, costos y fecha si aplica.
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto bg-white border" style={{ borderColor: '#fbbf24' }}>
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-amber-100">
+                      <tr>
+                        <Th>SKU</Th><Th>Modelo (del inventario)</Th><Th>Tienda</Th><Th align="center">Inv. Final</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resultados.sinMaestro.map((r, i) => (
+                        <tr key={i} className="border-t" style={{ borderColor: '#fde68a' }}>
+                          <Td bold>{r.sku}</Td>
+                          <Td className="text-stone-600">{r.modelo}</Td>
+                          <Td>{r.tienda}</Td>
+                          <Td align="center" bold>{r.invFinal}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ACTIVOS (colapsable) */}
+            {resultados.activos.length > 0 && (
+              <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+                <button onClick={() => setShowActivos(!showActivos)}
+                  className="w-full px-6 py-4 border-b flex items-center justify-between hover:bg-stone-50"
+                  style={{ borderColor: '#e5e0d5' }}>
+                  <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                    <CheckCircle2 className="w-5 h-5" style={{ color: '#065f46' }} />
+                    SKUs Activos ({resultados.activos.length})
+                  </h2>
+                  <span className="text-xs text-stone-500">{showActivos ? 'Ocultar ▲' : 'Mostrar ▼'}</span>
+                </button>
+                {showActivos && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px]">
+                      <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                        <tr>
+                          <Th>SKU</Th><Th>Modelo</Th><Th>Marca</Th><Th align="center">Origen</Th>
+                          <Th align="right">Costo</Th><Th align="center">Inv. Final</Th>
+                          <Th align="center">Índice Rot.</Th>
+                          <Th align="right">Valor Inv.</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {resultados.activos.map((r, i) => {
+                          const colorRot = colorIdxRotacion(r.indiceRotacion);
+                          return (
+                          <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
+                            <Td bold>{r.sku}</Td>
+                            <Td className="text-stone-600">{r.modelo}</Td>
+                            <Td>{r.marca}</Td>
+                            <Td align="center" bold>
+                              <span className="px-2 py-0.5 text-[10px]" style={{
+                                background: r.origen === 'CHINA' ? '#fef3c7' : '#dbeafe',
+                                color: r.origen === 'CHINA' ? '#92400e' : '#1e40af',
+                              }}>{r.origen}</span>
+                            </Td>
+                            <Td align="right">{fmtUSD(r.costo)}</Td>
+                            <Td align="center" bold>{r.invFinal}</Td>
+                            <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
+                              {fmtIdx(r.indiceRotacion)}
+                            </Td>
+                            <Td align="right" bold style={{ background: '#d1fae5', color: '#065f46' }}>{fmtUSD(r.valorInv)}</Td>
+                          </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* LÓGICA APLICADA (referencia institucional) */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <button onClick={() => setShowLogica(!showLogica)}
+                className="w-full px-6 py-4 border-b flex items-center justify-between hover:bg-stone-50"
+                style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <FileText className="w-5 h-5" style={{ color: '#d4af37' }} />
+                  Base de conocimiento institucional aplicada
+                </h2>
+                <span className="text-xs text-stone-500">{showLogica ? 'Ocultar ▲' : 'Ver Bucket EOL y Tabla de Fases ▼'}</span>
+              </button>
+              {showLogica && (
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="text-sm font-bold mb-2" style={{ color: '#0a2540' }}>Bucket EOL (pre-vencimiento)</h3>
+                    <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+                      <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                        <tr><Th>Bucket</Th><Th align="center">Días desde-hasta</Th><Th align="center">Umbral</Th></tr>
+                      </thead>
+                      <tbody>
+                        {BUCKET_EOL.map((b, i) => (
+                          <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                            <Td bold>{b.bucket}</Td>
+                            <Td align="center">{b.diasDesde}–{b.diasHasta}</Td>
+                            <Td align="center" className="text-stone-600">{b.umbral}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold mb-2" style={{ color: '#0a2540' }}>Tabla de Descuento por Fase</h3>
+                    <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+                      <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                        <tr><Th>Marca</Th><Th align="center">Fase</Th><Th align="center">Días</Th><Th align="center">Origen</Th><Th align="center">Desc.</Th><Th align="center">IOCA</Th><Th align="center">Retail</Th></tr>
+                      </thead>
+                      <tbody>
+                        {TABLA_FASES.map((f, i) => (
+                          <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                            <Td>{f.marca}</Td>
+                            <Td align="center" bold>F{f.fase}</Td>
+                            <Td align="center">{'>'+f.diasMin}</Td>
+                            <Td align="center">{f.origen}</Td>
+                            <Td align="center" bold>{fmtPct(f.descConsumidor)}</Td>
+                            <Td align="center">{fmtPct(f.aporteIOCA)}</Td>
+                            <Td align="center">{fmtPct(f.aporteRetail)}</Td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ========================= TAB 4: INFORME EJECUTIVO ========================= */}
+        {activeTab === 'informe' && !resultados && (
+          <div className="bg-white border shadow-sm p-12 text-center" style={{ borderColor: '#e5e0d5' }}>
+            <FileText className="w-12 h-12 mx-auto mb-3" style={{ color: '#cbd5e1' }} />
+            <div className="text-sm font-bold mb-1" style={{ color: '#0a2540' }}>Informe Ejecutivo sin datos</div>
+            <div className="text-xs text-stone-500 mb-4">Primero carga el Maestro e Inventario, y presiona "Calcular".</div>
+            <button onClick={() => setActiveTab('carga')}
+              className="px-5 py-2 text-sm font-bold inline-flex items-center gap-2"
+              style={{ background: '#0a2540', color: '#faf8f3' }}>
+              <Upload className="w-4 h-4" /> Ir a Carga de Información
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'informe' && resultados && (() => {
+          const informe = generarInformeEjecutivo(resultados, config);
+          if (!informe) return null;
+          
+          const prioridadColor = (p) => {
+            if (p === 'CRÍTICA') return { bg: '#fee2e2', fg: '#7f1d1d', border: '#7f1d1d' };
+            if (p === 'ALTA') return { bg: '#fef3c7', fg: '#92400e', border: '#92400e' };
+            if (p === 'OPORTUNIDAD') return { bg: '#d1fae5', fg: '#065f46', border: '#065f46' };
+            return { bg: '#dbeafe', fg: '#1e40af', border: '#1e40af' };
+          };
+          
+          return (
+            <>
+              {/* CSS @media print */}
+              <style>{`
+                @media print {
+                  @page { size: letter; margin: 1.5cm 1.8cm; }
+                  body { background: white !important; }
+                  .no-print { display: none !important; }
+                  .informe-pdf {
+                    box-shadow: none !important;
+                    border: none !important;
+                    background: white !important;
+                    padding: 0 !important;
+                  }
+                  .page-break-before { page-break-before: always; }
+                  .no-page-break { page-break-inside: avoid; }
+                  table { page-break-inside: auto; }
+                  tr { page-break-inside: avoid; page-break-after: auto; }
+                  thead { display: table-header-group; }
+                  h1, h2, h3 { page-break-after: avoid; }
+                }
+              `}</style>
+              
+              {/* CONTROLES — no se imprimen */}
+              <div className="no-print bg-white border shadow-sm p-4 flex items-center justify-between flex-wrap gap-3" style={{ borderColor: '#e5e0d5' }}>
+                <div className="text-xs text-stone-600">
+                  <strong style={{ color: '#0a2540' }}>Informe Ejecutivo</strong> · Análisis consultivo del portafolio para presentar al comprador.
+                  Al imprimir, selecciona <strong>"Guardar como PDF"</strong> como destino.
+                </div>
+                <button onClick={() => window.print()}
+                  className="px-5 py-2 text-sm font-bold flex items-center gap-2 shadow-sm"
+                  style={{ background: '#d4af37', color: '#0a2540' }}>
+                  <Download className="w-4 h-4" /> Descargar PDF
+                </button>
+              </div>
+              
+              {/* CUERPO DEL INFORME (esto sí se imprime) */}
+              <div className="informe-pdf bg-white border shadow-sm" style={{ borderColor: '#e5e0d5', padding: '40px 50px' }}>
+                
+                {/* PORTADA */}
+                <div className="no-page-break" style={{ marginBottom: '40px', borderBottom: '4px solid #d4af37', paddingBottom: '20px' }}>
+                  <div className="text-[10px] uppercase tracking-widest" style={{ color: '#d4af37' }}>
+                    IOCA GROUP · SELL-THROUGH INTELLIGENCE <strong style={{ background: '#d4af37', color: '#0a2540', padding: '2px 8px' }}>V1</strong> · ANÁLISIS CONSULTIVO
+                  </div>
+                  <h1 style={{ fontFamily: '"Times New Roman", serif', fontSize: '28px', color: '#0a2540', marginTop: '12px', marginBottom: '8px' }}>
+                    Informe Ejecutivo de Gestión de Portafolio
+                  </h1>
+                  <div style={{ fontFamily: '"Times New Roman", serif', fontSize: '16px', color: '#7f1d1d', fontStyle: 'italic' }}>
+                    {config.nombreCliente || '(sin nombre del cliente)'} — {config.pais}
+                  </div>
+                  <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', fontSize: '11px', color: '#444' }}>
+                    <div><strong style={{ color: '#0a2540' }}>Código cliente</strong><br />{config.codigoCliente || '—'}</div>
+                    <div><strong style={{ color: '#0a2540' }}>Fecha de corte</strong><br />{config.fechaCorte}</div>
+                    <div><strong style={{ color: '#0a2540' }}>Período</strong><br />{config.periodoAnalizado}{config.periodoDetalle ? ` · ${config.periodoDetalle}` : ''} ({resultados.semanasPeriodoUsadas} sem)</div>
+                    <div><strong style={{ color: '#0a2540' }}>SKUs analizados</strong><br />{resultados.totales.totalSKUs}</div>
+                  </div>
+                </div>
+                
+                {/* 1. RESUMEN EJECUTIVO */}
+                <div className="no-page-break" style={{ marginBottom: '32px' }}>
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    1. Resumen Ejecutivo
+                  </h2>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '16px' }}>
+                    <div style={{ background: '#faf8f3', border: '1px solid #e5e0d5', padding: '14px', borderLeft: '3px solid #0a2540' }}>
+                      <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#0a2540' }}>Qué está pasando</div>
+                      <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
+                        El portafolio analizado tiene <strong>{resultados.totales.totalSKUs} SKUs</strong> con un valor inmovilizado de <strong>{fmtUSD(informe.valorTotalInventario)}</strong>. 
+                        El <strong>{informe.pctValorEOL.toFixed(0)}%</strong> del valor está concentrado en SKUs ya descontinuados, 
+                        y <strong>{informe.sinMovimiento.length} SKUs</strong> no registraron ventas en el período.
+                      </div>
+                    </div>
+                    <div style={{ background: '#fee2e2', border: '1px solid #fee2e2', padding: '14px', borderLeft: '3px solid #7f1d1d' }}>
+                      <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#7f1d1d' }}>Qué es urgente</div>
+                      <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
+                        <strong>{informe.enQuiebreActivo.length} SKUs Activos en quiebre</strong> generan venta perdida diaria. 
+                        Reposición urgente estimada en <strong>{fmtUSD(resultados.alertas.totalReposicionValor)}</strong>. 
+                        {informe.obsolescencia.length > 0 && <> Adicionalmente, <strong>{informe.obsolescencia.length} SKUs EOL Vencidos</strong> con valor de <strong>{fmtUSD(informe.obsolescenciaValor)}</strong> requieren liquidación inmediata.</>}
+                      </div>
+                    </div>
+                    <div style={{ background: '#d1fae5', border: '1px solid #d1fae5', padding: '14px', borderLeft: '3px solid #065f46' }}>
+                      <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#065f46' }}>Qué oportunidad existe</div>
+                      <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
+                        {resultados.analisisPareto.skusParetoA.length > 0 ? (
+                          <>El portafolio tiene <strong>{resultados.analisisPareto.skusParetoA.length} SKUs Pareto A</strong> ({resultados.analisisPareto.pctSKUsA.toFixed(0)}% del activo) que concentran el 80% de las ventas. 
+                          Reforzar disponibilidad y exhibición de estos SKUs puede aumentar el sell-through general.</>
+                        ) : 'Se requieren más datos de ventas para identificar oportunidades de concentración.'}
+                        {informe.skuHeroe && <> El SKU héroe <strong>{informe.skuHeroe.sku}</strong> es la mejor vitrina para activar bundles y cross-sell.</>}
+                      </div>
+                    </div>
+                    <div style={{ background: '#dbeafe', border: '1px solid #dbeafe', padding: '14px', borderLeft: '3px solid #1e40af' }}>
+                      <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#1e40af' }}>Qué decisión debe tomar</div>
+                      <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
+                        Aprobar simultáneamente: <strong>(1)</strong> orden de compra urgente para SKUs Pareto A en quiebre; 
+                        <strong> (2)</strong> campaña de liquidación estructurada para EOL Vencidos; 
+                        <strong> (3)</strong> revisión de surtido para eliminar SKUs sin movimiento sostenido.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* 2. DIAGNÓSTICO DE ROTACIÓN */}
+                <div style={{ marginBottom: '32px' }} className="page-break-before">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    2. Diagnóstico de Rotación
+                  </h2>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                    <thead>
+                      <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>Categoría operativa</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>SKUs</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>Interpretación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Alta rotación (índice &lt; 1)</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', background: '#d1fae5', color: '#065f46', fontWeight: 'bold' }}>{informe.altaRotacion.length}</td>
+                        <td style={{ padding: '8px 10px' }}>SKUs vendiendo más rápido que el stock inicial. Asegurar reposición continua.</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Baja rotación (índice 3–10)</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fef3c7', color: '#92400e', fontWeight: 'bold' }}>{informe.bajaRotacion.length}</td>
+                        <td style={{ padding: '8px 10px' }}>SKUs con cobertura alta. Revisar exhibición, precio y bundles para acelerar.</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Rotación crítica (índice &gt; 10)</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fee2e2', color: '#7f1d1d', fontWeight: 'bold' }}>{informe.muyBajaRotacion.length}</td>
+                        <td style={{ padding: '8px 10px' }}>Inventario por décadas — candidatos a liquidación o eliminación del surtido.</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Sin movimiento (ventas = 0)</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fee2e2', color: '#7f1d1d', fontWeight: 'bold' }}>{informe.sinMovimiento.length}</td>
+                        <td style={{ padding: '8px 10px' }}>Capital atrapado: {fmtUSD(informe.sinMovValor)} ({informe.pctValorSinMov.toFixed(0)}% del valor total).</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Sub-stock (riesgo de quiebre)</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fef3c7', color: '#92400e', fontWeight: 'bold' }}>{informe.subinventario.length}</td>
+                        <td style={{ padding: '8px 10px' }}>SKUs Activos bajo Inv. Seguridad — reposición urgente para evitar venta perdida.</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Riesgo de obsolescencia</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fee2e2', color: '#7f1d1d', fontWeight: 'bold' }}>{informe.obsolescencia.length}</td>
+                        <td style={{ padding: '8px 10px' }}>SKUs EOL Vencidos con inventario — {fmtUSD(informe.obsolescenciaValor)} en obsolescencia.</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Requieren activación comercial</td>
+                        <td style={{ padding: '8px 10px', textAlign: 'right', background: '#dbeafe', color: '#1e40af', fontWeight: 'bold' }}>{informe.requierenActivacion.length}</td>
+                        <td style={{ padding: '8px 10px' }}>SKUs BEST Activos con inventario y bajas ventas — exhibición o entrenamiento débil.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* NOTA — MOTOR INV. SEGURIDAD IOCA V1 */}
+                <div className="no-page-break" style={{ marginBottom: '32px', background: '#faf8f3', border: '1px solid #d4af37', borderLeft: '5px solid #d4af37', padding: '18px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0a2540', marginBottom: '10px', fontFamily: '"Times New Roman", serif' }}>
+                    Motor Inv. Seguridad IOCA V1 — Lógica aplicada al análisis
+                  </div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '11px', background: '#0a2540', color: '#d4af37', padding: '10px', marginBottom: '10px' }}>
+                    {NOTA_INV_SEGURIDAD.formula}
+                  </div>
+                  <div style={{ fontSize: '11px', lineHeight: '1.6', marginBottom: '10px' }}>
+                    <strong style={{ color: '#7f1d1d' }}>Condiciones que aplican:</strong>
+                    <ul style={{ margin: '6px 0 0 0', paddingLeft: '20px' }}>
+                      {NOTA_INV_SEGURIDAD.condiciones.map((c, i) => <li key={i} style={{ marginBottom: '3px' }}>{c}</li>)}
+                    </ul>
+                  </div>
+                  <div style={{ fontSize: '11px', lineHeight: '1.6', marginBottom: '8px' }}>
+                    <strong style={{ color: '#0a2540' }}>Parámetros aplicados en este análisis:</strong> Período <strong>{config.periodoAnalizado}</strong> = <strong>{resultados.semanasPeriodoUsadas} semanas</strong> · Safety Stock: <strong>{config.safetyStockSemanas} sem</strong> · Lead Time USA: <strong>{config.leadTimeUSA} sem</strong> · Lead Time China: <strong>{config.leadTimeCHINA} sem</strong>
+                  </div>
+                  <div style={{ fontSize: '10px', fontStyle: 'italic', color: '#666', borderTop: '1px solid #e5e0d5', paddingTop: '8px' }}>
+                    <strong>Propósito consultivo:</strong> {NOTA_INV_SEGURIDAD.propositoConsultivo}
+                  </div>
+                </div>
+                
+                {/* 3. HALLAZGOS CLAVE */}
+                <div style={{ marginBottom: '32px' }} className="page-break-before">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    3. Hallazgos Clave
+                  </h2>
+                  {informe.hallazgos.slice(0, 10).map((h, i) => {
+                    const c = prioridadColor(h.prioridad);
+                    return (
+                      <div key={i} className="no-page-break" style={{ marginBottom: '16px', border: '1px solid #e5e0d5', borderLeft: `4px solid ${c.border}`, padding: '14px', background: 'white' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0a2540', flex: 1 }}>
+                            Hallazgo #{i + 1}: {h.titulo}
+                          </div>
+                          <span style={{ background: c.bg, color: c.fg, padding: '3px 10px', fontSize: '10px', fontWeight: 'bold', letterSpacing: '0.05em' }}>
+                            {h.prioridad}
+                          </span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
+                          <div><strong style={{ color: '#7f1d1d' }}>QUÉ ENCONTRAMOS:</strong> {h.hallazgo}</div>
+                          <div><strong style={{ color: '#7f1d1d' }}>POR QUÉ IMPORTA:</strong> {h.importa}</div>
+                          <div><strong style={{ color: '#7f1d1d' }}>IMPACTO:</strong> {h.impacto}</div>
+                          <div><strong style={{ color: '#065f46' }}>ACCIÓN RECOMENDADA:</strong> {h.accion}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {informe.hallazgos.length === 0 && (
+                    <div style={{ padding: '20px', background: '#faf8f3', fontSize: '11px', color: '#666', textAlign: 'center' }}>
+                      No se detectaron hallazgos críticos en el análisis. El portafolio está dentro de parámetros saludables.
+                    </div>
+                  )}
+                </div>
+                
+                {/* 4. CAUSAS RAÍZ */}
+                <div style={{ marginBottom: '32px' }} className="no-page-break">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    4. Causas Raíz Identificadas
+                  </h2>
+                  <div style={{ fontSize: '11px', marginBottom: '12px', color: '#666', fontStyle: 'italic' }}>
+                    Más allá del síntoma, estos son los orígenes estructurales de los problemas detectados:
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                    <thead>
+                      <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', width: '35%' }}>Causa raíz</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>Evidencia en los datos</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {informe.causasRaiz.map((c, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#7f1d1d' }}>{c.causa}</td>
+                          <td style={{ padding: '8px 10px' }}>{c.evidencia}</td>
+                        </tr>
+                      ))}
+                      {informe.causasRaiz.length === 0 && (
+                        <tr><td colSpan={2} style={{ padding: '20px', textAlign: 'center', color: '#666' }}>Sin causas raíz críticas detectadas.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* 5. MATRIZ McKINSEY */}
+                <div style={{ marginBottom: '32px' }} className="page-break-before">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    5. Matriz de Priorización
+                  </h2>
+                  <div style={{ fontSize: '11px', marginBottom: '12px', color: '#666' }}>
+                    Acciones organizadas por <strong>Impacto vs Esfuerzo de Ejecución</strong>:
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                    <div style={{ background: '#d1fae5', padding: '14px', borderLeft: '4px solid #065f46' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#065f46', marginBottom: '8px' }}>QUICK WINS · Alto impacto / Bajo esfuerzo</div>
+                      <ul style={{ fontSize: '11px', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+                        <li>Reposición express de SKUs Pareto A en quiebre</li>
+                        <li>Ajuste de exhibición del SKU héroe en góndola</li>
+                        <li>Activación de campaña de liquidación EOL F3 con descuento 5–7%</li>
+                        <li>Bundles producto héroe + accesorio complementario</li>
+                      </ul>
+                    </div>
+                    <div style={{ background: '#dbeafe', padding: '14px', borderLeft: '4px solid #1e40af' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#1e40af', marginBottom: '8px' }}>ESTRATÉGICAS · Alto impacto / Alto esfuerzo</div>
+                      <ul style={{ fontSize: '11px', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+                        <li>Rediseño del surtido por categoría con HQ</li>
+                        <li>Implementación de Good/Better/Best en góndola</li>
+                        <li>Entrenamiento de fuerza de venta en SKUs premium</li>
+                        <li>Recalibración de Safety Stock por velocidad real</li>
+                      </ul>
+                    </div>
+                    <div style={{ background: '#fef3c7', padding: '14px', borderLeft: '4px solid #92400e' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>RELLENO · Bajo impacto / Bajo esfuerzo</div>
+                      <ul style={{ fontSize: '11px', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+                        <li>Limpieza de SKUs sin Maestro en sistema</li>
+                        <li>Validación de Origen de SKUs sin clasificación</li>
+                        <li>Auditoría puntual de merma operativa</li>
+                      </ul>
+                    </div>
+                    <div style={{ background: '#fee2e2', padding: '14px', borderLeft: '4px solid #7f1d1d' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#7f1d1d', marginBottom: '8px' }}>EVITAR · Bajo impacto / Alto esfuerzo</div>
+                      <ul style={{ fontSize: '11px', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+                        <li>Reposición de SKUs B sin velocidad sostenida</li>
+                        <li>Mantener SKUs EOL Vencidos en góndola premium</li>
+                        <li>Compra adicional de SKUs sobre-inventariados</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* 6. RECOMENDACIONES CONCRETAS */}
+                <div style={{ marginBottom: '32px' }} className="page-break-before">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    6. Recomendaciones Concretas para el Comprador
+                  </h2>
+                  
+                  <div style={{ marginBottom: '20px' }} className="no-page-break">
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#065f46', marginBottom: '8px' }}>SKUs prioritarios a REPONER (orden de compra urgente)</div>
+                    {informe.topReponer.length > 0 ? (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                        <thead>
+                          <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>SKU</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Modelo</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'center' }}>Tier</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Ventas</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Reposición</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Valor USD</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {informe.topReponer.map((r, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
+                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{r.sku}</td>
+                              <td style={{ padding: '6px 8px', color: '#666' }}>{r.modelo}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.tier}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.ventas}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#065f46' }}>{r.reposicionSugerida}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtUSD(r.valorReposicion)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : <div style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>Sin SKUs en quiebre crítico identificados.</div>}
+                  </div>
+                  
+                  <div style={{ marginBottom: '20px' }} className="no-page-break">
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#7f1d1d', marginBottom: '8px' }}>SKUs prioritarios a LIQUIDAR (EOL Vencidos con mayor valor)</div>
+                    {informe.topLiquidar.length > 0 ? (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                        <thead>
+                          <tr style={{ background: '#7f1d1d', color: '#fff' }}>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>SKU</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Modelo</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'center' }}>Fase</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Días EOL</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Inv. Final</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Valor inmovilizado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {informe.topLiquidar.map((r, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
+                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{r.sku}</td>
+                              <td style={{ padding: '6px 8px', color: '#666' }}>{r.modelo}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.fase !== null ? `F${r.fase}` : '—'}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.diasDesc}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.invFinal}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#7f1d1d' }}>{fmtUSD(r.valorInv)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : <div style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>Sin SKUs EOL Vencidos con inventario.</div>}
+                  </div>
+                  
+                  <div style={{ marginBottom: '20px' }} className="no-page-break">
+                    <div style={{ fontWeight: 'bold', fontSize: '12px', color: '#92400e', marginBottom: '8px' }}>SKUs candidatos a ELIMINAR del surtido (sin movimiento sostenido)</div>
+                    {informe.topEliminar.length > 0 ? (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+                        <thead>
+                          <tr style={{ background: '#92400e', color: '#fff' }}>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>SKU</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Modelo</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'center' }}>Tier</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Inv. Final</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {informe.topEliminar.map((r, i) => (
+                            <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
+                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{r.sku}</td>
+                              <td style={{ padding: '6px 8px', color: '#666' }}>{r.modelo}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.tier}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.invFinal}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>{fmtUSD(r.valorInv)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : <div style={{ fontSize: '11px', color: '#666', fontStyle: 'italic' }}>Sin candidatos críticos a eliminación.</div>}
+                  </div>
+                </div>
+                
+                {/* 7. CATEGORY DESIGN */}
+                <div style={{ marginBottom: '32px' }} className="page-break-before no-page-break">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    7. Oportunidades de Category Design
+                  </h2>
+                  <div style={{ fontSize: '11px', marginBottom: '12px', color: '#666', fontStyle: 'italic' }}>
+                    Cómo transformar productos sueltos en ecosistemas de solución que aumenten el ticket promedio y la conexión con el consumidor.
+                  </div>
+                  
+                  {informe.skuHeroe && (
+                    <div style={{ background: '#faf8f3', border: '1px solid #d4af37', padding: '14px', marginBottom: '12px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540', marginBottom: '8px' }}>
+                        PRODUCTO HÉROE: {informe.skuHeroe.sku} — {informe.skuHeroe.modelo}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
+                        <div><strong style={{ color: '#d4af37' }}>Tier / Categoría:</strong> {informe.skuHeroe.tier} · {informe.skuHeroe.categoria}</div>
+                        <div><strong style={{ color: '#d4af37' }}>Venta:</strong> {informe.skuHeroe.ventas} unidades · {(informe.skuHeroe.pctVentas * 100).toFixed(1)}% del total</div>
+                        <div><strong style={{ color: '#d4af37' }}>Bundle recomendado:</strong> Combo con accesorio complementario (cable, funda o cargador) para subir ticket promedio.</div>
+                        <div><strong style={{ color: '#d4af37' }}>Cross-sell natural:</strong> Productos de la misma categoría en tier inmediato superior (upgrade) o complementarios.</div>
+                        <div><strong style={{ color: '#d4af37' }}>Mensaje comercial:</strong> Capitalizar el SKU héroe como "lo más vendido" para reforzar prueba social.</div>
+                        <div><strong style={{ color: '#d4af37' }}>Segmento objetivo:</strong> Definir buyer persona principal y construir narrativa diferenciada en góndola.</div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div style={{ background: '#dbeafe', border: '1px solid #1e40af', padding: '14px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e40af', marginBottom: '8px' }}>
+                      OPORTUNIDAD GOOD / BETTER / BEST
+                    </div>
+                    <div style={{ fontSize: '11px', lineHeight: '1.6' }}>
+                      Estructurar la góndola en tres niveles claros — GOOD (entrada), BETTER (mainstream) y BEST (premium) — facilita la decisión del consumidor y permite migrar ventas hacia tiers de mayor margen. 
+                      Distribución actual en ventas: <strong>GOOD {(resultados.distribucionTier.ventas.tiers.GOOD.pctUnidades * 100).toFixed(0)}%</strong>, 
+                      <strong> BETTER {(resultados.distribucionTier.ventas.tiers.BETTER.pctUnidades * 100).toFixed(0)}%</strong>, 
+                      <strong> BEST {(resultados.distribucionTier.ventas.tiers.BEST.pctUnidades * 100).toFixed(0)}%</strong>. 
+                      Recomendación: si BEST está bajo el 25%, invertir en exhibición y entrenamiento de vendedores para migrar venta hacia premium.
+                    </div>
+                  </div>
+                </div>
+                
+                {/* 8. NARRATIVA */}
+                <div style={{ marginBottom: '32px' }} className="page-break-before">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    8. Narrativa para Presentar al Comprador
+                  </h2>
+                  
+                  <div style={{ background: '#faf8f3', border: '1px solid #e5e0d5', padding: '20px', fontFamily: '"Times New Roman", serif', fontSize: '13px', lineHeight: '1.7' }}>
+                    <p style={{ marginBottom: '14px' }}>
+                      <strong style={{ color: '#d4af37' }}>"Esto es lo que vemos."</strong> Su portafolio de {resultados.totales.totalSKUs} SKUs representa {fmtUSD(informe.valorTotalInventario)} en inventario. 
+                      El {informe.pctValorEOL.toFixed(0)}% de ese valor está atrapado en SKUs descontinuados, y otro {informe.pctValorSinMov.toFixed(0)}% en SKUs sin movimiento. 
+                      Simultáneamente, hay {informe.enQuiebreActivo.length} SKUs activos en sub-stock perdiendo venta cada día.
+                    </p>
+                    <p style={{ marginBottom: '14px' }}>
+                      <strong style={{ color: '#d4af37' }}>"Esto es lo que significa."</strong> Hay un desbalance estructural: capital atrapado en productos que ya no venden y simultáneamente venta perdida en los productos que sí venden. 
+                      Esto deteriora la liquidez y reduce el potencial de venta del próximo trimestre.
+                    </p>
+                    <p style={{ marginBottom: '14px' }}>
+                      <strong style={{ color: '#d4af37' }}>"Esto es lo que está costando."</strong> El capital inmovilizado en obsolescencia ({fmtUSD(informe.obsolescenciaValor)}) más la venta perdida diaria por quiebres representa una pérdida de oportunidad significativa.
+                      Cada semana adicional sin actuar acelera la depreciación del EOL y prolonga el ciclo de quiebre.
+                    </p>
+                    <p style={{ marginBottom: '14px' }}>
+                      <strong style={{ color: '#d4af37' }}>"Esto es lo que recomendamos."</strong> Una acción de tres frentes simultáneos: 
+                      <strong> (1) reposición urgente</strong> de los SKUs Pareto A en quiebre; 
+                      <strong> (2) campaña de liquidación estructurada</strong> con descuentos escalonados por fase para los EOL Vencidos; y
+                      <strong> (3) racionalización del surtido</strong> eliminando los SKUs sin movimiento sostenido para liberar espacio y capital.
+                    </p>
+                    <p>
+                      <strong style={{ color: '#d4af37' }}>"Esto es lo que puede ganar."</strong> Liberar el capital atrapado, recuperar la venta hoy bloqueada por quiebres, 
+                      y rediseñar la góndola con foco en los SKUs ganadores le permitirá mejorar rotación, margen y ticket promedio en el próximo ciclo comercial.
+                      IOCA acompaña con el 20% de aporte en la liquidación y reposición priorizada por SKU.
+                    </p>
+                  </div>
+                </div>
+                
+                {/* 9. PLAN 30/60/90 */}
+                <div style={{ marginBottom: '32px' }} className="page-break-before">
+                  <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
+                    9. Plan de Acción 30 / 60 / 90 Días
+                  </h2>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                    <div style={{ background: '#fee2e2', border: '1px solid #7f1d1d', padding: '14px' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#7f1d1d', marginBottom: '10px', borderBottom: '2px solid #7f1d1d', paddingBottom: '6px' }}>
+                        Primeros 30 días — URGENTE
+                      </div>
+                      <ul style={{ fontSize: '11px', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+                        <li>Aprobar orden de compra urgente para SKUs Pareto A en quiebre</li>
+                        <li>Lanzar liquidación de EOL Vencidos con fase F3 (descuento máximo)</li>
+                        <li>Reubicar SKU héroe en mejor posición de góndola</li>
+                        <li>Validar Origen de SKUs sin clasificación en el inventario</li>
+                        <li>Auditoría rápida de merma operativa</li>
+                      </ul>
+                    </div>
+                    <div style={{ background: '#fef3c7', border: '1px solid #92400e', padding: '14px' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#92400e', marginBottom: '10px', borderBottom: '2px solid #92400e', paddingBottom: '6px' }}>
+                        60 días — OPTIMIZACIÓN
+                      </div>
+                      <ul style={{ fontSize: '11px', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+                        <li>Implementar bundles del SKU héroe con complementarios</li>
+                        <li>Entrenar fuerza de venta en SKUs BEST sin movimiento</li>
+                        <li>Recalibrar Safety Stock por velocidad real de venta</li>
+                        <li>Eliminar del surtido los SKUs sin movimiento sostenido</li>
+                        <li>Activar cross-sell entre categorías complementarias</li>
+                      </ul>
+                    </div>
+                    <div style={{ background: '#d1fae5', border: '1px solid #065f46', padding: '14px' }}>
+                      <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#065f46', marginBottom: '10px', borderBottom: '2px solid #065f46', paddingBottom: '6px' }}>
+                        90 días — REDISEÑO
+                      </div>
+                      <ul style={{ fontSize: '11px', lineHeight: '1.6', margin: 0, paddingLeft: '18px' }}>
+                        <li>Rediseñar góndola con estructura Good/Better/Best clara</li>
+                        <li>Refrescar categorías con alta concentración de EOL</li>
+                        <li>Definir SKU héroe por categoría y plan de category captain</li>
+                        <li>Negociar con HQ líneas activas de reemplazo en categorías EOL</li>
+                        <li>QBR con cliente para medir avance y ajustar plan siguiente</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* MENSAJE FINAL */}
+                <div className="no-page-break" style={{ background: '#0a2540', color: '#faf8f3', padding: '24px', marginTop: '30px' }}>
+                  <div style={{ fontFamily: '"Times New Roman", serif', fontSize: '14px', fontStyle: 'italic', lineHeight: '1.7' }}>
+                    <strong style={{ color: '#d4af37' }}>Mensaje final al comprador:</strong> El portafolio tiene los ingredientes para crecer — un SKU héroe claro, categorías con potencial 
+                    y SKUs Pareto A que sostienen el 80% de las ventas. Lo que falta es <em>disciplina de gestión</em>: liberar el capital atrapado, 
+                    proteger los productos ganadores, y rediseñar la góndola para que la venta fluya hacia los tiers de mayor margen. 
+                    Las acciones son ejecutables en 30 a 90 días y su impacto se reflejará en el próximo ciclo comercial.
+                  </div>
+                  <div style={{ marginTop: '16px', fontSize: '11px', color: '#d4af37', textAlign: 'right' }}>
+                    — Equipo IOCA Group · Análisis consultivo de portafolio
+                  </div>
+                </div>
+                
+                {/* PIE DEL INFORME */}
+                <div style={{ marginTop: '24px', borderTop: '2px solid #d4af37', paddingTop: '12px', textAlign: 'center', fontSize: '9px', color: '#999' }}>
+                  IOCA Sell-Through Intelligence <strong>V1</strong> · Motor Inv. Seguridad Institucional · Informe generado el {new Date().toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })} · 
+                  Cliente: {config.codigoCliente} — {config.nombreCliente} — {config.pais}
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* PIE */}
+        <div className="text-center text-[10px] text-stone-500 pt-4 pb-8" style={{ fontFamily: '"Times New Roman", serif' }}>
+          IOCA Sell-Through Intelligence <strong>V1</strong> · Motor Inv. Seguridad Institucional · Gestión consultiva de portafolio B2B
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// SUB-COMPONENTES
+// ============================================================
+
+const KPI = ({ label, value, color = '#0a2540', bg = '#faf8f3' }) => (
+  <div className="border p-3 text-center" style={{ borderColor: '#e5e0d5', background: bg }}>
+    <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
+    <div className="text-xl font-bold mt-1" style={{ color }}>{value}</div>
+  </div>
+);
+
+const AlertaCard = ({ titulo, valor, sub, color, bg }) => (
+  <div className="border p-3" style={{ borderColor: '#e5e0d5', background: bg }}>
+    <div className="text-[10px] uppercase tracking-wider" style={{ color }}>{titulo}</div>
+    <div className="text-2xl font-bold mt-1" style={{ color, fontFamily: '"Times New Roman", serif' }}>{valor}</div>
+    {sub && <div className="text-[10px] mt-1" style={{ color }}>{sub}</div>}
+  </div>
+);
+
+const TIER_COLORS = {
+  GOOD:   { bg: '#94a3b8', textColor: '#fff',     label: 'GOOD' },
+  BETTER: { bg: '#3b82f6', textColor: '#fff',     label: 'BETTER' },
+  BEST:   { bg: '#d4af37', textColor: '#0a2540', label: 'BEST' },
+};
+
+// Paleta institucional IOCA para categorías dinámicas
+const PALETA_CATEGORIA = [
+  { bg: '#0a2540', textColor: '#faf8f3' },  // Navy IOCA
+  { bg: '#d4af37', textColor: '#0a2540' },  // Dorado IOCA
+  { bg: '#7f1d1d', textColor: '#fff' },     // Burdeos
+  { bg: '#065f46', textColor: '#fff' },     // Verde oscuro
+  { bg: '#3b82f6', textColor: '#fff' },     // Azul
+  { bg: '#92400e', textColor: '#fff' },     // Ámbar oscuro
+  { bg: '#7c3aed', textColor: '#fff' },     // Púrpura
+  { bg: '#94a3b8', textColor: '#fff' },     // Gris (default)
+];
+
+const getColorCategoria = (categoria, listaCategorias) => {
+  if (categoria === 'SIN CATEGORIA') return { bg: '#cbd5e1', textColor: '#475569' };
+  const idx = listaCategorias.indexOf(categoria);
+  return idx >= 0 ? PALETA_CATEGORIA[idx % PALETA_CATEGORIA.length] : PALETA_CATEGORIA[PALETA_CATEGORIA.length - 1];
+};
+
+const fmtUSDInline = (v) => {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const DistribTierPanel = ({ titulo, subtitulo, data }) => {
+  const tiers = ['GOOD', 'BETTER', 'BEST'];
+  const hayDatos = tiers.some(t => data[t].unidades > 0);
+
+  return (
+    <div>
+      <div className="mb-3">
+        <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{titulo}</div>
+        <div className="text-xs text-stone-500 mt-0.5">{subtitulo}</div>
+      </div>
+
+      {hayDatos ? (
+        <>
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-stone-500">Distribución por unidades</div>
+          <div className="flex h-7 mb-3 border overflow-hidden" style={{ borderColor: '#e5e0d5' }}>
+            {tiers.map(t => data[t].pctUnidades > 0 ? (
+              <div key={t} style={{
+                width: `${data[t].pctUnidades * 100}%`,
+                background: TIER_COLORS[t].bg,
+                color: TIER_COLORS[t].textColor,
+              }} className="flex items-center justify-center text-[10px] font-bold">
+                {data[t].pctUnidades >= 0.07 ? `${(data[t].pctUnidades * 100).toFixed(0)}%` : ''}
+              </div>
+            ) : null)}
+          </div>
+
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-stone-500">Distribución por valor USD</div>
+          <div className="flex h-7 mb-4 border overflow-hidden" style={{ borderColor: '#e5e0d5' }}>
+            {tiers.map(t => data[t].pctValor > 0 ? (
+              <div key={t} style={{
+                width: `${data[t].pctValor * 100}%`,
+                background: TIER_COLORS[t].bg,
+                color: TIER_COLORS[t].textColor,
+              }} className="flex items-center justify-center text-[10px] font-bold">
+                {data[t].pctValor >= 0.07 ? `${(data[t].pctValor * 100).toFixed(0)}%` : ''}
+              </div>
+            ) : null)}
+          </div>
+
+          <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+            <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+              <tr>
+                <th className="px-2 py-1.5 text-left font-bold text-[10px] uppercase">Tier</th>
+                <th className="px-2 py-1.5 text-center font-bold text-[10px] uppercase">SKUs</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">Unidades</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">% Unid.</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">Valor USD</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">% Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tiers.map(t => (
+                <tr key={t} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                  <td className="px-2 py-1.5">
+                    <span className="px-2 py-0.5 text-[10px] font-bold" style={{
+                      background: TIER_COLORS[t].bg,
+                      color: TIER_COLORS[t].textColor,
+                    }}>{TIER_COLORS[t].label}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-center">{data[t].skus}</td>
+                  <td className="px-2 py-1.5 text-right font-bold">{data[t].unidades}</td>
+                  <td className="px-2 py-1.5 text-right">{(data[t].pctUnidades * 100).toFixed(2)}%</td>
+                  <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(data[t].valor)}</td>
+                  <td className="px-2 py-1.5 text-right">{(data[t].pctValor * 100).toFixed(2)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : (
+        <div className="text-center py-8 text-xs text-stone-400 border" style={{ borderColor: '#e5e0d5' }}>
+          Sin datos disponibles
+        </div>
+      )}
+    </div>
+  );
+};
+
+const KPIBig = ({ label, value, sub, color = '#0a2540' }) => (
+  <div className="border p-4" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+    <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
+    <div className="text-2xl font-bold mt-1" style={{ color, fontFamily: '"Times New Roman", serif' }}>{value}</div>
+    {sub && <div className="text-[10px] text-stone-500 mt-1">{sub}</div>}
+  </div>
+);
+
+const DistribCategoriaPanel = ({ titulo, subtitulo, data, listaCategorias }) => {
+  const hayDatos = listaCategorias.some(c => data.categorias[c] && data.categorias[c].unidades > 0);
+
+  return (
+    <div>
+      <div className="mb-3">
+        <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{titulo}</div>
+        <div className="text-xs text-stone-500 mt-0.5">{subtitulo}</div>
+      </div>
+
+      {hayDatos ? (
+        <>
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-stone-500">Distribución por unidades</div>
+          <div className="flex h-7 mb-3 border overflow-hidden" style={{ borderColor: '#e5e0d5' }}>
+            {listaCategorias.map(c => {
+              const d = data.categorias[c];
+              if (!d || d.pctUnidades <= 0) return null;
+              const color = getColorCategoria(c, listaCategorias);
+              return (
+                <div key={c} style={{
+                  width: `${d.pctUnidades * 100}%`,
+                  background: color.bg,
+                  color: color.textColor,
+                }} className="flex items-center justify-center text-[10px] font-bold">
+                  {d.pctUnidades >= 0.07 ? `${(d.pctUnidades * 100).toFixed(0)}%` : ''}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-stone-500">Distribución por valor USD</div>
+          <div className="flex h-7 mb-4 border overflow-hidden" style={{ borderColor: '#e5e0d5' }}>
+            {listaCategorias.map(c => {
+              const d = data.categorias[c];
+              if (!d || d.pctValor <= 0) return null;
+              const color = getColorCategoria(c, listaCategorias);
+              return (
+                <div key={c} style={{
+                  width: `${d.pctValor * 100}%`,
+                  background: color.bg,
+                  color: color.textColor,
+                }} className="flex items-center justify-center text-[10px] font-bold">
+                  {d.pctValor >= 0.07 ? `${(d.pctValor * 100).toFixed(0)}%` : ''}
+                </div>
+              );
+            })}
+          </div>
+
+          <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
+            <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+              <tr>
+                <th className="px-2 py-1.5 text-left font-bold text-[10px] uppercase">Categoría</th>
+                <th className="px-2 py-1.5 text-center font-bold text-[10px] uppercase">SKUs</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">Unidades</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">% Unid.</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">Valor USD</th>
+                <th className="px-2 py-1.5 text-right font-bold text-[10px] uppercase">% Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {listaCategorias.map(c => {
+                const d = data.categorias[c];
+                if (!d) return null;
+                const color = getColorCategoria(c, listaCategorias);
+                return (
+                  <tr key={c} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                    <td className="px-2 py-1.5">
+                      <span className="px-2 py-0.5 text-[10px] font-bold" style={{
+                        background: color.bg, color: color.textColor,
+                      }}>{c}</span>
+                    </td>
+                    <td className="px-2 py-1.5 text-center">{d.skus}</td>
+                    <td className="px-2 py-1.5 text-right font-bold">{d.unidades}</td>
+                    <td className="px-2 py-1.5 text-right">{(d.pctUnidades * 100).toFixed(2)}%</td>
+                    <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(d.valor)}</td>
+                    <td className="px-2 py-1.5 text-right">{(d.pctValor * 100).toFixed(2)}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      ) : (
+        <div className="text-center py-8 text-xs text-stone-400 border" style={{ borderColor: '#e5e0d5' }}>
+          Sin datos disponibles
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Th = ({ children, align = 'left' }) => (
+  <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider" style={{ textAlign: align }}>{children}</th>
+);
+
+const Td = ({ children, align = 'left', bold = false, className = '', style = {} }) => (
+  <td className={`px-3 py-2 ${className}`} style={{ textAlign: align, fontWeight: bold ? 'bold' : 'normal', ...style }}>{children}</td>
+);

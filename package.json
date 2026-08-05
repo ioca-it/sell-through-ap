@@ -1,0 +1,22 @@
+{
+  "name": "sell-through-ap",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "IOCA Sell-Through Intelligence V1 — Motor de análisis de portafolio con cálculo institucional de Inv. Seguridad IOCA, Fases EOL, distribución por Tier y Categoría, análisis Pareto e Informe Ejecutivo consultivo.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^0.383.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.10"
+  }
+}

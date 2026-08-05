@@ -1,0 +1,82 @@
+{
+  "_descripcion": "Datos institucionales IOCA · Base de conocimiento embebida del Sell-Through Intelligence V1. En el futuro estos datos podrán cargarse desde Dataverse.",
+  "_version": "1.0.0",
+  "_versionApp": "V1",
+
+  "umbralMermaPct": 0.10,
+
+  "semanasPorPeriodo": {
+    "Semanal": 1,
+    "Quincenal": 2,
+    "Mensual": 4.33,
+    "Bimestral": 8.67,
+    "Trimestral": 13,
+    "Semestral": 26,
+    "Anual": 52
+  },
+
+  "notaInvSeguridadIOCA": {
+    "titulo": "Motor Inv. Seguridad IOCA V1",
+    "formula": "Inv. Seguridad IOCA = (Ventas ÷ Semanas del período) × (Safety Stock semanas + Lead Time del origen)",
+    "condiciones": [
+      "Si Ventas > 0 en el período → se aplica la fórmula IOCA (Fuente: IOCA)",
+      "Si Ventas = 0 en el período → se mantiene el valor reportado por el cliente (Fuente: Cliente)",
+      "Lead Time se toma según el origen del SKU: USA o China",
+      "El Origen del SKU se lee del Inventario del cliente; si está vacío se asume USA por default",
+      "Reposición Sugerida y alertas de quiebre se calculan contra el Inv. Seguridad IOCA (no el del cliente)"
+    ],
+    "tablaSemanas": "Semanal=1 · Quincenal=2 · Mensual=4.33 · Bimestral=8.67 · Trimestral=13 · Semestral=26 · Anual=52",
+    "propositoConsultivo": "Comparar el piso mínimo declarado por el cliente contra el calculado por IOCA convierte cada revisión de inventario en una conversación consultiva: el KAM puede evidenciar cobertura no reconocida o sobreinventario estructural, y posicionar a IOCA como custodio del sell-through."
+  },
+
+  "paisesIOCA": [
+    "Guatemala",
+    "El Salvador",
+    "Honduras",
+    "Costa Rica",
+    "Panamá",
+    "República Dominicana",
+    "Chile",
+    "Ecuador",
+    "Guyana",
+    "Barbados",
+    "St. Lucia",
+    "Jamaica",
+    "Trinidad y Tobago",
+    "Bahamas",
+    "Otro"
+  ],
+
+  "periodosAnalisis": [
+    "Semanal",
+    "Quincenal",
+    "Mensual",
+    "Bimestral",
+    "Trimestral",
+    "Semestral",
+    "Anual",
+    "Personalizado"
+  ],
+
+  "bucketEOL": [
+    { "bucket": "EOL Vencido",     "diasDesde": 0,  "diasHasta": 0,   "umbral": "Fecha ya pasó",   "estrategia": "Liquidación inmediata",                  "descuentoBase": "Fase 0-3", "prioridad": "URGENTE" },
+    { "bucket": "EOL Crítico",     "diasDesde": 1,  "diasHasta": 27,  "umbral": "Menos de 4 sem",  "estrategia": "Rebaja agresiva + transferencia C→A",    "descuentoBase": "30%",      "prioridad": "ALTA" },
+    { "bucket": "EOL Próximo",     "diasDesde": 28, "diasHasta": 83,  "umbral": "4 a 12 sem",      "estrategia": "Rebaja moderada + bundle",               "descuentoBase": "15%",      "prioridad": "MEDIA" },
+    { "bucket": "EOL Planificado", "diasDesde": 84, "diasHasta": 360, "umbral": "Más de 12 sem",   "estrategia": "Plan ordenado de venta",                 "descuentoBase": "0%",       "prioridad": "BAJA" }
+  ],
+
+  "tablaFases": [
+    { "marca": "SKULLCANDY", "fase": 0, "diasMin": 90,  "origen": "USA",   "descConsumidor": 0.000, "aporteIOCA": 0.00, "aporteRetail": 0.00 },
+    { "marca": "SKULLCANDY", "fase": 1, "diasMin": 120, "origen": "USA",   "descConsumidor": 0.033, "aporteIOCA": 0.20, "aporteRetail": 0.80 },
+    { "marca": "SKULLCANDY", "fase": 2, "diasMin": 150, "origen": "USA",   "descConsumidor": 0.049, "aporteIOCA": 0.20, "aporteRetail": 0.80 },
+    { "marca": "SKULLCANDY", "fase": 3, "diasMin": 240, "origen": "USA",   "descConsumidor": 0.065, "aporteIOCA": 0.20, "aporteRetail": 0.80 },
+    { "marca": "SKULLCANDY", "fase": 0, "diasMin": 90,  "origen": "CHINA", "descConsumidor": 0.000, "aporteIOCA": 0.00, "aporteRetail": 0.00 },
+    { "marca": "SKULLCANDY", "fase": 1, "diasMin": 120, "origen": "CHINA", "descConsumidor": 0.035, "aporteIOCA": 0.20, "aporteRetail": 0.80 },
+    { "marca": "SKULLCANDY", "fase": 2, "diasMin": 150, "origen": "CHINA", "descConsumidor": 0.053, "aporteIOCA": 0.20, "aporteRetail": 0.80 },
+    { "marca": "SKULLCANDY", "fase": 3, "diasMin": 240, "origen": "CHINA", "descConsumidor": 0.070, "aporteIOCA": 0.20, "aporteRetail": 0.80 }
+  ],
+
+  "maestroSample": "MARCA\tSKU\tModelos\tCATEGORIAS\tFecha Descontinuacion\tESTADO\tUSA\tCHINA\nSKULLCANDY\tS2JPW-M003\tJIB+ WIRELESS BLACK/BLACK\tTRUE WIRELESS\t30/03/2026\tEOL\t$14.50\t$14.10\nSKULLCANDY\tS5CSW-M448\tCASSETTE WIRELESS ON-EAR BLACK\tHEADPHONE\t30/03/2026\tEOL\t$24.00\t$22.50\nSKULLCANDY\tS1JTW-P948\tJIB TRUE 2 WIRELESS IN-EAR LIGHT GREY/BLUE\tTRUE WIRELESS\t31/12/2025\tEOL\t$29.90\t$25.99\nSKULLCANDY\tS1JTW-P740\tJIB TRUE 2 WIRELESS IN-EAR TRUE BLACK\tTRUE WIRELESS\t31/12/2025\tEOL\t$29.90\t$25.99\nSKULLCANDY\tS6EVW-N740\tCRUSHER EVO WIRELESS OVER-EAR BLACK\tHEADPHONE\t30/09/2025\tEOL\t$59.00\t$54.50\nSKULLCANDY\tS6EVW-S951\tCRUSHER EVO WIRELESS OVER-EAR BONE ORANGE\tHEADPHONE\t30/09/2025\tEOL\t$59.00\t$54.50\nSKULLCANDY\tS6EVW-N744\tCRUSHER EVO WIRELESS OVER-EAR CHILL GREY\tHEADPHONE\t30/09/2025\tEOL\t$59.00\t$54.50\nSKULLCANDY\tS6HHW-N740\tHESH ANC WIRELESS BLACK\tHEADPHONE\t30/09/2025\tEOL\t$82.00\t$76.00\nSKULLCANDY\tS2TAW-T989\t(EOL F2 - dummy)\tTRUE WIRELESS\t31/12/2025\tEOL\t$19.79\t$18.50\nSKULLCANDY\tS6EVW-T993\tCRUSHER 540 ACTIVE CONCRETE\tHEADPHONE\t-\tACTIVO\t$72.00\t$68.00\nSKULLCANDY\tS6CAW-R740\tCRUSHER ANC 2 OVER-EAR BLACK\tHEADPHONE\t-\tACTIVO\t$120.00\t$112.00\nSKULLCANDY\tS6CAW-S951\tCRUSHER ANC 2 OVER-EAR BONE\tHEADPHONE\t-\tACTIVO\t$120.00\t$112.00\nSKULLCANDY\tS2DCW-R951\tDIME 3 TRUE WIRELESS BONE ORANGE\tTRUE WIRELESS\t-\tACTIVO\t$22.00\t$20.50\nSKULLCANDY\tS2DCW-R740\tDIME 3 TRUE WIRELESS TRUE BLACK\tTRUE WIRELESS\t-\tACTIVO\t$22.00\t$20.50",
+
+  "inventarioSample": "Tienda\tCódigo\tEAN13\tSKU\tMARCA\tTIER\tEOL\tNombre\tOrigen\tINVENTARIO SEGURIDAD \tINV INICIAL\tCOMPRA\tVENTAS\tINV PROYECTADO\tINV FINAL\nPrincipal\tNT215002\t8.10145E+11\tS6EVW-T993\tSKULLCANDY\tBEST\tNO\tSkullcandy - Crucher 540 Active Concrete S6EVW-T993\tUSA\t0\t0\t4\t0\t4\t0\nPrincipal\tNT212074\t8.10046E+11\tS6CAW-R740\tSKULLCANDY\tBEST\tNO\tSkullCandy - Crusher ANC 2 Over-the-Ear Noise Canceling BLACK\tUSA\t1\t1\t6\t2\t5\t0\nPrincipal\tNT214219\t8.10145E+11\tS6CAW-S951\tSKULLCANDY\tBEST\tNO\tSkullCandy - Crusher ANC 2 Over-the-Ear Noise Canceling BONE\tUSA\t6\t6\t0\t0\t6\t6\nPrincipal\tNT215004\t8.10145E+11\tS6CAW-S987\tSKULLCANDY\tBEST\tNO\tSkullcandy - Crusher ANC 2 Wireless Primer S6CAW-S987\tUSA\t0\t0\t6\t0\t6\t0\nPrincipal\tNT212073\t8.10016E+11\tS6EVW-N740\tSKULLCANDY\tBEST\tSI\tSkullCandy - Crusher Evo Wireless Over-Ear - Black\tUSA\t3\t3\t0\t2\t1\t1\nPrincipal\tNT213542\t8.10145E+11\tS6EVW-S951\tSKULLCANDY\tBEST\tSI\tSkullCandy - Crusher Evo Wireless Over-Ear - Bone Orange Glow\tUSA\t3\t3\t0\t0\t3\t3\nPrincipal\tNT212077\t8.10016E+11\tS6EVW-N744\tSKULLCANDY\tBEST\tSI\tSkullCandy - Crusher Evo Wireless Over-Ear - Chill Grey\tUSA\t15\t15\t0\t0\t15\t15\nPrincipal\tNT212387\t8.10046E+11\tS2DCW-R951\tSKULLCANDY\tGOOD\tNO\tSkullCandy - Dime 3 True Wireless Bone Orange Glow\tUSA\t2\t2\t24\t6\t20\t0\nPrincipal\tNT212389\t8.10046E+11\tS2DCW-R740\tSKULLCANDY\tGOOD\tNO\tSkullCandy - Dime 3 True Wireless True Black\tUSA\t2\t2\t36\t14\t24\t0\nPrincipal\tNT213541\t8.10145E+11\tS2DTW-S740\tSKULLCANDY\tBETTER\tNO\tSkullCandy - Dime Evo True Wireless In-Ear True Black\tUSA\t6\t6\t16\t8\t14\t0\nPrincipal\tNT213543\t8.10046E+11\tS6KAY-R740\tSKULLCANDY\tGOOD\tSI\tSkullCandy - Grom Kids Wired Headphone Surf Blue\tUSA\t4\t4\t0\t3\t1\t1\nPrincipal\tNT209513\t8.78615E+11\tS5CSW-M448\tSKULLCANDY\tGOOD\tSI\tSkullCandy - Headphone Cassette On-Ear Black Wireless\tUSA\t3\t3\t0\t3\t0\t0\nPrincipal\tNT213544\t8.10145E+11\tS6HHW-N740\tSKULLCANDY\tBEST\tSI\tSkullCandy - Hesh ANC Wireless Over-Ear Black\tUSA\t5\t5\t0\t3\t2\t2\nPrincipal\tNT209499\t8.10046E+11\tS2JPW-M003\tSKULLCANDY\tGOOD\tSI\tSkullCandy - JIB+ Wireless In-Ear Black\tUSA\t8\t8\t0\t2\t6\t6\nPrincipal\tNT212085\t8.10046E+11\tS1JTW-P740\tSKULLCANDY\tGOOD\tSI\tSkullCandy - JIB True 2 Wireless In-Ear True Black\tUSA\t6\t6\t0\t2\t4\t4\nPrincipal\tNT212086\t8.10046E+11\tS1JTW-P948\tSKULLCANDY\tGOOD\tSI\tSkullCandy - JIB True 2 Wireless In-Ear Light Grey/Blue\tUSA\t4\t4\t0\t1\t3\t3"
+}
