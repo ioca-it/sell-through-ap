@@ -6,7 +6,7 @@ Foundation 1.0, Refactorización Fase 9 completada para Executive Report MVP. Po
 
 ## Último prompt aprobado
 
-Prompt 028 — MVP Final. Presentación ejecutiva, Configuration Center UX, exportaciones y metadata deploy-ready.
+Prompt 029 — Corrección final de impresión PDF. El informe ejecutivo se imprime aislado del shell.
 
 ## Última auditoría aprobada
 
@@ -74,4 +74,4 @@ Definir persistencia remota y migración controlada de parámetros adicionales; 
 
 ## Estado del build
 
-Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: Prompt 028, 2026-08-06.
+Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: Prompt 029, 2026-08-06.

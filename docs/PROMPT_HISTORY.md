@@ -164,5 +164,11 @@ Cada prompt revisable deberá generar evidencia en la carpeta logs.
 - Objetivo: completar la versión de presentación ejecutiva en una sola implementación.
 - Resultado: mejoras UX responsive, loading/empty/error states, Dashboard ejecutivo, Configuration Center UX, exportaciones Excel/PDF y metadata/favicón deploy-ready.
 - Validación: 161/161 pruebas, build correcto y `git diff --check` correcto.
+
+## Prompt 029 — Corrección final de impresión PDF
+
+- Objetivo: imprimir únicamente el Informe Ejecutivo.
+- Resultado: reglas `@media print` aíslan `.informe-pdf` y ocultan shell, navegación y controles.
+- Validación: 161/161 pruebas, build correcto y `git diff --check` correcto.
 - Validación: 154/154 pruebas preservadas, build y `git diff --check` aprobados.
 - Evidencia: logs/Prompt024-ExecutiveReportService.log.

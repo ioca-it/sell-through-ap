@@ -1,5 +1,16 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-06 — Prompt 029
+
+### Corregido
+
+- La impresión PDF oculta cabecera, navegación, controles y shell de aplicación.
+- El contenido `.informe-pdf` conserva visibilidad, paginación, tablas y legibilidad.
+
+### Sin cambios funcionales
+
+- No se modificaron datos, cálculos, DTOs, navegación normal, servicios ni dependencias.
+
 ## 2026-08-06 — Prompt 028
 
 ### Agregado

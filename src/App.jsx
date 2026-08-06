@@ -2214,6 +2214,10 @@ export default function App() {
                 @media print {
                   @page { size: letter; margin: 1.5cm 1.8cm; }
                   body { background: white !important; }
+                  /* Aislar el documento: solo el informe consultivo participa en la impresión. */
+                  body * { visibility: hidden !important; }
+                  .informe-pdf, .informe-pdf * { visibility: visible !important; }
+                  .informe-pdf { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; }
                   .no-print { display: none !important; }
                   .informe-pdf {
                     box-shadow: none !important;
