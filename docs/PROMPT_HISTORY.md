@@ -172,3 +172,12 @@ Cada prompt revisable deberá generar evidencia en la carpeta logs.
 - Validación: 161/161 pruebas, build correcto y `git diff --check` correcto.
 - Validación: 154/154 pruebas preservadas, build y `git diff --check` aprobados.
 - Evidencia: logs/Prompt024-ExecutiveReportService.log.
+
+## Prompt 031 — Reglas funcionales Astrid–Jesús
+
+- Objetivo: implementar los acuerdos confirmados de reposición, seguridad, tránsito, temporalidad, F4, Distribution, Pareto, KPIs, valorización y formato.
+- Implementación: reglas en Domain/Application/Portfolio/Executive Report y presentación desde DTOs en `App.jsx`; Repository, Provider y Configuration Center sin cambios.
+- Decisiones: Compra descuenta la necesidad vigente; EOL fuerza nivel EOL; seguridad usa proyectado; Pareto A/B/C usa cortes 80%/95% sobre unidades; F4 aplica con más de 365 días.
+- Pruebas: 18 casos nuevos y 179/179 totales aprobados.
+- Validación: tests, build Vite y `git diff --check` obligatorios antes del commit.
+- Evidencia: `logs/Prompt031-AstridJesusFunctionalRules.log`.

@@ -24,6 +24,7 @@ import {
   seleccionarFaseEOL,
   calcularDescuentoYAportes,
   obtenerAccionQuiebreEOL,
+  clasificarTemporalmente,
 } from '../eol/eolEngine.js';
 
 // Construye el contrato vigente con o sin coincidencia en el Maestro.
@@ -70,20 +71,28 @@ export const assembleRecord = ({
   const indiceRotacion = calcularIndiceRotacion({ invInicial, ventas });
 
   if (!masterRecord) {
-    const { alertaQuiebre: sinMaestroAlertaQuiebre } = calcularQuiebreYReposicion({
+    const {
+      necesidadReposicion,
+      alertaQuiebre: sinMaestroAlertaQuiebre,
+    } = calcularQuiebreYReposicion({
       estado: 'SIN MAESTRO',
       invSeguridadIOCA: invSeguridad,
       invFinal,
+      invProyectado,
+      compra,
+      existeEnMaestro: false,
     });
 
     return {
       sku, tienda, codigo, ean13, modelo: nombreInv || '(sin info)',
       marca: 'SIN MAESTRO', estado: 'SIN MAESTRO', tier,
       categoria: 'SIN CATEGORIA',
-      fechaStr: '—', diasDesc: null, bucket: null, fase: null,
+      fechaStr: '—', diasDesc: null, diasRestantes: null,
+      clasificacionTemporal: 'SIN MAESTRO', bucket: null, fase: null,
       origen: origenInv || '—', sinOrigenInv: !origenInv,
       costo: 0, costoUSA: 0, costoCHINA: 0,
       descPct: 0, descUSD: 0, ioaUSD: 0, retailUSD: 0,
+      inventarioMinimoReconocido: 0, liquidacionSoloRetail: false,
       invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
       invSeguridadIOCA: invSeguridad, deltaInvSeguridad: 0, fuenteInvSeguridad: 'Cliente',
       semanasPeriodo: obtenerSemanasPeriodo(
@@ -94,7 +103,7 @@ export const assembleRecord = ({
       leadTimeAplicado: 0,
       merma, mermaPct, alertaMerma,
       indiceRotacion,
-      reposicionSugerida: 0,
+      necesidadReposicion, reposicionSugerida: 0,
       alertaQuiebre: sinMaestroAlertaQuiebre,
       accionSugerida: sinMaestroAlertaQuiebre ? 'Agregar al Maestro y decidir' : '',
       valorInv: 0,
@@ -113,6 +122,14 @@ export const assembleRecord = ({
   let bucket = null;
   let fase = null;
   let faseConfig = null;
+  const nivel = masterRecord.estado === 'EOL'
+    ? 'EOL'
+    : (['GOOD', 'BETTER', 'BEST'].includes(tier) ? tier : 'GOOD');
+  const { diasRestantes, clasificacionTemporal } = clasificarTemporalmente({
+    estado: masterRecord.estado,
+    fechaDescontinuacion: masterRecord.fecha,
+    fechaProcesamiento: fechaBase,
+  });
 
   if (masterRecord.estado === 'EOL' && masterRecord.fecha) {
     diasDesc = calcularDiasEOL({ fechaBase, fechaEOL: masterRecord.fecha });
@@ -142,6 +159,8 @@ export const assembleRecord = ({
     descTotal,
     ioaTotal,
     retailTotal,
+    inventarioMinimoReconocido,
+    liquidacionSoloRetail,
   } = calcularDescuentoYAportes({ costo, faseConfig, invFinal });
 
   const semanasPeriodo = obtenerSemanasPeriodo(
@@ -163,10 +182,17 @@ export const assembleRecord = ({
     origen,
     invSeguridadCliente: invSeguridad,
   });
-  const { reposicionSugerida, alertaQuiebre } = calcularQuiebreYReposicion({
+  const {
+    necesidadReposicion,
+    reposicionSugerida,
+    alertaQuiebre,
+  } = calcularQuiebreYReposicion({
     estado: masterRecord.estado,
     invSeguridadIOCA,
     invFinal,
+    invProyectado,
+    compra,
+    existeEnMaestro: true,
   });
 
   let accionSugerida = '';
@@ -174,6 +200,7 @@ export const assembleRecord = ({
     if (masterRecord.estado === 'ACTIVO') {
       accionSugerida = obtenerAccionQuiebreActivo({
         alertaQuiebre,
+        reposicionSugerida,
         invSeguridadIOCA,
         invFinal,
       });
@@ -187,10 +214,12 @@ export const assembleRecord = ({
     modelo: masterRecord.modelo || nombreInv,
     marca: masterRecord.marca,
     estado: masterRecord.estado,
-    tier,
-    categoria: masterRecord.categoria || 'SIN CATEGORIA',
+    tier: nivel,
+    categoria: masterRecord.categoria || '—',
     fechaStr: masterRecord.fechaStr || '—',
     diasDesc,
+    diasRestantes,
+    clasificacionTemporal,
     bucket: bucket ? bucket.bucket : null,
     fase,
     origen,
@@ -201,12 +230,13 @@ export const assembleRecord = ({
     descPct, descUSD,
     ioaPct, ioaUSD,
     retailPct, retailUSD,
+    inventarioMinimoReconocido, liquidacionSoloRetail,
     invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
     invSeguridadIOCA, deltaInvSeguridad, fuenteInvSeguridad,
     semanasPeriodo, leadTimeAplicado,
     merma, mermaPct, alertaMerma,
     indiceRotacion,
-    reposicionSugerida, alertaQuiebre, accionSugerida,
+    necesidadReposicion, reposicionSugerida, alertaQuiebre, accionSugerida,
     valorInv: costo * invFinal,
     valorVentas: costo * ventas,
     valorReposicion: costo * reposicionSugerida,

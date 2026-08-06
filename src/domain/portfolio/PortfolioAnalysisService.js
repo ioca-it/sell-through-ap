@@ -54,6 +54,16 @@ const consolidateRecords = (records) => {
   const activos = ownedRecords.filter((record) => record.estado === 'ACTIVO')
     .sort((a, b) => b.valorInv - a.valorInv);
   const sinMaestro = ownedRecords.filter((record) => record.estado === 'SIN MAESTRO');
+  const skusActivos = ownedRecords.filter((record) =>
+    record.clasificacionTemporal === 'ACTIVO'
+  );
+  const skusVencidos = ownedRecords.filter((record) =>
+    record.clasificacionTemporal === 'VENCIDO'
+  );
+  const skusPorVencer = ownedRecords.filter((record) =>
+    record.clasificacionTemporal === 'POR VENCER'
+  );
+  const skusMaestro = ownedRecords.filter((record) => record.estado !== 'SIN MAESTRO');
 
   return freezeOwnedStructure({
     recs: ownedRecords,
@@ -61,6 +71,10 @@ const consolidateRecords = (records) => {
     eolFuturos,
     activos,
     sinMaestro,
+    skusActivos,
+    skusVencidos,
+    skusPorVencer,
+    skusMaestro,
   });
 };
 
@@ -82,6 +96,10 @@ const analyzePortfolio = ({
     eolFuturos,
     activos,
     sinMaestro,
+    skusActivos,
+    skusVencidos,
+    skusPorVencer,
+    skusMaestro,
   } = cloneStructure(consolidation);
 
   // Distribution y Pareto llegan desde Application Service. Se copian antes de
@@ -91,7 +109,9 @@ const analyzePortfolio = ({
   const ownedAnalisisPareto = cloneStructure(analisisPareto);
 
   const totalUnidEOL = eolVencidos.reduce((sum, record) => sum + record.invFinal, 0);
-  const totalValorEOL = eolVencidos.reduce((sum, record) => sum + record.valorInv, 0);
+  const totalValorEOL = recs.filter((record) =>
+    record.estado === 'EOL' && !(record.diasDesc !== null && record.diasDesc < 0)
+  ).reduce((sum, record) => sum + record.valorInv, 0);
   const totalDescEOL = eolVencidos.reduce((sum, record) => sum + record.descTotal, 0);
   const totalIOAEOL = eolVencidos.reduce((sum, record) => sum + record.ioaTotal, 0);
   const totalRetailEOL = eolVencidos.reduce((sum, record) => sum + record.retailTotal, 0);
@@ -106,8 +126,32 @@ const analyzePortfolio = ({
     0,
   );
   const skusEnQuiebre = recs.filter((record) => record.alertaQuiebre);
-  const quiebreActivos = skusEnQuiebre.filter((record) => record.estado === 'ACTIVO').length;
-  const quiebreEOL = skusEnQuiebre.filter((record) => record.estado === 'EOL').length;
+  const skusEnQuiebreActivos = skusEnQuiebre.filter((record) => record.estado === 'ACTIVO');
+  const skusEnQuiebreEOL = skusEnQuiebre.filter((record) => record.estado === 'EOL');
+  const quiebreActivos = skusEnQuiebreActivos.length;
+  const quiebreEOL = skusEnQuiebreEOL.length;
+  const productosSinRotacion = recs.filter((record) => record.ventas === 0);
+
+  const transitoPorSku = new Map();
+  recs.filter((record) => record.compra > 0).forEach((record) => {
+    const existente = transitoPorSku.get(record.sku);
+    if (existente) {
+      existente.unidadesEnTransito += record.compra;
+      return;
+    }
+    transitoPorSku.set(record.sku, {
+      sku: record.sku,
+      modelo: record.modelo,
+      estado: record.estado,
+      tier: record.tier,
+      unidadesEnTransito: record.compra,
+    });
+  });
+  const productosEnTransito = Array.from(transitoPorSku.values());
+  const totalUnidadesTransito = productosEnTransito.reduce(
+    (sum, record) => sum + record.unidadesEnTransito,
+    0,
+  );
   const totalReposicionUnid = activos.reduce(
     (sum, record) => sum + record.reposicionSugerida,
     0,
@@ -116,6 +160,18 @@ const analyzePortfolio = ({
     (sum, record) => sum + record.valorReposicion,
     0,
   );
+  const totalUnidades = recs.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesActivas = skusActivos.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesVencidas = skusVencidos.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesPorVencer = skusPorVencer.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesMaestro = skusMaestro.reduce((sum, record) => sum + record.invFinal, 0);
+  const valorActivo = activos.reduce((sum, record) => sum + record.valorInv, 0);
+  const valorEOLFuturo = eolFuturos.reduce((sum, record) => sum + record.valorInv, 0);
+  const valorSinMaestro = sinMaestro.reduce((sum, record) => sum + record.valorInv, 0);
+  const valorTotalInventario = valorActivo
+    + totalValorEOL
+    + valorEOLFuturo
+    + valorSinMaestro;
 
   const semanasPeriodoUsadas = obtenerSemanasPeriodo(
     config.periodoAnalizado,
@@ -147,8 +203,13 @@ const analyzePortfolio = ({
       totalMermaUnid,
       totalMermaValor,
       skusEnQuiebre,
+      skusEnQuiebreActivos,
+      skusEnQuiebreEOL,
       quiebreActivos,
       quiebreEOL,
+      productosSinRotacion,
+      productosEnTransito,
+      totalUnidadesTransito,
       totalReposicionUnid,
       totalReposicionValor,
       umbralMermaPct,
@@ -159,8 +220,24 @@ const analyzePortfolio = ({
       eolVencidos: eolVencidos.length,
       eolFuturos: eolFuturos.length,
       sinMaestro: sinMaestro.length,
+      skuActivos: skusActivos.length,
+      skuVencidos: skusVencidos.length,
+      skuPorVencer: skusPorVencer.length,
+      skuMaestro: skusMaestro.length,
+      totalUnidades,
+      unidadesActivas,
+      unidadesVencidas,
+      unidadesPorVencer,
+      unidadesMaestro,
       unidEOL: totalUnidEOL,
+      valorActivo,
       valorEOL: totalValorEOL,
+      valorEOLFuturo,
+      valorSinMaestro,
+      valorTotalInventario,
+      pctValorEOL: valorTotalInventario > 0
+        ? (totalValorEOL / valorTotalInventario) * 100
+        : 0,
       descEOL: totalDescEOL,
       ioaEOL: totalIOAEOL,
       retailEOL: totalRetailEOL,

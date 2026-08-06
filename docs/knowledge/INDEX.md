@@ -8,6 +8,7 @@
 | `AI_WORKFLOW.md` | Contexto mínimo y proceso oficial entre IA. | Al ejecutar, auditar o diseñar un cambio mediante IA. |
 | `ARCHITECTURE.md` | Detalle histórico y técnico de capas y refactorizaciones. | Solo para cambios arquitectónicos o de responsabilidades. |
 | `BUSINESS_RULES.md` | Catálogo de reglas y ubicación de sus implementaciones. | Cuando cambien o se extraigan cálculos, reglas o resultados. |
+| `BUSINESS_FUNCTIONAL_SPEC_V2.md` | Especificación vigente de los acuerdos funcionales Astrid–Jesús. | Para cambios o auditorías de reposición, tránsito, temporalidad, F4, Pareto, KPIs y valorización V2. |
 | `BUSINESS_PARAMETERS.md` | Catálogo oficial de parámetros, hardcodes y clasificación. | Cuando se consulte o migre configuración de negocio. |
 | `CONFIGURATION.md` | Estado y contratos del Configuration Center. | Cuando cambien schema, defaults o resolución de configuración. |
 | `DATA_SOURCES.md` | Fuentes vigentes, formatos y procedencia. | Cuando cambien entradas, fuentes, Repository o Provider. |

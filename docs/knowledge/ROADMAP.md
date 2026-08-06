@@ -1,5 +1,17 @@
 # Roadmap aprobado
 
+## Hito Prompt 031 — Reglas funcionales Astrid–Jesús
+
+Se implementan como alcance aprobado Inventario en Tránsito, reposición descontando Compra, EOL F4, Mix GOOD/BETTER/BEST/EOL, Pareto A/B/C, temporalidad, KPIs de unidades y valorización completa. Repository, Provider, Configuration Center y fuentes permanecen sin cambios.
+
+Estado funcional después del hito:
+
+- AP-1.2 Inventario en Tránsito: implementado en DTO y Dashboard sin valorización.
+- AP-1.3 Reposición Inteligente: implementada la deducción de Compra y los bloqueos EOL/Sin Maestro.
+- AP-1.5 Pareto y Tier: implementado Pareto A/B/C por unidades y EOL como cuarta categoría.
+- AP-1.6 Motor EOL Fase 4: implementado para más de 365 días.
+- KPIs, temporalidad y valorización V2: implementados en Dashboard/Informe y exportación Excel.
+
 ## Hito Prompt 028 — MVP Final
 
 La versión de presentación ejecutiva queda lista para demo con Dashboard ejecutivo basado en DTOs, Configuration Center MVP, exportación Excel/PDF, navegación responsive, estados UX y metadata/favicón para despliegue. No se altera la arquitectura ni se migran parámetros adicionales.

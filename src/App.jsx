@@ -56,19 +56,19 @@ const generarInformeEjecutivo = (resultados, config) => {
   const altaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion < 1 && r.estado === 'ACTIVO');
   const bajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 3 && r.indiceRotacion <= 10 && r.estado === 'ACTIVO');
   const muyBajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 10 && r.estado === 'ACTIVO');
-  const sinMovimiento = recs.filter(r => r.ventas === 0 && r.invFinal > 0);
+  const sinMovimiento = resultados.alertas.productosSinRotacion;
   const sinMovValor = sinMovimiento.reduce((s, r) => s + r.valorInv, 0);
   const sobreinventario = recs.filter(r => r.estado === 'ACTIVO' && r.indiceRotacion !== null && r.indiceRotacion > 5);
-  const subinventario = recs.filter(r => r.estado === 'ACTIVO' && r.invFinal < r.invSeguridad && r.invSeguridad > 0);
-  const enQuiebreActivo = alertas.skusEnQuiebre.filter(r => r.estado === 'ACTIVO');
-  const enQuiebreEOL = alertas.skusEnQuiebre.filter(r => r.estado === 'EOL');
+  const subinventario = alertas.skusEnQuiebreActivos;
+  const enQuiebreActivo = alertas.skusEnQuiebreActivos;
+  const enQuiebreEOL = alertas.skusEnQuiebreEOL;
   const obsolescencia = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc >= 0 && r.invFinal > 0);
   const obsolescenciaValor = obsolescencia.reduce((s, r) => s + r.valorInv, 0);
   const requierenActivacion = recs.filter(r => r.estado === 'ACTIVO' && r.invFinal > 0 && r.ventas <= 1 && r.tier === 'BEST');
   
   // Métricas agregadas
-  const valorTotalInventario = totales.valorEOL + recs.filter(r => r.estado === 'ACTIVO').reduce((s, r) => s + r.valorInv, 0);
-  const pctValorEOL = valorTotalInventario > 0 ? (totales.valorEOL / valorTotalInventario) * 100 : 0;
+  const valorTotalInventario = totales.valorTotalInventario;
+  const pctValorEOL = totales.pctValorEOL;
   const pctValorSinMov = valorTotalInventario > 0 ? (sinMovValor / valorTotalInventario) * 100 : 0;
   
   // SKU héroe (mayor venta)
@@ -113,7 +113,7 @@ const generarInformeEjecutivo = (resultados, config) => {
       hallazgo: `El ${pctValorEOL.toFixed(0)}% del valor del inventario (${fmtUSD(totales.valorEOL)}) está en SKUs ya descontinuados (EOL Vencidos).`,
       importa: 'Capital atrapado que no rota y deteriora la liquidez del cliente. Cada semana adicional sin liquidar acelera la obsolescencia comercial.',
       impacto: `Pérdida potencial de margen del 30-50% si no se activa una liquidación estructurada en los próximos 60 días.`,
-      accion: `Lanzar campaña de liquidación con descuentos escalonados por fase (F1 → F3). IOCA aporta 20%, retailer 80%.`,
+      accion: `Lanzar campaña de liquidación con descuentos escalonados por fase (F1 → F4) y aportes según la fase aplicable.`,
       prioridad: 'CRÍTICA',
     });
   }
@@ -144,16 +144,16 @@ const generarInformeEjecutivo = (resultados, config) => {
   if (pareto.pctSKUsA <= 20 && pareto.totalSkusConVentas > 0) {
     hallazgos.push({
       titulo: 'Concentración de ventas saludable tipo Pareto',
-      hallazgo: `${pareto.skusParetoA.length} SKUs (${pareto.pctSKUsA.toFixed(0)}% del portafolio activo) generan el 80% de las ventas.`,
+      hallazgo: `${pareto.skusParetoA.length} SKUs (${pareto.pctSKUsA.toFixed(0)}% del portafolio activo) generan ${pareto.pctVentasA.toFixed(0)}% de las ventas.`,
       importa: 'Una concentración bajo el 20% indica un portafolio disciplinado donde los "vital few" son claros.',
       impacto: 'Permite enfocar capital de trabajo y exhibición en pocos SKUs de alta rotación, optimizando margen y rotación.',
-      accion: `Asegurar disponibilidad permanente de los ${pareto.skusParetoA.length} SKUs A. Revisar racionalización de los ${pareto.skusParetoB.length} SKUs B con menor velocidad.`,
+      accion: `Asegurar disponibilidad permanente de los ${pareto.skusParetoA.length} SKUs A. Revisar racionalización de los ${pareto.skusColaLarga.length} SKUs B/C con menor velocidad.`,
       prioridad: 'OPORTUNIDAD',
     });
   } else if (pareto.pctSKUsA > 35 && pareto.totalSkusConVentas > 0) {
     hallazgos.push({
       titulo: 'Portafolio plano — dispersión alta de ventas',
-      hallazgo: `${pareto.skusParetoA.length} SKUs (${pareto.pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas — dispersión más alta que Pareto clásico.`,
+      hallazgo: `${pareto.skusParetoA.length} SKUs (${pareto.pctSKUsA.toFixed(0)}%) acumulan ${pareto.pctVentasA.toFixed(0)}% de las ventas — dispersión más alta que Pareto clásico.`,
       importa: 'Cobertura amplia con pocos best-sellers claros dificulta el foco comercial y aumenta costos de gestión.',
       impacto: 'Oportunidad de racionalizar el portafolio reduciendo SKUs marginales y enfocando ejecución en los más rentables.',
       accion: `Revisar surtido: eliminar SKUs con bajo movimiento sostenido y reforzar exhibición de los Pareto A.`,
@@ -189,7 +189,7 @@ const generarInformeEjecutivo = (resultados, config) => {
     const valorHeroe = skuHeroe.ventas * skuHeroe.costo;
     hallazgos.push({
       titulo: 'SKU héroe — concentra la oportunidad de crecimiento',
-      hallazgo: `${skuHeroe.sku} (${skuHeroe.modelo}) lidera ventas con ${skuHeroe.ventas} unidades (${(skuHeroe.pctVentas * 100).toFixed(1)}% del total), tier ${skuHeroe.tier}.`,
+      hallazgo: `${skuHeroe.sku} (${skuHeroe.modelo}) lidera ventas con ${skuHeroe.ventas} unidades (${(skuHeroe.pctVentas * 100).toFixed(0)}% del total), tier ${skuHeroe.tier}.`,
       importa: 'El SKU héroe es la mejor vitrina de la marca en el punto de venta — su disponibilidad afecta la percepción de la categoría.',
       impacto: 'Asegurar zero-quiebre y exhibición premium del SKU héroe maximiza el sell-through general.',
       accion: `Posición prioritaria en góndola, bundles con accesorios complementarios, training a vendedores sobre beneficios diferenciadores.`,
@@ -374,9 +374,9 @@ export default function App() {
       r.diasDesc ?? '', r.bucket ?? '', r.fase ?? '', r.origen,
       r.costo.toFixed(2), r.invInicial, r.ventas, r.invFinal,
       r.indiceRotacion !== null ? r.indiceRotacion.toFixed(2) : '—',
-      (r.descPct*100).toFixed(2)+'%', r.descUSD.toFixed(2),
-      (r.ioaPct*100).toFixed(2)+'%', r.ioaUSD.toFixed(2),
-      (r.retailPct*100).toFixed(2)+'%', r.retailUSD.toFixed(2),
+      (r.descPct*100).toFixed(0)+'%', r.descUSD.toFixed(2),
+      ((r.ioaPct || 0)*100).toFixed(0)+'%', r.ioaUSD.toFixed(2),
+      ((r.retailPct || 0)*100).toFixed(0)+'%', r.retailUSD.toFixed(2),
       r.descTotal.toFixed(2)
     ]);
     const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -429,24 +429,37 @@ export default function App() {
       ['Condición 1', 'Si Ventas > 0 en el período → aplica fórmula IOCA (Fuente: IOCA)'],
       ['Condición 2', 'Si Ventas = 0 en el período → se mantiene valor reportado por cliente (Fuente: Cliente)'],
       ['Condición 3', 'Lead Time se toma según origen del SKU: USA o China'],
-      ['Condición 4', 'Reposición Sugerida y alertas de quiebre se calculan contra el Inv. Seguridad IOCA'],
+      ['Condición 4', 'Bajo nivel: Inv. Proyectado < Inv. Seguridad IOCA; la reposición final descuenta Compra (inventario en tránsito)'],
       ['Tabla de semanas por período', NOTA_INV_SEGURIDAD.tablaSemanas],
       [],
       ['DISTRIBUCIÓN DEL PORTAFOLIO', ''],
       ['Métrica', 'Valor'],
       ['Total SKUs en inventario', resultados.totales.totalSKUs],
-      ['SKUs Activos', resultados.totales.activos],
-      ['SKUs EOL Vencidos (ya descontinuados)', resultados.totales.eolVencidos],
-      ['SKUs EOL Futuros (aún por descontinuarse)', resultados.totales.eolFuturos],
-      ['SKUs Sin Maestro', resultados.totales.sinMaestro],
+      ['Total Unidades', resultados.totales.totalUnidades],
+      ['SKUs Activos', resultados.totales.skuActivos],
+      ['Total Unidades Activas', resultados.totales.unidadesActivas],
+      ['SKUs Vencidos', resultados.totales.skuVencidos],
+      ['Total Unidades Vencidas', resultados.totales.unidadesVencidas],
+      ['SKUs por Vencer', resultados.totales.skuPorVencer],
+      ['Total Unidades por Vencer', resultados.totales.unidadesPorVencer],
+      ['SKUs Maestro', resultados.totales.skuMaestro],
+      ['Total Unidades Maestro', resultados.totales.unidadesMaestro],
+      [],
+      ['VALORIZACIÓN DEL INVENTARIO', ''],
+      ['Métrica', 'Valor USD'],
+      ['Valor Total Inventario', resultados.totales.valorTotalInventario],
+      ['Valor Activo', resultados.totales.valorActivo],
+      ['Valor EOL', resultados.totales.valorEOL],
+      ['Valor EOL Futuro', resultados.totales.valorEOLFuturo],
+      ['Valor Sin Maestro', resultados.totales.valorSinMaestro],
       [],
       ['IMPACTO FINANCIERO EOL', ''],
       ['Métrica', 'Valor USD'],
       ['Inventario EOL en piso (unidades)', resultados.totales.unidEOL],
       ['Valor del Inventario EOL', resultados.totales.valorEOL],
       ['Descuento Total al Consumidor', resultados.totales.descEOL],
-      ['Absorbe IOCA (20%)', resultados.totales.ioaEOL],
-      ['Absorbe Retail (80%)', resultados.totales.retailEOL],
+      ['Absorbe IOCA', resultados.totales.ioaEOL],
+      ['Absorbe Retail', resultados.totales.retailEOL],
       [],
       ['ALERTAS OPERATIVAS', ''],
       ['Alerta', 'Cantidad'],
@@ -457,11 +470,18 @@ export default function App() {
       ['SKUs Activos bajo Inv. Seguridad', resultados.alertas.skusEnQuiebre.length],
       ['Total unidades de Reposición Sugerida', resultados.alertas.totalReposicionUnid],
       ['Valor total Reposición (USD)', resultados.alertas.totalReposicionValor],
+      ['Unidades en Tránsito', resultados.alertas.totalUnidadesTransito],
     ];
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
     wsResumen['!cols'] = [{ wch: 48 }, { wch: 28 }];
-    // Formato moneda en filas específicas (con offset de 11 por sección Cliente agregada)
-    [25, 26, 27, 28, 35, 38].forEach(r => {
+    const etiquetasMoneda = new Set([
+      'Valor Total Inventario', 'Valor Activo', 'Valor EOL', 'Valor EOL Futuro',
+      'Valor Sin Maestro', 'Valor del Inventario EOL', 'Descuento Total al Consumidor',
+      'Absorbe IOCA', 'Absorbe Retail', 'Valor total de Merma (USD)',
+      'Valor total Reposición (USD)',
+    ]);
+    resumenData.forEach((row, r) => {
+      if (!etiquetasMoneda.has(row[0])) return;
       const ref = XLSX.utils.encode_cell({ r, c: 1 });
       if (wsResumen[ref] && typeof wsResumen[ref].v === 'number') wsResumen[ref].z = '$#,##0.00';
     });
@@ -483,7 +503,7 @@ export default function App() {
       rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', resultados.totales.unidEOL, '', resultados.totales.descEOL, resultados.totales.valorEOL]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
       ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 7 }, { wch: 9 }, { wch: 11 }, { wch: 9 }, { wch: 15 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 15 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 13 }];
-      aplicarFormato(ws, { 7: '$#,##0.00', 8: '0.00%', 9: '$#,##0.00', 10: '0.00%', 11: '$#,##0.00', 12: '0.00%', 13: '$#,##0.00', 17: '0.00', 18: '$#,##0.00', 19: '$#,##0.00' });
+      aplicarFormato(ws, { 7: '$#,##0.00', 8: '0%', 9: '$#,##0.00', 10: '0%', 11: '$#,##0.00', 12: '0%', 13: '$#,##0.00', 17: '0.00', 18: '$#,##0.00', 19: '$#,##0.00' });
       XLSX.utils.book_append_sheet(wb, ws, 'EOL Fase Activa');
     }
     
@@ -512,18 +532,18 @@ export default function App() {
         ['Condiciones: Si Ventas > 0 → aplica fórmula IOCA (Fuente: IOCA). Si Ventas = 0 → se mantiene valor del cliente (Fuente: Cliente).', '', '', '', '', '', '', '', '', '', '', '', '', ''],
         ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
       ];
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Bucket EOL', 'Origen', 'Ventas', 'Inv. Seg. Cliente', 'Inv. Seg. IOCA', 'Δ IOCA-Cliente', 'Fuente', 'Inv. Final', 'Reposición Sugerida', 'Acción Sugerida'];
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Bucket EOL', 'Origen', 'Ventas', 'Inv. Seg. Cliente', 'Inv. Seg. IOCA', 'Δ IOCA-Cliente', 'Fuente', 'Inv. Proyectado', 'Inv. Final', 'Compra / Tránsito', 'Necesidad', 'Reposición Final', 'Acción Sugerida'];
       const rows = resultados.alertas.skusEnQuiebre.map(r => [
         r.sku, r.modelo, r.marca, r.estado, r.bucket || '—', r.origen, r.ventas,
         r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
-        r.invFinal,
-        r.estado === 'ACTIVO' ? r.reposicionSugerida : 0,
+        r.invProyectado, r.invFinal, r.compra, r.necesidadReposicion,
+        r.reposicionSugerida,
         r.accionSugerida,
       ]);
       const totalRepoActivos = resultados.alertas.skusEnQuiebre
         .filter(r => r.estado === 'ACTIVO')
         .reduce((s, r) => s + r.reposicionSugerida, 0);
-      rows.push(['', '', '', '', '', '', '', '', '', '', '', 'TOTAL Reposición (solo Activos)', totalRepoActivos, '']);
+      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', 'TOTAL Reposición (solo Activos)', totalRepoActivos, '']);
       const ws = XLSX.utils.aoa_to_sheet([...notaInfo, hdr, ...rows]);
       ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 18 }, { wch: 9 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 20 }, { wch: 42 }];
       XLSX.utils.book_append_sheet(wb, ws, 'Bajo Inv Seguridad V1');
@@ -540,7 +560,7 @@ export default function App() {
       rows.push(['', '', '', '', '', '', '', '', 'TOTAL', resultados.alertas.totalMermaUnid, '', '', resultados.alertas.totalMermaValor]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
       ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 13 }];
-      aplicarFormato(ws, { 10: '0.00%', 11: '$#,##0.00', 12: '$#,##0.00' });
+      aplicarFormato(ws, { 10: '0%', 11: '$#,##0.00', 12: '$#,##0.00' });
       XLSX.utils.book_append_sheet(wb, ws, 'Merma Operativa');
     }
     
@@ -585,38 +605,45 @@ export default function App() {
     // ===== HOJA 10: DATOS COMPLETOS (auditoría) =====
     const hdrAll = [
       'SKU', 'Tienda', 'Modelo', 'Marca', 'Categoría', 'Estado', 'Tier',
-      'Fecha EOL', 'Días Desc.', 'Bucket', 'Fase', 'Origen', 'Sin Origen Inv',
+      'Fecha EOL', 'Días Desc.', 'Días Restantes', 'Clasificación Temporal',
+      'Bucket', 'Fase', 'Origen', 'Sin Origen Inv',
       'Inv. Seguridad Cliente', 'Inv. Seguridad IOCA', 'Δ IOCA-Cliente', 'Fuente Inv. Seg.',
       'Semanas Período', 'Lead Time Aplicado',
       'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final',
       'Índice Rotación',
       'Merma', 'Merma %', 'Alerta Merma',
-      'Reposición Sug.', 'Alerta Quiebre', 'Acción Sugerida',
+      'Necesidad Reposición', 'Reposición Final', 'Alerta Quiebre', 'Acción Sugerida',
       'Costo USA', 'Costo CHINA', 'Costo Aplicado',
       'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $',
+      'Inv. Mínimo Reconocido', 'Liquidación Solo Retail',
       'Valor Inv.', 'Valor Ventas', 'Valor Reposición', 'Desc. Total $'
     ];
     const rowsAll = resultados.recs.map(r => [
       r.sku, r.tienda, r.modelo, r.marca, r.categoria || 'SIN CATEGORIA', r.estado, r.tier,
-      r.fechaStr, r.diasDesc, r.bucket, r.fase !== null ? `F${r.fase}` : '', r.origen, r.sinOrigenInv ? 'SI' : 'NO',
+      r.fechaStr, r.diasDesc, r.diasRestantes, r.clasificacionTemporal,
+      r.bucket, r.fase !== null ? `F${r.fase}` : '', r.origen, r.sinOrigenInv ? 'SI' : 'NO',
       r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
       r.semanasPeriodo, r.leadTimeAplicado,
       r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
       r.indiceRotacion !== null ? r.indiceRotacion : '',
       r.merma, r.mermaPct, r.alertaMerma ? 'SI' : 'NO',
-      r.reposicionSugerida, r.alertaQuiebre ? 'SI' : 'NO', r.accionSugerida || '',
+      r.necesidadReposicion, r.reposicionSugerida,
+      r.alertaQuiebre ? 'SI' : 'NO', r.accionSugerida || '',
       r.costoUSA, r.costoCHINA, r.costo,
       r.descPct, r.descUSD, r.ioaPct, r.ioaUSD, r.retailPct, r.retailUSD,
+      r.inventarioMinimoReconocido, r.liquidacionSoloRetail ? 'SI' : 'NO',
       r.valorInv, r.valorVentas || 0, r.valorReposicion, r.descTotal
     ]);
     const wsAll = XLSX.utils.aoa_to_sheet([hdrAll, ...rowsAll]);
     XLSX.utils.book_append_sheet(wb, wsAll, 'Datos Completos');
     
-    // ===== HOJA: DISTRIBUCIÓN POR TIER (GBB) =====
+    // ===== HOJA: DISTRIBUCIÓN POR TIER (GOOD / BETTER / BEST / EOL) =====
     const dT = resultados.distribucionTier;
-    const tiersGBB = ['GOOD', 'BETTER', 'BEST'];
+    const tiersGBB = dT.inventario.lista.filter((tier) =>
+      tier !== 'SIN CATEGORIA' || dT.inventario.tiers[tier].skus > 0
+    );
     const distribData = [
-      ['DISTRIBUCIÓN POR TIER — GOOD / BETTER / BEST', '', '', '', '', ''],
+      ['DISTRIBUCIÓN POR TIER — GOOD / BETTER / BEST / EOL', '', '', '', '', ''],
       [`Cliente analizado · Fecha: ${fechaLegible}`, '', '', '', '', ''],
       ['', '', '', '', '', ''],
       ['INVENTARIO ACTUAL DEL CLIENTE', '', '', '', '', ''],
@@ -667,29 +694,13 @@ export default function App() {
       const ref = XLSX.utils.encode_cell({ r, c });
       if (wsDistrib[ref] && typeof wsDistrib[ref].v === 'number') wsDistrib[ref].z = fmt;
     };
-    // Inventario Actual: filas 6,7,8,9
-    [6, 7, 8, 9].forEach(r => {
-      fmtCell(r, 3, '0.00%');
-      fmtCell(r, 4, '$#,##0.00');
-      fmtCell(r, 5, '0.00%');
-    });
-    // Ventas: filas 13,14,15,16
-    [13, 14, 15, 16].forEach(r => {
-      fmtCell(r, 3, '0.00%');
-      fmtCell(r, 4, '$#,##0.00');
-      fmtCell(r, 5, '0.00%');
-    });
-    // Reposición: filas 20,21,22,23
-    [20, 21, 22, 23].forEach(r => {
-      fmtCell(r, 3, '0.00%');
-      fmtCell(r, 4, '$#,##0.00');
-      fmtCell(r, 5, '0.00%');
-    });
-    // Comparativa: filas 27,28,29
-    [27, 28, 29].forEach(r => {
-      fmtCell(r, 1, '0.00%');
-      fmtCell(r, 2, '0.00%');
-      fmtCell(r, 3, '0.00%');
+    aplicarFormato(wsDistrib, { 3: '0%', 4: '$#,##0.00', 5: '0%' });
+    const comparativaTierStart = distribData.findIndex((row) => row[0] === 'Tier'
+      && row[1] === '% Inv. Actual') + 1;
+    tiersGBB.forEach((_tier, index) => {
+      fmtCell(comparativaTierStart + index, 1, '0%');
+      fmtCell(comparativaTierStart + index, 2, '0%');
+      fmtCell(comparativaTierStart + index, 3, '0%');
     });
     XLSX.utils.book_append_sheet(wb, wsDistrib, 'Distribución Tier');
     
@@ -765,34 +776,36 @@ export default function App() {
     };
     // Aplicar formato a los tres bloques de datos
     for (let r = invStart; r <= invEnd; r++) {
-      fmtCellCat(r, 3, '0.00%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0.00%');
+      fmtCellCat(r, 3, '0%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0%');
     }
     for (let r = vtsStart; r <= vtsEnd; r++) {
-      fmtCellCat(r, 3, '0.00%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0.00%');
+      fmtCellCat(r, 3, '0%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0%');
     }
     for (let r = repStart; r <= repEnd; r++) {
-      fmtCellCat(r, 3, '0.00%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0.00%');
+      fmtCellCat(r, 3, '0%'); fmtCellCat(r, 4, '$#,##0.00'); fmtCellCat(r, 5, '0%');
     }
     for (let r = compStart; r < compStart + listaCats.length; r++) {
-      fmtCellCat(r, 1, '0.00%'); fmtCellCat(r, 2, '0.00%'); fmtCellCat(r, 3, '0.00%');
+      fmtCellCat(r, 1, '0%'); fmtCellCat(r, 2, '0%'); fmtCellCat(r, 3, '0%');
     }
     XLSX.utils.book_append_sheet(wb, wsDistribCat, 'Distribución Categoría');
     
-    // ===== HOJA: ANÁLISIS PARETO 80/20 =====
+    // ===== HOJA: ANÁLISIS PARETO A/B/C =====
     const pareto = resultados.analisisPareto;
     if (pareto.totalSkusConVentas > 0) {
       const paretoData = [
-        ['ANÁLISIS PARETO 80/20 — DISTRIBUCIÓN DE VENTAS POR SKU', '', '', '', '', '', '', '', '', '', ''],
+        ['ANÁLISIS PARETO A/B/C — UNIDADES VENDIDAS POR SKU', '', '', '', '', '', '', '', '', '', ''],
         [`Cliente analizado · Fecha: ${fechaLegible}`, '', '', '', '', '', '', '', '', '', ''],
         ['', '', '', '', '', '', '', '', '', '', ''],
         ['RESUMEN', '', '', '', '', '', '', '', '', '', ''],
         ['Métrica', 'Valor', '', '', '', '', '', '', '', '', ''],
         ['SKUs con ventas en el período', pareto.totalSkusConVentas, '', '', '', '', '', '', '', '', ''],
         ['Total unidades vendidas', pareto.totalVentas, '', '', '', '', '', '', '', '', ''],
-        ['SKUs Pareto A (acumulan 80% ventas)', pareto.skusParetoA.length, '', '', '', '', '', '', '', '', ''],
-        ['SKUs Pareto B (resto 20% ventas)', pareto.skusParetoB.length, '', '', '', '', '', '', '', '', ''],
+        ['SKUs Pareto A', pareto.skusParetoA.length, '', '', '', '', '', '', '', '', ''],
+        ['SKUs Pareto B', pareto.skusParetoB.length, '', '', '', '', '', '', '', '', ''],
+        ['SKUs Pareto C', pareto.skusParetoC.length, '', '', '', '', '', '', '', '', ''],
         ['% del portafolio que es Clase A', pareto.pctSKUsA / 100, '', '', '', '', '', '', '', '', ''],
         ['% del portafolio que es Clase B', pareto.pctSKUsB / 100, '', '', '', '', '', '', '', '', ''],
+        ['% del portafolio que es Clase C', pareto.pctSKUsC / 100, '', '', '', '', '', '', '', '', ''],
         ['', '', '', '', '', '', '', '', '', '', ''],
         ['INTERPRETACIÓN Y SUGERENCIA DE REPOSICIÓN', '', '', '', '', '', '', '', '', '', ''],
         [pareto.interpretacion.titulo, '', '', '', '', '', '', '', '', '', ''],
@@ -803,7 +816,11 @@ export default function App() {
         ['Clase', 'SKU', 'Modelo', 'Marca', 'Estado', 'Tier', 'Ventas (u)', '% Ventas', '% Acum.', 'Inv. Final', 'Acción Reposición'],
       ];
       
-      const todosSkusOrdenados = [...pareto.skusParetoA, ...pareto.skusParetoB];
+      const todosSkusOrdenados = [
+        ...pareto.skusParetoA,
+        ...pareto.skusParetoB,
+        ...pareto.skusParetoC,
+      ];
       todosSkusOrdenados.forEach(r => {
         const esA = r.paretoClase === 'A';
         let accionRepo = '';
@@ -824,23 +841,25 @@ export default function App() {
         { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 32 }
       ];
       
-      // Formatos del resumen (filas 9,10 = % portafolio)
       const fmtParetoCell = (r, c, fmt) => {
         const ref = XLSX.utils.encode_cell({ r, c });
         if (wsPareto[ref] && typeof wsPareto[ref].v === 'number') wsPareto[ref].z = fmt;
       };
-      fmtParetoCell(9, 1, '0.00%');
-      fmtParetoCell(10, 1, '0.00%');
-      
+      paretoData.forEach((row, index) => {
+        if (String(row[0]).startsWith('% del portafolio')) {
+          fmtParetoCell(index, 1, '0%');
+        }
+      });
+
       // Formato del detalle: % Ventas, % Acum
-      const detalleStartRow = 19; // primera fila de datos
+      const detalleStartRow = paretoData.findIndex((row) => row[0] === 'Clase') + 1;
       const detalleEndRow = detalleStartRow + todosSkusOrdenados.length - 1;
       for (let r = detalleStartRow; r <= detalleEndRow; r++) {
-        fmtParetoCell(r, 7, '0.00%'); // % Ventas
-        fmtParetoCell(r, 8, '0.00%'); // % Acum
+        fmtParetoCell(r, 7, '0%'); // % Ventas
+        fmtParetoCell(r, 8, '0%'); // % Acum
       }
       
-      XLSX.utils.book_append_sheet(wb, wsPareto, 'Análisis Pareto 80-20');
+      XLSX.utils.book_append_sheet(wb, wsPareto, 'Análisis Pareto ABC');
     }
     
     // ===== HOJA 11: REF BUCKET EOL =====
@@ -859,7 +878,7 @@ export default function App() {
     ];
     const wsFases = XLSX.utils.aoa_to_sheet(fasesData);
     wsFases['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 11 }, { wch: 9 }, { wch: 18 }, { wch: 14 }, { wch: 14 }];
-    aplicarFormato(wsFases, { 4: '0.00%', 5: '0.00%', 6: '0.00%' });
+    aplicarFormato(wsFases, { 4: '0%', 5: '0%', 6: '0%' });
     XLSX.utils.book_append_sheet(wb, wsFases, 'Ref Tabla Fases');
     
     // Descargar
@@ -1296,18 +1315,21 @@ export default function App() {
               <div className="p-6 space-y-6">
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Executive Summary</div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {[
-                      ['Fecha de cálculo', summary.fechaCalculo],
-                      ['Período analizado', summary.periodoAnalizado],
-                      ['Total SKUs', summary.totalSKUs],
-                      ['Activos', summary.activos],
-                      ['EOL vencidos', summary.eolVencidos],
-                      ['EOL futuros', summary.eolFuturos],
-                    ].map(([label, value]) => (
+                      ['Total SKU', summary.totalSKUs, 'Total Unidades', summary.totalUnidades],
+                      ['SKU Activos', summary.skuActivos, 'Total Unidades Activas', summary.unidadesActivas],
+                      ['SKU Vencidos', summary.skuVencidos, 'Total Unidades Vencidas', summary.unidadesVencidas],
+                      ['SKU por Vencer', summary.skuPorVencer, 'Total Unidades por Vencer', summary.unidadesPorVencer],
+                      ['SKU Maestro', summary.skuMaestro, 'Total Unidades Maestro', summary.unidadesMaestro],
+                    ].map(([label, value, unitLabel, unitValue]) => (
                       <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-                        <div className="mt-1 text-sm font-bold" style={{ color: '#0a2540' }}>{value}</div>
+                        <div className="mt-1 text-xl font-bold" style={{ color: '#0a2540' }}>{value}</div>
+                        <div className="mt-2 pt-2 border-t" style={{ borderColor: '#e5e0d5' }}>
+                          <div className="text-[9px] uppercase tracking-wider text-stone-500">{unitLabel}</div>
+                          <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{unitValue}</div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1325,6 +1347,24 @@ export default function App() {
                       <div key={label} className="border p-4" style={{ borderColor: '#e5e0d5' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
                         <div className="text-2xl font-bold mt-1" style={{ color }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Valorización del inventario</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    {[
+                      ['Valor Total Inventario', report.valorizacion.valorTotalInventario],
+                      ['Valor Activo', report.valorizacion.valorActivo],
+                      ['Valor EOL', report.valorizacion.valorEOL],
+                      ['Valor EOL Futuro', report.valorizacion.valorEOLFuturo],
+                      ['Valor Sin Maestro', report.valorizacion.valorSinMaestro],
+                    ].map(([label, value]) => (
+                      <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5' }}>
+                        <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
+                        <div className="mt-1 font-bold" style={{ color: label === 'Valor Total Inventario' ? '#0a2540' : '#444' }}>{fmtUSD(value)}</div>
                       </div>
                     ))}
                   </div>
@@ -1363,8 +1403,8 @@ export default function App() {
                       ))}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                      <span className="px-2 py-1 font-bold" style={{ background: '#e0f2fe', color: '#075985' }}>Pareto SKUs: {dashboard.pareto.pctSKUsA.toFixed(0)}%</span>
-                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto ventas: {dashboard.pareto.pctVentasA.toFixed(0)}%</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto A: Pocos Vitales · {dashboard.pareto.skusPocosVitales} SKU · {dashboard.pareto.pctVentasA.toFixed(0)}%</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Pareto B/C: Cola Larga · {dashboard.pareto.skusColaLarga} SKU · {dashboard.pareto.pctVentasColaLarga.toFixed(0)}%</span>
                       <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Con ventas: {dashboard.pareto.totalSkusConVentas}</span>
                     </div>
                   </div>
@@ -1460,20 +1500,19 @@ export default function App() {
                   </button>
                 </div>
               </div>
-              <div className="p-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <KPI label="Total SKUs" value={resultados.totales.totalSKUs} />
-                <KPI label="Activos" value={resultados.totales.activos} color="#065f46" bg="#d1fae5" />
-                <KPI label="EOL Vencidos" value={resultados.totales.eolVencidos} color="#7f1d1d" bg="#fee2e2" />
-                <KPI label="EOL Futuros" value={resultados.totales.eolFuturos} color="#92400e" bg="#fef3c7" />
-                <KPI label="Sin Maestro" value={resultados.totales.sinMaestro} color="#92400e" bg="#fef3c7" />
-                <KPI label="Unid. EOL en piso" value={resultados.totales.unidEOL} />
+              <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <KPIUnitPair label="Total SKU" value={resultados.totales.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.totales.totalUnidades} />
+                <KPIUnitPair label="SKU Activos" value={resultados.totales.skuActivos} unitLabel="Total Unidades Activas" unitValue={resultados.totales.unidadesActivas} color="#065f46" bg="#d1fae5" />
+                <KPIUnitPair label="SKU Vencidos" value={resultados.totales.skuVencidos} unitLabel="Total Unidades Vencidas" unitValue={resultados.totales.unidadesVencidas} color="#7f1d1d" bg="#fee2e2" />
+                <KPIUnitPair label="SKU por Vencer" value={resultados.totales.skuPorVencer} unitLabel="Total Unidades por Vencer" unitValue={resultados.totales.unidadesPorVencer} color="#92400e" bg="#fef3c7" />
+                <KPIUnitPair label="SKU Maestro" value={resultados.totales.skuMaestro} unitLabel="Total Unidades Maestro" unitValue={resultados.totales.unidadesMaestro} />
               </div>
 
               <div className="px-6 pb-6 grid grid-cols-1 md:grid-cols-4 gap-3 border-t pt-5" style={{ borderColor: '#e5e0d5' }}>
                 <KPIBig label="Valor Inv. EOL" value={fmtUSD(resultados.totales.valorEOL)} sub="Costo × Unidades" />
                 <KPIBig label="Descuento Consumi total" value={fmtUSD(resultados.totales.descEOL)} sub="Descuento × Unidades" color="#d4af37" />
-                <KPIBig label="Absorbe IOCA (20%)" value={fmtUSD(resultados.totales.ioaEOL)} sub="Exposición financiera IOCA" color="#1e40af" />
-                <KPIBig label="Absorbe Retail (80%)" value={fmtUSD(resultados.totales.retailEOL)} sub="Carga del cliente" color="#065f46" />
+                <KPIBig label="Absorbe IOCA" value={fmtUSD(resultados.totales.ioaEOL)} sub="Exposición financiera IOCA" color="#1e40af" />
+                <KPIBig label="Absorbe Retail" value={fmtUSD(resultados.totales.retailEOL)} sub="Carga del cliente" color="#065f46" />
               </div>
             </div>
 
@@ -1588,7 +1627,7 @@ export default function App() {
                             <Td align="center">{r.invProyectado}</Td>
                             <Td align="center">{r.invFinal}</Td>
                             <Td align="center" bold style={{ background: '#fef3c7', color: '#92400e' }}>{r.merma}</Td>
-                            <Td align="center" bold style={{ color: '#92400e' }}>{(r.mermaPct * 100).toFixed(1)}%</Td>
+                            <Td align="center" bold style={{ color: '#92400e' }}>{(r.mermaPct * 100).toFixed(0)}%</Td>
                             <Td align="right" bold>{fmtUSD(r.merma * r.costo)}</Td>
                           </tr>
                         ))}
@@ -1605,7 +1644,7 @@ export default function App() {
                     SKUs bajo Inventario Seguridad IOCA — Motor V1 · paralelo comparativo
                   </div>
                   <div className="text-xs text-stone-600 mb-2">
-                    La alerta se dispara contra el <strong>Inv. Seguridad IOCA</strong> calculado por el motor institucional. Se muestra en paralelo el valor reportado por el cliente y el delta.
+                    La alerta se dispara cuando el <strong>Inventario Proyectado</strong> es menor que el <strong>Inv. Seguridad IOCA</strong>. La reposición final descuenta Compra como inventario en tránsito.
                   </div>
 
                   {/* Nota compacta de la fórmula IOCA V1 */}
@@ -1632,8 +1671,10 @@ export default function App() {
                           <Th align="center">Inv. Seg. IOCA</Th>
                           <Th align="center">Δ IOCA-Cliente</Th>
                           <Th align="center">Fuente</Th>
-                          <Th align="center">Inv. Final</Th>
-                          <Th align="center">Reposición Sug.</Th>
+                          <Th align="center">Inv. Proyectado</Th>
+                          <Th align="center">Compra</Th>
+                          <Th align="center">Necesidad</Th>
+                          <Th align="center">Reposición Final</Th>
                           <Th>Acción Sugerida</Th>
                         </tr>
                       </thead>
@@ -1663,7 +1704,9 @@ export default function App() {
                                   color: r.fuenteInvSeguridad === 'IOCA' ? '#0a2540' : '#666',
                                 }}>{r.fuenteInvSeguridad}</span>
                               </Td>
-                              <Td align="center" bold style={{ color: '#7f1d1d' }}>{r.invFinal}</Td>
+                              <Td align="center" bold style={{ color: '#7f1d1d' }}>{r.invProyectado}</Td>
+                              <Td align="center">{r.compra}</Td>
+                              <Td align="center">{r.necesidadReposicion}</Td>
                               <Td align="center" bold style={{
                                 background: esActivo ? '#dbeafe' : '#f5f5f0',
                                 color: esActivo ? '#1e40af' : '#999'
@@ -1684,15 +1727,53 @@ export default function App() {
               )}
             </div>
 
+            {/* INVENTARIO EN TRÁNSITO */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b flex items-center justify-between flex-wrap gap-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <div>
+                  <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                    <Package className="w-5 h-5" style={{ color: '#1e40af' }} />
+                    Inventario en tránsito
+                  </h2>
+                  <div className="text-xs text-stone-500 mt-1">Compra representa unidades en tránsito; incluye productos EOL aunque su reposición final sea cero.</div>
+                </div>
+                <div className="px-4 py-2 text-center" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                  <div className="text-[10px] uppercase tracking-wider">Total unidades en tránsito</div>
+                  <div className="text-2xl font-bold">{resultados.alertas.totalUnidadesTransito}</div>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                    <tr><Th>SKU</Th><Th>Modelo</Th><Th align="center">Estado</Th><Th align="center">Nivel</Th><Th align="right">Unidades en tránsito</Th></tr>
+                  </thead>
+                  <tbody>
+                    {resultados.alertas.productosEnTransito.length === 0 && (
+                      <tr><td colSpan={5} className="p-6 text-center text-stone-500">No hay unidades en tránsito.</td></tr>
+                    )}
+                    {resultados.alertas.productosEnTransito.map((r) => (
+                      <tr key={r.sku} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                        <Td bold>{r.sku}</Td>
+                        <Td className="text-stone-600">{r.modelo}</Td>
+                        <Td align="center">{r.estado}</Td>
+                        <Td align="center" bold>{r.tier || 'SIN CATEGORIA'}</Td>
+                        <Td align="right" bold style={{ color: '#1e40af' }}>{r.unidadesEnTransito}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* PANEL DE DISTRIBUCIÓN POR TIER (GBB) */}
             <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
               <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                 <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
                   <Package className="w-5 h-5" style={{ color: '#d4af37' }} />
-                  Distribución por Tier (Good / Better / Best)
+                  Distribución por Tier (Good / Better / Best / EOL)
                 </h2>
                 <div className="text-xs text-stone-500 mt-1">
-                  Tres vistas paralelas: lo que el cliente <strong>tiene en piso</strong>, lo que <strong>está vendiendo</strong>, y lo que IOCA <strong>sugiere reponer</strong>. Permite ver si la reposición sigue al mercado o al inventario actual.
+                  Mix Balanceado con GOOD, BETTER, BEST y EOL. Las tres vistas incluyen todas las unidades y permiten comparar inventario, ventas y reposición.
                 </div>
               </div>
 
@@ -1749,33 +1830,40 @@ export default function App() {
               </div>
             </div>
 
-            {/* PANEL DE ANÁLISIS PARETO 80/20 */}
+            {/* PANEL DE ANÁLISIS PARETO A/B/C */}
             <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
               <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                 <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
                   <TrendingDown className="w-5 h-5" style={{ color: '#d4af37' }} />
-                  Análisis Pareto 80/20 (basado en ventas)
+                  Análisis Pareto A/B/C (unidades vendidas)
                 </h2>
                 <div className="text-xs text-stone-500 mt-1">
-                  Identifica los SKUs que concentran el 80% de las ventas (Clase A) vs el 20% restante (Clase B). Base para decisiones de reposición prioritaria.
+                  Clasificación técnica por participación acumulada real de unidades vendidas: A, B y C.
                 </div>
               </div>
 
               {/* KPIs de Pareto */}
-              <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-3 border-b" style={{ borderColor: '#e5e0d5' }}>
                 <AlertaCard
-                  titulo="Pareto A — Los pocos vitales"
+                  titulo="Pareto A"
                   valor={`${resultados.analisisPareto.skusParetoA.length} SKUs`}
                   sub={`${resultados.analisisPareto.pctSKUsA.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas`}
                   color="#065f46"
                   bg="#d1fae5"
                 />
                 <AlertaCard
-                  titulo="Pareto B — La cola larga"
+                  titulo="Pareto B"
                   valor={`${resultados.analisisPareto.skusParetoB.length} SKUs`}
                   sub={`${resultados.analisisPareto.pctSKUsB.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasB.toFixed(0)}% de las ventas`}
                   color="#92400e"
                   bg="#fef3c7"
+                />
+                <AlertaCard
+                  titulo="Pareto C"
+                  valor={`${resultados.analisisPareto.skusParetoC.length} SKUs`}
+                  sub={`${resultados.analisisPareto.pctSKUsC.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasC.toFixed(0)}% de las ventas`}
+                  color="#7f1d1d"
+                  bg="#fee2e2"
                 />
                 <AlertaCard
                   titulo="Tipo de distribución"
@@ -1821,8 +1909,13 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {[...resultados.analisisPareto.skusParetoA, ...resultados.analisisPareto.skusParetoB].map((r, i) => {
+                        {[
+                          ...resultados.analisisPareto.skusParetoA,
+                          ...resultados.analisisPareto.skusParetoB,
+                          ...resultados.analisisPareto.skusParetoC,
+                        ].map((r, i) => {
                           const esA = r.paretoClase === 'A';
+                          const esB = r.paretoClase === 'B';
                           const tierColor = TIER_COLORS[r.tier?.toUpperCase()] || TIER_COLORS.GOOD;
                           let accionRepo = '';
                           let accionColor = '#999';
@@ -1843,7 +1936,7 @@ export default function App() {
                             <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
                               <Td align="center">
                                 <span className="px-2 py-0.5 text-[10px] font-bold" style={{
-                                  background: esA ? '#065f46' : '#94a3b8',
+                                  background: esA ? '#065f46' : (esB ? '#92400e' : '#7f1d1d'),
                                   color: 'white',
                                 }}>{r.paretoClase}</span>
                               </Td>
@@ -1862,11 +1955,11 @@ export default function App() {
                                 }}>{r.tier || 'GOOD'}</span>
                               </Td>
                               <Td align="right" bold>{r.ventas}</Td>
-                              <Td align="right">{(r.pctVentas * 100).toFixed(2)}%</Td>
+                              <Td align="right">{(r.pctVentas * 100).toFixed(0)}%</Td>
                               <Td align="right" bold style={{
-                                background: esA ? '#d1fae5' : '#fef3c7',
-                                color: esA ? '#065f46' : '#92400e',
-                              }}>{(r.pctAcum * 100).toFixed(1)}%</Td>
+                                background: esA ? '#d1fae5' : (esB ? '#fef3c7' : '#fee2e2'),
+                                color: esA ? '#065f46' : (esB ? '#92400e' : '#7f1d1d'),
+                              }}>{(r.pctAcum * 100).toFixed(0)}%</Td>
                               <Td align="right" bold>{r.invFinal}</Td>
                               <Td align="center" bold style={{ color: accionColor, fontSize: '10px' }}>{accionRepo}</Td>
                             </tr>
@@ -1926,8 +2019,8 @@ export default function App() {
                         <Td align="center">
                           {r.fase !== null ? (
                             <span className="px-2 py-0.5 font-bold" style={{
-                              background: r.fase === 3 ? '#fee2e2' : r.fase === 2 ? '#fef3c7' : r.fase === 1 ? '#dbeafe' : '#faf8f3',
-                              color: r.fase === 3 ? '#7f1d1d' : r.fase === 2 ? '#92400e' : r.fase === 1 ? '#1e40af' : '#0a2540',
+                              background: r.fase >= 3 ? '#fee2e2' : r.fase === 2 ? '#fef3c7' : r.fase === 1 ? '#dbeafe' : '#faf8f3',
+                              color: r.fase >= 3 ? '#7f1d1d' : r.fase === 2 ? '#92400e' : r.fase === 1 ? '#1e40af' : '#0a2540',
                             }}>F{r.fase}</span>
                           ) : <span className="text-stone-400">—</span>}
                         </Td>
@@ -2120,6 +2213,9 @@ export default function App() {
                         })}
                       </tbody>
                     </table>
+                    <div className="mt-2 text-[10px] text-stone-600">
+                      F4: más de 365 días, descuento consumidor 50%, inventario mínimo reconocido 12; con menos de 12 unidades la liquidación la asume Retail.
+                    </div>
                   </div>
                 )}
               </div>
@@ -2274,6 +2370,41 @@ export default function App() {
                   <h2 style={{ fontFamily: '"Times New Roman", serif', fontSize: '20px', color: '#0a2540', borderLeft: '4px solid #d4af37', paddingLeft: '12px', marginBottom: '16px' }}>
                     1. Resumen Ejecutivo
                   </h2>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                    {[
+                      ['Total SKU', resultados.totales.totalSKUs, 'Total Unidades', resultados.totales.totalUnidades],
+                      ['SKU Activos', resultados.totales.skuActivos, 'Total Unidades Activas', resultados.totales.unidadesActivas],
+                      ['SKU Vencidos', resultados.totales.skuVencidos, 'Total Unidades Vencidas', resultados.totales.unidadesVencidas],
+                      ['SKU por Vencer', resultados.totales.skuPorVencer, 'Total Unidades por Vencer', resultados.totales.unidadesPorVencer],
+                      ['SKU Maestro', resultados.totales.skuMaestro, 'Total Unidades Maestro', resultados.totales.unidadesMaestro],
+                    ].map(([label, value, unitLabel, unitValue]) => (
+                      <div key={label} style={{ border: '1px solid #e5e0d5', padding: '8px', background: '#faf8f3' }}>
+                        <div style={{ fontSize: '8px', textTransform: 'uppercase', color: '#666' }}>{label}</div>
+                        <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#0a2540' }}>{value}</div>
+                        <div style={{ borderTop: '1px solid #e5e0d5', marginTop: '5px', paddingTop: '5px', fontSize: '8px', color: '#666' }}>{unitLabel}</div>
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540' }}>{unitValue}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ border: '1px solid #d4af37', padding: '12px', marginBottom: '16px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#0a2540', marginBottom: '8px', textTransform: 'uppercase' }}>Valorización del inventario</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                      {[
+                        ['Valor Total Inventario', resultados.totales.valorTotalInventario],
+                        ['Valor Activo', resultados.totales.valorActivo],
+                        ['Valor EOL', resultados.totales.valorEOL],
+                        ['Valor EOL Futuro', resultados.totales.valorEOLFuturo],
+                        ['Valor Sin Maestro', resultados.totales.valorSinMaestro],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <div style={{ fontSize: '8px', color: '#666' }}>{label}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#0a2540' }}>{fmtUSD(value)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '16px' }}>
                     <div style={{ background: '#faf8f3', border: '1px solid #e5e0d5', padding: '14px', borderLeft: '3px solid #0a2540' }}>
@@ -2296,7 +2427,7 @@ export default function App() {
                       <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#065f46' }}>Qué oportunidad existe</div>
                       <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
                         {resultados.analisisPareto.skusParetoA.length > 0 ? (
-                          <>El portafolio tiene <strong>{resultados.analisisPareto.skusParetoA.length} SKUs Pareto A</strong> ({resultados.analisisPareto.pctSKUsA.toFixed(0)}% del activo) que concentran el 80% de las ventas. 
+                          <>El portafolio tiene <strong>{resultados.analisisPareto.skusParetoA.length} SKUs Pareto A — Pocos Vitales</strong> ({resultados.analisisPareto.pctSKUsA.toFixed(0)}% del activo) que concentran {resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas. La <strong>Cola Larga B/C</strong> contiene {resultados.analisisPareto.skusColaLarga.length} SKUs.{' '}
                           Reforzar disponibilidad y exhibición de estos SKUs puede aumentar el sell-through general.</>
                         ) : 'Se requieren más datos de ventas para identificar oportunidades de concentración.'}
                         {informe.skuHeroe && <> El SKU héroe <strong>{informe.skuHeroe.sku}</strong> es la mejor vitrina para activar bundles y cross-sell.</>}
@@ -2607,7 +2738,7 @@ export default function App() {
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
                         <div><strong style={{ color: '#d4af37' }}>Tier / Categoría:</strong> {informe.skuHeroe.tier} · {informe.skuHeroe.categoria}</div>
-                        <div><strong style={{ color: '#d4af37' }}>Venta:</strong> {informe.skuHeroe.ventas} unidades · {(informe.skuHeroe.pctVentas * 100).toFixed(1)}% del total</div>
+                        <div><strong style={{ color: '#d4af37' }}>Venta:</strong> {informe.skuHeroe.ventas} unidades · {(informe.skuHeroe.pctVentas * 100).toFixed(0)}% del total</div>
                         <div><strong style={{ color: '#d4af37' }}>Bundle recomendado:</strong> Combo con accesorio complementario (cable, funda o cargador) para subir ticket promedio.</div>
                         <div><strong style={{ color: '#d4af37' }}>Cross-sell natural:</strong> Productos de la misma categoría en tier inmediato superior (upgrade) o complementarios.</div>
                         <div><strong style={{ color: '#d4af37' }}>Mensaje comercial:</strong> Capitalizar el SKU héroe como "lo más vendido" para reforzar prueba social.</div>
@@ -2659,7 +2790,7 @@ export default function App() {
                     <p>
                       <strong style={{ color: '#d4af37' }}>"Esto es lo que puede ganar."</strong> Liberar el capital atrapado, recuperar la venta hoy bloqueada por quiebres, 
                       y rediseñar la góndola con foco en los SKUs ganadores le permitirá mejorar rotación, margen y ticket promedio en el próximo ciclo comercial.
-                      IOCA acompaña con el 20% de aporte en la liquidación y reposición priorizada por SKU.
+                      IOCA acompaña con el aporte definido por fase; en F4 con menos de 12 unidades la liquidación corresponde únicamente a Retail.
                     </p>
                   </div>
                 </div>
@@ -2714,7 +2845,7 @@ export default function App() {
                 <div className="no-page-break" style={{ background: '#0a2540', color: '#faf8f3', padding: '24px', marginTop: '30px' }}>
                   <div style={{ fontFamily: '"Times New Roman", serif', fontSize: '14px', fontStyle: 'italic', lineHeight: '1.7' }}>
                     <strong style={{ color: '#d4af37' }}>Mensaje final al comprador:</strong> El portafolio tiene los ingredientes para crecer — un SKU héroe claro, categorías con potencial 
-                    y SKUs Pareto A que sostienen el 80% de las ventas. Lo que falta es <em>disciplina de gestión</em>: liberar el capital atrapado, 
+                    y SKUs Pareto A que sostienen {resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas. Lo que falta es <em>disciplina de gestión</em>: liberar el capital atrapado,{' '}
                     proteger los productos ganadores, y rediseñar la góndola para que la venta fluya hacia los tiers de mayor margen. 
                     Las acciones son ejecutables en 30 a 90 días y su impacto se reflejará en el próximo ciclo comercial.
                   </div>
@@ -2746,10 +2877,21 @@ export default function App() {
 // SUB-COMPONENTES
 // ============================================================
 
-const KPI = ({ label, value, color = '#0a2540', bg = '#faf8f3' }) => (
+const KPIUnitPair = ({
+  label,
+  value,
+  unitLabel,
+  unitValue,
+  color = '#0a2540',
+  bg = '#faf8f3',
+}) => (
   <div className="border p-3 text-center" style={{ borderColor: '#e5e0d5', background: bg }}>
     <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
     <div className="text-xl font-bold mt-1" style={{ color }}>{value}</div>
+    <div className="mt-2 pt-2 border-t" style={{ borderColor: '#e5e0d5' }}>
+      <div className="text-[9px] uppercase tracking-wider text-stone-500">{unitLabel}</div>
+      <div className="text-sm font-bold mt-0.5" style={{ color }}>{unitValue}</div>
+    </div>
   </div>
 );
 
@@ -2765,6 +2907,8 @@ const TIER_COLORS = {
   GOOD:   { bg: '#94a3b8', textColor: '#fff',     label: 'GOOD' },
   BETTER: { bg: '#3b82f6', textColor: '#fff',     label: 'BETTER' },
   BEST:   { bg: '#d4af37', textColor: '#0a2540', label: 'BEST' },
+  EOL:    { bg: '#7f1d1d', textColor: '#fff',     label: 'EOL' },
+  'SIN CATEGORIA': { bg: '#cbd5e1', textColor: '#475569', label: 'SIN CATEGORIA' },
 };
 
 // Paleta institucional IOCA para categorías dinámicas
@@ -2786,7 +2930,8 @@ const getColorCategoria = (categoria, listaCategorias) => {
 };
 
 const DistribTierPanel = ({ titulo, subtitulo, data }) => {
-  const tiers = ['GOOD', 'BETTER', 'BEST'];
+  const tiers = ['GOOD', 'BETTER', 'BEST', 'EOL', 'SIN CATEGORIA']
+    .filter((tier) => tier !== 'SIN CATEGORIA' || data[tier].skus > 0);
   const hayDatos = tiers.some(t => data[t].unidades > 0);
 
   return (
@@ -2846,9 +2991,9 @@ const DistribTierPanel = ({ titulo, subtitulo, data }) => {
                   </td>
                   <td className="px-2 py-1.5 text-center">{data[t].skus}</td>
                   <td className="px-2 py-1.5 text-right font-bold">{data[t].unidades}</td>
-                  <td className="px-2 py-1.5 text-right">{(data[t].pctUnidades * 100).toFixed(2)}%</td>
+                  <td className="px-2 py-1.5 text-right">{(data[t].pctUnidades * 100).toFixed(0)}%</td>
                   <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(data[t].valor)}</td>
-                  <td className="px-2 py-1.5 text-right">{(data[t].pctValor * 100).toFixed(2)}%</td>
+                  <td className="px-2 py-1.5 text-right">{(data[t].pctValor * 100).toFixed(0)}%</td>
                 </tr>
               ))}
             </tbody>
@@ -2944,9 +3089,9 @@ const DistribCategoriaPanel = ({ titulo, subtitulo, data, listaCategorias }) => 
                     </td>
                     <td className="px-2 py-1.5 text-center">{d.skus}</td>
                     <td className="px-2 py-1.5 text-right font-bold">{d.unidades}</td>
-                    <td className="px-2 py-1.5 text-right">{(d.pctUnidades * 100).toFixed(2)}%</td>
+                    <td className="px-2 py-1.5 text-right">{(d.pctUnidades * 100).toFixed(0)}%</td>
                     <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(d.valor)}</td>
-                    <td className="px-2 py-1.5 text-right">{(d.pctValor * 100).toFixed(2)}%</td>
+                    <td className="px-2 py-1.5 text-right">{(d.pctValor * 100).toFixed(0)}%</td>
                   </tr>
                 );
               })}

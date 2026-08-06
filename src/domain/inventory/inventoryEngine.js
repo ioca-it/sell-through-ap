@@ -82,14 +82,36 @@ export const calcularInventarioSeguridadIOCA = ({
   };
 };
 
-// Evalúa quiebre para cualquier estado y restringe la reposición a SKU activos.
-export const calcularQuiebreYReposicion = ({ estado, invSeguridadIOCA, invFinal }) => ({
-  reposicionSugerida: estado === 'ACTIVO'
-    ? Math.max(0, invSeguridadIOCA - invFinal)
-    : 0,
-  alertaQuiebre: invSeguridadIOCA > 0 && invFinal < invSeguridadIOCA,
-});
+// Conserva la necesidad vigente y descuenta el inventario en tránsito. La alerta
+// compara el proyectado porque representa la posición esperada al cierre.
+export const calcularQuiebreYReposicion = ({
+  estado,
+  invSeguridadIOCA,
+  invFinal,
+  invProyectado = invFinal,
+  compra = 0,
+  existeEnMaestro = estado !== 'SIN MAESTRO',
+}) => {
+  const compraNormalizada = Number.isFinite(compra) ? compra : 0;
+  const necesidadReposicion = Math.max(0, invSeguridadIOCA - invFinal);
+  const permiteReposicion = existeEnMaestro && estado === 'ACTIVO';
+
+  return {
+    necesidadReposicion,
+    reposicionSugerida: permiteReposicion
+      ? Math.max(0, necesidadReposicion - compraNormalizada)
+      : 0,
+    alertaQuiebre: invSeguridadIOCA > 0 && invProyectado < invSeguridadIOCA,
+  };
+};
 
 // Conserva el texto operativo de reposición para un activo en quiebre.
-export const obtenerAccionQuiebreActivo = ({ alertaQuiebre, invSeguridadIOCA, invFinal }) =>
-  alertaQuiebre ? `Reponer ${invSeguridadIOCA - invFinal} u (orden de compra)` : '';
+export const obtenerAccionQuiebreActivo = ({
+  alertaQuiebre,
+  reposicionSugerida,
+  invSeguridadIOCA,
+  invFinal,
+}) => {
+  const cantidad = reposicionSugerida ?? Math.max(0, invSeguridadIOCA - invFinal);
+  return alertaQuiebre && cantidad > 0 ? `Reponer ${cantidad} u (orden de compra)` : '';
+};

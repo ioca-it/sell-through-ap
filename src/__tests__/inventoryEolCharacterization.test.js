@@ -399,7 +399,8 @@ describe('Inventory Engine extraído', () => {
       costo: 100,
       invSeguridadIOCA: 19,
       alertaQuiebre: true,
-      reposicionSugerida: 4,
+      necesidadReposicion: 4,
+      reposicionSugerida: 0,
     });
     expect(bridgeRecords['PHASE-CHINA-240']).toMatchObject({
       diasDesc: 240,

@@ -1,5 +1,25 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-06 — Prompt 031
+
+### Agregado
+
+- Especificación funcional V2 de los acuerdos Astrid–Jesús.
+- Inventario en Tránsito agregado por SKU, EOL Fase 4, temporalidad y Pareto A/B/C.
+- Pares KPI SKU/unidades y ecuación completa de valorización para Dashboard e Informe.
+- 18 pruebas funcionales nuevas; suite total de 179 pruebas.
+
+### Modificado
+
+- Inventory/EOL Engine, Record Assembler, Portfolio Analysis, Executive Report, Application Service, formatos, UI y exportación Excel.
+- Reposición final descuenta Compra; seguridad compara Inventario Proyectado; EOL reemplaza el nivel previo.
+- Porcentajes y KPI se muestran sin decimales; etiquetas de aportes eliminan `(20%)` y `(80%)`.
+
+### Sin cambios
+
+- Repository, Provider, Configuration Center, `datos.json`, dependencias y fuentes físicas.
+- No se realiza push ni se agrega el log local a Git.
+
 ## 2026-08-06 — Prompt 029
 
 ### Corregido

@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-Foundation 1.0, Refactorización Fase 9 completada para Executive Report MVP. Portfolio Analysis fue endurecido por Prompt 023 y Prompt 022.5 optimizó el flujo documental de IA.
+Foundation 1.0 con reglas funcionales V2 implementadas. Prompt 031 completa los acuerdos Astrid–Jesús sobre reposición, tránsito, temporalidad, F4, Distribution, Pareto, KPIs y valorización sin cambiar fuentes ni Configuration Center.
 
 ## Último prompt aprobado
 
-Prompt 029 — Corrección final de impresión PDF. El informe ejecutivo se imprime aislado del shell.
+Prompt 031 — Reglas funcionales Astrid–Jesús.
 
 ## Última auditoría aprobada
 
@@ -14,17 +14,17 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 
 ## Servicios implementados
 
-- `sellThroughApplicationService`: orquesta Repository, parsers, ensamblaje, Portfolio Analysis, Distribution y Pareto.
-- `PortfolioAnalysisService`: consolidación, alertas, agregados, métricas, snapshot y estructura final.
-- `ExecutiveReportService`: Executive Summary, KPIs, totales, indicadores generales y resumen para Dashboard desde el DTO de Portfolio Analysis.
-- Inventory Engine y EOL Engine: reglas puras de inventario, reposición y ciclo EOL.
+- `sellThroughApplicationService`: orquesta Repository, parsers, ensamblaje, Portfolio Analysis, Distribution Tier GOOD/BETTER/BEST/EOL y Pareto A/B/C.
+- `PortfolioAnalysisService`: consolidación, tránsito, sin rotación, alertas, temporalidad agregada, KPIs, valorización y estructura final.
+- `ExecutiveReportService`: Executive Summary con pares SKU/unidades, valorización, KPIs, indicadores generales y resumen para Dashboard.
+- Inventory Engine y EOL Engine: necesidad/reposición final, seguridad sobre proyectado, temporalidad, ciclo EOL y F4.
 - Master Parser, Inventory Parser y Record Assembler: normalización y records procesados.
 - `sellThroughRepository` y Local Provider: frontera síncrona vigente de fuentes.
 - Configuration Center Foundation: PAR-001, PAR-002 y PAR-003 con schema como fuente única de IDs/keys.
 
 ## Servicios pendientes
 
-- Executive Report completo, integración visual y Recommendation Engine: pendientes de alcance específico.
+- Extracción futura de las narrativas consultivas restantes de `App.jsx` y Recommendation Engine: pendientes de alcance específico.
 - Extracción futura de Distribution y Pareto: pendiente de prompt independiente.
 - DataverseProvider, persistencia, autenticación y asincronía: no implementados.
 - Configuration Center completo: pendiente migrar parámetros adicionales; el MVP visual y local está habilitado solo para el schema actual.
@@ -42,11 +42,11 @@ UI (App.jsx)
 Configuration Schema -> Configuration Service -> Repository
 ```
 
-Distribution y Pareto permanecen en Application Service. Executive Report MVP se genera desde el DTO de Portfolio Analysis; su integración visual y exportaciones permanecen en `App.jsx`. React no accede directamente a fuentes físicas.
+Distribution y Pareto permanecen en Application Service. Executive Report consume el DTO de Portfolio Analysis; presentación, narrativas y exportaciones permanecen en `App.jsx` sin acceder directamente a fuentes físicas.
 
 ## Siguiente hito
 
-Definir persistencia remota y migración controlada de parámetros adicionales; Recommendation Engine permanece pendiente.
+Auditar de forma independiente Prompt 031 y definir después la persistencia remota o Recommendation Engine mediante alcance separado.
 
 ## Decisiones congeladas
 
@@ -58,6 +58,10 @@ Definir persistencia remota y migración controlada de parámetros adicionales; 
 - Portfolio Analysis clona estructuras externas y congela únicamente objetos de su propia salida; las referencias originales del llamador nunca se congelan.
 - Executive Report sólo consume el DTO de Portfolio Analysis y no accede a UI, Repository, Provider o fuentes físicas.
 - Distribution y Pareto no pertenecen actualmente a Portfolio Analysis Service.
+- Compra es Inventario en Tránsito y la reposición final la descuenta de la necesidad vigente.
+- La seguridad usa Inventario Proyectado; Estado EOL fuerza nivel EOL y temporalidad VENCIDO.
+- Pareto A/B/C usa unidades vendidas y cortes acumulados 80%/95%.
+- F4 aplica después de 365 días con descuento 50% y umbral de 12 unidades.
 - Executive Report, Recommendation Engine y Configuration Center UI requieren prompts separados.
 - `sell-through-ap` permanece separado de NEXUS.
 
@@ -66,12 +70,12 @@ Definir persistencia remota y migración controlada de parámetros adicionales; 
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Ocho archivos de pruebas automatizadas.
+- Diez archivos de pruebas automatizadas.
 
 ## Cantidad de pruebas
 
-161/161 aprobadas.
+179/179 aprobadas.
 
 ## Estado del build
 
-Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: Prompt 029, 2026-08-06.
+Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: Prompt 031, 2026-08-06.

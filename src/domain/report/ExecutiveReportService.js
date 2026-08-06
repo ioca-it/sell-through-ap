@@ -37,6 +37,15 @@ const buildExecutiveReport = (portfolioAnalysis) => {
     eolVencidos: totales.eolVencidos,
     eolFuturos: totales.eolFuturos,
     sinMaestro: totales.sinMaestro,
+    totalUnidades: totales.totalUnidades,
+    skuActivos: totales.skuActivos,
+    unidadesActivas: totales.unidadesActivas,
+    skuVencidos: totales.skuVencidos,
+    unidadesVencidas: totales.unidadesVencidas,
+    skuPorVencer: totales.skuPorVencer,
+    unidadesPorVencer: totales.unidadesPorVencer,
+    skuMaestro: totales.skuMaestro,
+    unidadesMaestro: totales.unidadesMaestro,
   };
 
   const kpis = {
@@ -51,6 +60,19 @@ const buildExecutiveReport = (portfolioAnalysis) => {
     totalSkusConVentas: analisisPareto.totalSkusConVentas,
     pctSKUsA: analisisPareto.pctSKUsA,
     pctVentasA: analisisPareto.pctVentasA,
+    totalUnidades: totales.totalUnidades,
+    unidadesActivas: totales.unidadesActivas,
+    unidadesVencidas: totales.unidadesVencidas,
+    unidadesPorVencer: totales.unidadesPorVencer,
+    unidadesMaestro: totales.unidadesMaestro,
+  };
+
+  const valorizacion = {
+    valorTotalInventario: totales.valorTotalInventario,
+    valorActivo: totales.valorActivo,
+    valorEOL: totales.valorEOL,
+    valorEOLFuturo: totales.valorEOLFuturo,
+    valorSinMaestro: totales.valorSinMaestro,
   };
 
   const indicadoresGenerales = {
@@ -66,11 +88,16 @@ const buildExecutiveReport = (portfolioAnalysis) => {
       skusEnQuiebre: alertas.skusEnQuiebre.length,
       quiebreActivos: alertas.quiebreActivos,
       quiebreEOL: alertas.quiebreEOL,
+      totalUnidadesTransito: alertas.totalUnidadesTransito,
+      skusEnTransito: alertas.productosEnTransito.length,
     },
     pareto: {
       totalSkusConVentas: analisisPareto.totalSkusConVentas,
       pctSKUsA: analisisPareto.pctSKUsA,
       pctVentasA: analisisPareto.pctVentasA,
+      skusPocosVitales: analisisPareto.skusParetoA.length,
+      skusColaLarga: analisisPareto.skusColaLarga.length,
+      pctVentasColaLarga: analisisPareto.pctVentasColaLarga,
       interpretacion: { ...analisisPareto.interpretacion },
     },
   };
@@ -78,6 +105,7 @@ const buildExecutiveReport = (portfolioAnalysis) => {
   return freezeReport({
     executiveSummary,
     kpis,
+    valorizacion,
     totales: { ...totales },
     indicadoresGenerales,
     dashboard,

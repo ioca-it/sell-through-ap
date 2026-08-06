@@ -63,7 +63,7 @@ export const parseMaster = (rawMaster) => {
       : 'ACTIVO';
     const estado = rawStatus === 'EOL' || rawStatus === 'DESCONTINUADO' ? 'EOL' : 'ACTIVO';
     const fechaStr = columns.fecha >= 0 ? (values[columns.fecha] || '').trim() : '';
-    const fecha = estado === 'EOL' ? parseFecha(fechaStr) : null;
+    const fecha = parseFecha(fechaStr);
     const rawCategory = (columns.categoria >= 0 ? values[columns.categoria] : '')
       .trim()
       .toUpperCase();
@@ -72,7 +72,7 @@ export const parseMaster = (rawMaster) => {
       sku,
       marca: (columns.marca >= 0 ? values[columns.marca] : '').trim().toUpperCase(),
       modelo: (columns.modelo >= 0 ? values[columns.modelo] : '').trim(),
-      categoria: rawCategory || 'SIN CATEGORIA',
+      categoria: rawCategory || '—',
       estado,
       fecha,
       fechaStr: fechaStr === '-' ? '' : fechaStr,

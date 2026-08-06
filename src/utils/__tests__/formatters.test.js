@@ -29,9 +29,9 @@ describe.each([
 
 describe('fmtPct', () => {
   it.each([
-    ['formatea una razón normal', 0.1234, '12.34%'],
-    ['formatea cero', 0, '0.00%'],
-    ['formatea una razón negativa', -0.125, '-12.50%'],
+    ['formatea una razón normal sin decimales', 0.1234, '12%'],
+    ['formatea cero sin decimales', 0, '0%'],
+    ['redondea una razón negativa sin decimales', -0.125, '-13%'],
   ])('%s', (_case, value, expected) => {
     expect(fmtPct(value)).toBe(expected);
   });

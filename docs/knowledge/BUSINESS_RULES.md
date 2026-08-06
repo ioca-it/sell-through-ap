@@ -19,16 +19,17 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 ### BR-003 — Maestro de Productos
 
 - `EOL` y `DESCONTINUADO` se normalizan a estado `EOL`; cualquier otro valor se normaliza a `ACTIVO`.
-- La fecha solo se interpreta para productos `EOL`.
+- La fecha se interpreta para clasificar temporalmente productos EOL y no EOL.
 - Fechas aceptadas: `d/m/aaaa`, `d-m-aaaa` y `aaaa-m-d`.
-- Categoría vacía se convierte en `SIN CATEGORIA`.
+- Categoría vacía en un SKU presente en Maestro se muestra como `—`; `SIN CATEGORIA` queda reservado a SKU sin correspondencia en Maestro.
 - Los costos eliminan `$` y comas antes de convertirse a número; un valor inválido queda en cero.
 
 ### BR-004 — Inventario del Cliente
 
 - Los valores enteros eliminan caracteres distintos de dígitos y signo menos; un valor inválido queda en cero.
 - Si falta Inventario Proyectado: `Inv. Inicial + Compra - Ventas`.
-- Si falta Tier, el registro conserva Tier vacío; para las distribuciones un Tier desconocido o vacío se agrupa como `GOOD`.
+- Un producto EOL usa nivel `EOL`, sustituyendo cualquier GOOD/BETTER/BEST anterior.
+- Para un producto activo con Maestro, un Tier desconocido o vacío se agrupa como `GOOD`; `SIN CATEGORIA` solo representa un SKU sin Maestro.
 
 ### BR-005 — SKU sin maestro
 
@@ -69,8 +70,9 @@ La estrategia, descuento base textual y prioridad de cada bucket están en `src/
 - Antes de 90 días transcurridos no hay fase activa.
 - Se selecciona la mayor fase cuyo `diasMin` sea menor o igual a los días transcurridos.
 - La tabla actual contiene únicamente marca `SKULLCANDY` y orígenes `USA`/`CHINA`.
-- Umbrales actuales: F0 desde 90 días, F1 desde 120, F2 desde 150 y F3 desde 240.
-- Si no existe combinación de marca y origen, no se aplica fase ni descuento.
+- Umbrales actuales: F0 desde 90 días, F1 desde 120, F2 desde 150, F3 desde 240 y F4 con más de 365 días.
+- F4 aplica descuento consumidor de `50%` y reconoce un inventario mínimo de 12 unidades.
+- Antes de F4, si no existe combinación de marca y origen, no se aplica fase ni descuento; F4 es global para productos con más de 365 días.
 
 ### BR-010 — Descuento y aportes
 
@@ -79,6 +81,7 @@ La estrategia, descuento base textual y prioridad de cada bucket están en `src/
 - `aporte Retail por unidad = descuento por unidad × porcentaje Retail`.
 - Los totales multiplican cada valor unitario por Inventario Final.
 - Los porcentajes exactos dependen de fase y origen y se leen de `tablaFases`.
+- F4 conserva el reparto de la última fase configurada para marca/origen; cuando el Inventario Final es menor que 12 unidades, IOCA aporta `0%` y Retail asume `100%` de la liquidación.
 
 ## Inventario, merma, rotación y reposición
 
@@ -97,9 +100,12 @@ ceil((Ventas / Semanas del período) × (Safety Stock en semanas + Lead Time del
 
 ### BR-012 — Reposición y quiebre
 
-- `reposición sugerida = max(0, Inv. Seguridad IOCA - Inv. Final)` únicamente para productos `ACTIVO`.
-- La alerta de quiebre ocurre si el Inventario de Seguridad IOCA es mayor que cero y el Inventario Final es menor.
-- Un activo en quiebre recomienda reponer la diferencia.
+- `necesidad de reposición = max(0, Inv. Seguridad IOCA - Inv. Final)`.
+- `Compra` representa Inventario en Tránsito y cae en `0` cuando la columna/celda está ausente, vacía o es nula.
+- `reposición final = max(0, necesidad de reposición - Compra)` únicamente para productos `ACTIVO` con correspondencia en Maestro.
+- EOL, F4 y SKU sin Maestro generan reposición final `0`.
+- La alerta de nivel de seguridad ocurre si el Inventario de Seguridad IOCA es mayor que cero y el Inventario Proyectado es menor. No usa Inventario Final para esa comparación.
+- Inventario Proyectado conserva valores negativos.
 - Un EOL en quiebre no genera reposición: la acción depende del bucket (`rebalanceo`, aceptar quiebre, liquidar o dejar morir).
 
 ### BR-013 — Merma
@@ -120,6 +126,8 @@ ceil((Ventas / Semanas del período) × (Safety Stock en semanas + Lead Time del
 - Valor de inventario: costo aplicado por Inventario Final.
 - Valor de ventas: costo aplicado por Ventas.
 - Valor de reposición: costo aplicado por Reposición Sugerida.
+- El costo aplicado conserva la selección vigente: China usa costo China; USA y otros/vacío usan el fallback USA.
+- `Valor Total Inventario = Valor Activo + Valor EOL + Valor EOL Futuro + Valor Sin Maestro`.
 
 ## Análisis de portafolio
 
@@ -135,13 +143,18 @@ Distribution y Pareto no forman parte de este Business Service. Application Serv
 
 - Se calculan unidades, valor, cantidad de SKU y porcentajes sobre registros con unidades mayores que cero.
 - Se generan vistas para Inventario Final, Ventas y Reposición Sugerida.
-- Las categorías nacen dinámicamente del Maestro; los faltantes se agrupan en `SIN CATEGORIA`.
+- El Mix Balanceado y la distribución Tier incluyen, en este orden, `GOOD`, `BETTER`, `BEST` y `EOL`; deben conservar todas las unidades y sumar `100%` cuando existe base positiva.
+- `SIN CATEGORIA` solo se agrega para registros sin correspondencia en Maestro.
+- Las categorías de producto nacen dinámicamente del Maestro; una categoría vacía del Maestro se presenta como `—`.
 
-### BR-017 — Pareto 80/20
+### BR-017 — Pareto A/B/C
 
 - Solo participan registros con Ventas mayores que cero.
 - Se ordenan de mayor a menor por unidades vendidas.
-- Un SKU es clase A si el acumulado anterior a incluirlo aún era menor que `80%`; el resto es B.
+- Un SKU es clase A si el acumulado anterior a incluirlo aún era menor que `80%`, B si era menor que `95%` y C en el resto.
+- La vista técnica muestra A, B y C con cantidad de SKU y participaciones reales.
+- La vista ejecutiva agrupa A como `Pocos Vitales` y B/C como `Cola Larga`.
+- Los porcentajes visibles provienen del cálculo; no se usan porcentajes fijos como etiquetas.
 - Interpretación por proporción de SKU A: hasta 20% es concentración clásica; más de 20% y hasta 35% es mix balanceado; más de 35% es distribución plana.
 
 ## Reglas del informe ejecutivo
@@ -150,8 +163,8 @@ Distribution y Pareto no forman parte de este Business Service. Application Serv
 
 El informe aplica, entre otras, estas condiciones implementadas:
 
-- sin movimiento: Ventas igual a cero e Inventario Final mayor que cero;
-- subinventario activo: Inventario Final menor que Inventario de Seguridad IOCA;
+- sin movimiento: Ventas igual a cero, independientemente del Inventario Final;
+- subinventario activo: Inventario Proyectado menor que Inventario de Seguridad IOCA;
 - obsolescencia: EOL vencido con Inventario Final mayor que cero;
 - activación requerida: activo Tier `BEST`, con inventario y Ventas menores o iguales a 1;
 - categoría en obsolescencia: al menos `75%` de sus SKU en piso son EOL;
@@ -161,6 +174,25 @@ El informe aplica, entre otras, estas condiciones implementadas:
 - el SKU héroe es el primer SKU del Pareto, es decir, el de mayor venta entre los que tienen ventas.
 
 Las recomendaciones narrativas se generan con reglas fijas en `App.jsx`; no son datos recibidos de una IA ni de un servicio externo.
+
+### BR-022 — Clasificación temporal
+
+- Estado EOL tiene prioridad y se clasifica como `VENCIDO`.
+- Para no EOL, fecha vacía/inválida o más de 31 días restantes se clasifica `ACTIVO`.
+- Entre 0 y 31 días restantes inclusive se clasifica `POR VENCER`; menos de 0 se clasifica `VENCIDO`.
+- `días restantes = Fecha Descontinuación - Fecha de Procesamiento`; la fecha de procesamiento conserva la fecha base mensual vigente del caso de uso.
+
+### BR-023 — Inventario en Tránsito
+
+- Incluye todo registro con `Compra > 0`, agregado por SKU y sin valorización monetaria.
+- El total es la suma de unidades `Compra`; incluye productos EOL aunque su reposición final sea cero.
+
+### BR-024 — KPIs y formato ejecutivo
+
+- Cada KPI de SKU presenta debajo su homólogo de unidades: Total, Activos, Vencidos, Por Vencer y Maestro.
+- Total Unidades Maestro suma Inventario Final de registros con correspondencia en Maestro.
+- Unidades, cantidades, porcentajes y KPI se muestran sin decimales; los importes conservan formato monetario.
+- Las etiquetas financieras omiten los sufijos `(20%)` y `(80%)` sin cambiar los cálculos de aportes.
 
 ## Salidas
 

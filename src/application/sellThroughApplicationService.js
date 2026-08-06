@@ -44,9 +44,10 @@ const validateProcessingConfig = (config) => {
   return null;
 };
 
-// Agrupa unidades, valor y filas por Tier con el fallback GOOD vigente.
-const calculateTierDistribution = (records, unitField, valueField) => {
-  const tiers = ['GOOD', 'BETTER', 'BEST'];
+// Agrupa todas las unidades por nivel operativo. EOL es la cuarta clasificación;
+// SIN CATEGORIA queda reservada exclusivamente a registros sin Maestro.
+export const calculateTierDistribution = (records, unitField, valueField) => {
+  const tiers = ['GOOD', 'BETTER', 'BEST', 'EOL', 'SIN CATEGORIA'];
   const result = {};
   let totalU = 0;
   let totalV = 0;
@@ -64,7 +65,9 @@ const calculateTierDistribution = (records, unitField, valueField) => {
   });
   records.forEach((record) => {
     const tier = (record.tier || '').toUpperCase();
-    const validTier = tiers.includes(tier) ? tier : 'GOOD';
+    const validTier = record.estado === 'SIN MAESTRO'
+      ? 'SIN CATEGORIA'
+      : (tiers.slice(0, 4).includes(tier) ? tier : 'GOOD');
     const units = record[unitField] || 0;
     const value = record[valueField] || 0;
     if (units > 0) {
@@ -82,7 +85,7 @@ const calculateTierDistribution = (records, unitField, valueField) => {
     result[tier].pctSKUs = totalSKUs > 0 ? result[tier].skus / totalSKUs : 0;
   });
 
-  return { tiers: result, totalU, totalV, totalSKUs };
+  return { tiers: result, lista: tiers, totalU, totalV, totalSKUs };
 };
 
 // Agrupa unidades, valor y filas según las categorías ya derivadas del Maestro.
@@ -124,8 +127,8 @@ const calculateCategoryDistribution = (records, categories, unitField, valueFiel
   return { categorias: result, totalU, totalV, totalSKUs };
 };
 
-// Conserva orden, corte 80/20 e interpretación textual del Pareto actual.
-const calculatePareto = (records) => {
+// Clasifica por unidades vendidas con cortes acumulados A=80%, B=95%, C=resto.
+export const calculatePareto = (records) => {
   const withSales = records.filter((record) => record.ventas > 0)
     .sort((a, b) => b.ventas - a.ventas);
   const totalSales = withSales.reduce((sum, record) => sum + record.ventas, 0);
@@ -136,20 +139,30 @@ const calculatePareto = (records) => {
     const pctAcumAntes = totalSales > 0 ? accumulated / totalSales : 0;
     accumulated += record.ventas;
     const pctAcum = totalSales > 0 ? accumulated / totalSales : 0;
-    const paretoClase = pctAcumAntes < 0.80 ? 'A' : 'B';
+    const paretoClase = pctAcumAntes < 0.80 ? 'A' : (pctAcumAntes < 0.95 ? 'B' : 'C');
     return { ...record, pctVentas, pctAcum, paretoClase };
   });
 
   const skusParetoA = recordsWithPareto.filter((record) => record.paretoClase === 'A');
   const skusParetoB = recordsWithPareto.filter((record) => record.paretoClase === 'B');
+  const skusParetoC = recordsWithPareto.filter((record) => record.paretoClase === 'C');
+  const skusColaLarga = [...skusParetoB, ...skusParetoC];
   const totalSkusConVentas = recordsWithPareto.length;
   const pctSKUsA = totalSkusConVentas > 0
     ? (skusParetoA.length / totalSkusConVentas) * 100
     : 0;
   const ventasA = skusParetoA.reduce((sum, record) => sum + record.ventas, 0);
   const ventasB = skusParetoB.reduce((sum, record) => sum + record.ventas, 0);
+  const ventasC = skusParetoC.reduce((sum, record) => sum + record.ventas, 0);
   const pctVentasA = totalSales > 0 ? (ventasA / totalSales) * 100 : 0;
   const pctVentasB = totalSales > 0 ? (ventasB / totalSales) * 100 : 0;
+  const pctVentasC = totalSales > 0 ? (ventasC / totalSales) * 100 : 0;
+  const pctSKUsB = totalSkusConVentas > 0
+    ? (skusParetoB.length / totalSkusConVentas) * 100
+    : 0;
+  const pctSKUsC = totalSkusConVentas > 0
+    ? (skusParetoC.length / totalSkusConVentas) * 100
+    : 0;
 
   let interpretacion;
   if (totalSkusConVentas === 0) {
@@ -162,21 +175,21 @@ const calculatePareto = (records) => {
   } else if (pctSKUsA <= 20) {
     interpretacion = {
       titulo: 'Concentración saludable (Pareto clásico)',
-      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}% del portafolio activo) generan el 80% de las ventas.`,
-      linea2: `Reposición agresiva y prioritaria de estos SKUs A; stock mínimo y revisión de racionalización para los ${skusParetoB.length} SKUs B.`,
+      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}% del portafolio activo) generan ${pctVentasA.toFixed(0)}% de las ventas.`,
+      linea2: `Reposición prioritaria de los SKUs A; revisar los ${skusColaLarga.length} SKUs B/C de cola larga.`,
       color: '#065f46', bg: '#d1fae5',
     };
   } else if (pctSKUsA <= 35) {
     interpretacion = {
       titulo: 'Mix balanceado',
-      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas — distribución algo más amplia que Pareto clásico.`,
-      linea2: 'Mantener disponibilidad sostenida de los SKUs A y evaluar SKUs B con menor velocidad para evitar sobre-stock.',
+      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan ${pctVentasA.toFixed(0)}% de las ventas — distribución algo más amplia que Pareto clásico.`,
+      linea2: 'Mantener disponibilidad de los SKUs A y evaluar la cola larga B/C para evitar sobre-stock.',
       color: '#1e40af', bg: '#dbeafe',
     };
   } else {
     interpretacion = {
       titulo: 'Distribución plana — portafolio disperso',
-      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas, dispersión alta.`,
+      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan ${pctVentasA.toFixed(0)}% de las ventas, dispersión alta.`,
       linea2: 'Cobertura amplia necesaria; oportunidad clara de racionalizar SKUs marginales en la cola larga.',
       color: '#92400e', bg: '#fef3c7',
     };
@@ -185,14 +198,21 @@ const calculatePareto = (records) => {
   return {
     skusParetoA,
     skusParetoB,
+    skusParetoC,
+    skusColaLarga,
     totalSkusConVentas,
     totalVentas: totalSales,
     pctSKUsA,
-    pctSKUsB: 100 - pctSKUsA,
+    pctSKUsB,
+    pctSKUsC,
+    pctSKUsColaLarga: pctSKUsB + pctSKUsC,
     ventasA,
     ventasB,
+    ventasC,
     pctVentasA,
     pctVentasB,
+    pctVentasC,
+    pctVentasColaLarga: pctVentasB + pctVentasC,
     interpretacion,
   };
 };

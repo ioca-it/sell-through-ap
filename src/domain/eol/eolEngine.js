@@ -12,6 +12,29 @@ import { diasEntre } from '../../utils/dateUtils.js';
 // Calcula los días EOL usando exclusivamente la fecha base recibida del orquestador.
 export const calcularDiasEOL = ({ fechaBase, fechaEOL }) => diasEntre(fechaBase, fechaEOL);
 
+// Clasifica el estado temporal contra la fecha de procesamiento. Estado EOL tiene
+// prioridad contractual incluso cuando la fecha sea futura, vacía o inválida.
+export const clasificarTemporalmente = ({
+  estado,
+  fechaDescontinuacion,
+  fechaProcesamiento,
+}) => {
+  const diasRestantes = fechaDescontinuacion
+    ? diasEntre(fechaDescontinuacion, fechaProcesamiento)
+    : null;
+
+  if (estado === 'EOL') {
+    return { diasRestantes, clasificacionTemporal: 'VENCIDO' };
+  }
+  if (diasRestantes === null || diasRestantes > 31) {
+    return { diasRestantes, clasificacionTemporal: 'ACTIVO' };
+  }
+  if (diasRestantes >= 0) {
+    return { diasRestantes, clasificacionTemporal: 'POR VENCER' };
+  }
+  return { diasRestantes, clasificacionTemporal: 'VENCIDO' };
+};
+
 // Selecciona el bucket vigente y conserva Planificado para horizontes mayores a 360 días.
 export const seleccionarBucketEOL = ({ diasDesc, buckets }) => {
   if (diasDesc === null) return null;
@@ -29,6 +52,19 @@ export const seleccionarFaseEOL = ({ marca, origen, diasDesc, tablaFases }) => {
   const candidatos = tablaFases.filter((fase) =>
     fase.marca === marca.toUpperCase() && fase.origen === origen.toUpperCase()
   );
+  if (diasDesc > 365) {
+    const ultimaFase = [...candidatos].sort((a, b) => b.diasMin - a.diasMin)[0];
+    return {
+      marca: marca.toUpperCase(),
+      origen: origen.toUpperCase(),
+      fase: 4,
+      diasMin: 366,
+      descConsumidor: 0.50,
+      aporteIOCA: ultimaFase?.aporteIOCA ?? 0,
+      aporteRetail: ultimaFase?.aporteRetail ?? 0,
+      inventarioMinimoReconocido: 12,
+    };
+  }
   if (candidatos.length === 0) return null;
   const ordenados = [...candidatos].sort((a, b) => b.diasMin - a.diasMin);
   for (const fase of ordenados) {
@@ -40,8 +76,11 @@ export const seleccionarFaseEOL = ({ marca, origen, diasDesc, tablaFases }) => {
 // Calcula porcentajes, valores unitarios y totales sin alterar la tabla de fases.
 export const calcularDescuentoYAportes = ({ costo, faseConfig, invFinal }) => {
   const descPct = faseConfig ? faseConfig.descConsumidor : 0;
-  const ioaPct = faseConfig ? faseConfig.aporteIOCA : 0;
-  const retailPct = faseConfig ? faseConfig.aporteRetail : 0;
+  const inventarioMinimoReconocido = faseConfig?.inventarioMinimoReconocido ?? 0;
+  const liquidacionSoloRetail = faseConfig?.fase === 4
+    && invFinal < inventarioMinimoReconocido;
+  const ioaPct = liquidacionSoloRetail ? 0 : (faseConfig ? faseConfig.aporteIOCA : 0);
+  const retailPct = liquidacionSoloRetail ? 1 : (faseConfig ? faseConfig.aporteRetail : 0);
   const descUSD = costo * descPct;
   const ioaUSD = descUSD * ioaPct;
   const retailUSD = descUSD * retailPct;
@@ -56,6 +95,8 @@ export const calcularDescuentoYAportes = ({ costo, faseConfig, invFinal }) => {
     descTotal: descUSD * invFinal,
     ioaTotal: ioaUSD * invFinal,
     retailTotal: retailUSD * invFinal,
+    inventarioMinimoReconocido,
+    liquidacionSoloRetail,
   };
 };
 

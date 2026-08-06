@@ -12,10 +12,10 @@ export const fmtUSD = (v) => {
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-// Presenta razones decimales como porcentajes con dos decimales.
+// Los porcentajes visibles se presentan sin decimales por acuerdo funcional.
 export const fmtPct = (v) => {
   if (v === null || v === undefined || isNaN(v)) return '—';
-  return `${(v * 100).toFixed(2)}%`;
+  return `${(v * 100).toFixed(0)}%`;
 };
 
 // Presenta índices numéricos con la precisión usada en las tablas actuales.
