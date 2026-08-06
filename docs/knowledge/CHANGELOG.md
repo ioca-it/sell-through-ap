@@ -1,5 +1,17 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-06 — Prompt 028
+
+### Agregado
+
+- UX final responsive para presentación, estado de procesamiento y metadata deploy-ready.
+- Favicon SVG, theme color y metadata Open Graph básica.
+- Hito MVP de presentación con Dashboard, Configuration Center y exportaciones existentes.
+
+### Sin cambios funcionales
+
+- No se modificaron Domain, Repository, Provider, reglas ni Business Services.
+
 ## 2026-08-06 — Prompt 026
 
 ### Agregado

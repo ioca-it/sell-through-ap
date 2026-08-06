@@ -899,11 +899,11 @@ export default function App() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-8 py-6 space-y-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-5 sm:py-6 space-y-5 sm:space-y-6">
 
         {/* BARRA DE NAVEGACIÓN POR TABS */}
         <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
-          <nav className="flex">
+          <nav className="grid grid-cols-2 md:flex">
             {[
               { id: 'config', label: 'Configuración', icon: Settings, done: configCompleta },
               { id: 'configurationCenter', label: 'Configuration Center', icon: Settings, done: true },
@@ -917,7 +917,7 @@ export default function App() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className="flex-1 px-6 py-4 flex items-center justify-center gap-3 border-r last:border-r-0 transition-all"
+                  className="flex-1 px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-center gap-2 sm:gap-3 border-r last:border-r-0 transition-all min-h-[56px]"
                   style={{
                     borderColor: '#e5e0d5',
                     background: isActive ? '#0a2540' : '#faf8f3',

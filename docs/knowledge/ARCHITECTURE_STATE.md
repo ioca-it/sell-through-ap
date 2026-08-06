@@ -6,7 +6,7 @@ Foundation 1.0, Refactorización Fase 9 completada para Executive Report MVP. Po
 
 ## Último prompt aprobado
 
-Prompt 026 — Configuration Center MVP. Pantalla y persistencia local sobre los tres parámetros existentes.
+Prompt 028 — MVP Final. Presentación ejecutiva, Configuration Center UX, exportaciones y metadata deploy-ready.
 
 ## Última auditoría aprobada
 
@@ -46,7 +46,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report MVP se
 
 ## Siguiente hito
 
-Definir la integración futura con persistencia remota y migración controlada de parámetros adicionales; Recommendation Engine permanece pendiente.
+Definir persistencia remota y migración controlada de parámetros adicionales; Recommendation Engine permanece pendiente.
 
 ## Decisiones congeladas
 
@@ -65,6 +65,7 @@ Definir la integración futura con persistencia remota y migración controlada d
 
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
+- MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
 - Ocho archivos de pruebas automatizadas.
 
 ## Cantidad de pruebas
@@ -73,4 +74,4 @@ Definir la integración futura con persistencia remota y migración controlada d
 
 ## Estado del build
 
-Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: Prompt 026, 2026-08-06.
+Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: Prompt 028, 2026-08-06.
