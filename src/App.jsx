@@ -1,71 +1,37 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { Package, AlertCircle, CheckCircle2, FileText, Download, Trash2, PlayCircle, Database, AlertTriangle, TrendingDown, DollarSign, Calendar, Calculator, FileSpreadsheet, Settings, Upload, BarChart3, ChevronRight, ClipboardList } from 'lucide-react';
-import { dataService } from './services/dataService.js';
+import { createSellThroughRepository } from './repositories/sellThroughRepository.js';
+import { fmtUSD, fmtPct, fmtIdx, fmtUSDInline } from './utils/formatters.js';
+import { primerDiaMes } from './utils/dateUtils.js';
+import { processSellThrough } from './application/sellThroughApplicationService.js';
+import { configurationService } from './configuration/configurationService.js';
+
+// La hidratación ocurre en el servicio; mantenerla fuera del componente permite
+// conservar los contratos de caracterización que ejecutan App como función pura.
+configurationService.loadPersistedValues();
 
 // ============================================================
 // BASE DE CONOCIMIENTO INSTITUCIONAL IOCA
-// (Cargada desde dataService — futuro: Dataverse)
+// (Cargada mediante Repository — futuro Provider: Dataverse)
 // ============================================================
 
-const BUCKET_EOL = dataService.getBucketEOL();
-const TABLA_FASES = dataService.getTablaFases();
-const PAISES_IOCA = dataService.getPaises();
-const PERIODOS_ANALISIS = dataService.getPeriodos();
-const UMBRAL_MERMA_PCT = dataService.getUmbralMerma();
-const SEMANAS_POR_PERIODO = dataService.getSemanasPorPeriodo();
-const NOTA_INV_SEGURIDAD = dataService.getNotaInvSeguridadIOCA();
+const sourceRepository = createSellThroughRepository();
+const {
+  bucketEOL: BUCKET_EOL,
+  tablaFases: TABLA_FASES,
+} = sourceRepository.getParametros();
+const {
+  paisesIOCA: PAISES_IOCA,
+  periodosAnalisis: PERIODOS_ANALISIS,
+  notaInvSeguridadIOCA: NOTA_INV_SEGURIDAD,
+} = sourceRepository.getCatalogos();
 const APP_VERSION = 'V1';
 const APP_NAME = 'IOCA Sell-Through Intelligence V1';
-
-// Helper: convierte el período seleccionado a número de semanas
-const obtenerSemanasPeriodo = (periodo, semanasPersonalizadas) => {
-  if (periodo === 'Personalizado') {
-    const v = parseFloat(semanasPersonalizadas);
-    return isNaN(v) || v <= 0 ? 4.33 : v;
-  }
-  return SEMANAS_POR_PERIODO[periodo] || 4.33;
-};
 
 // ============================================================
 // HELPERS
 // ============================================================
-
-const normalizeHeader = (h) => h.toLowerCase()
-  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-  .replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-
-const parseFecha = (s) => {
-  if (!s) return null;
-  const clean = s.trim();
-  let m;
-  if ((m = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) return new Date(+m[3], +m[2]-1, +m[1]);
-  if ((m = clean.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/))) return new Date(+m[3], +m[2]-1, +m[1]);
-  if ((m = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return new Date(+m[1], +m[2]-1, +m[3]);
-  return null;
-};
-
-const parseCosto = (s) => {
-  if (!s) return 0;
-  const clean = String(s).replace(/\$/g, '').replace(/,/g, '').trim();
-  const n = parseFloat(clean);
-  return isNaN(n) ? 0 : n;
-};
-
-const fmtUSD = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
-  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
-
-const fmtPct = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
-  return `${(v * 100).toFixed(2)}%`;
-};
-
-const fmtIdx = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
-  return v.toFixed(2);
-};
 
 const colorIdxRotacion = (v) => {
   // Color según interpretación del índice
@@ -74,11 +40,6 @@ const colorIdxRotacion = (v) => {
   if (v <= 3) return { bg: '#dbeafe', fg: '#1e40af' };      // normal — azul
   if (v <= 10) return { bg: '#fef3c7', fg: '#92400e' };     // lenta — ámbar
   return { bg: '#fee2e2', fg: '#7f1d1d' };                  // muy lenta — rojo
-};
-
-const primerDiaMes = () => {
-  const hoy = new Date();
-  return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
 };
 
 const generarInformeEjecutivo = (resultados, config) => {
@@ -287,34 +248,6 @@ const generarInformeEjecutivo = (resultados, config) => {
   };
 };
 
-const diasEntre = (a, b) => {
-  if (!a || !b) return null;
-  return Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
-};
-
-const buscarFase = (marca, origen, diasDesc) => {
-  if (diasDesc === null || diasDesc < 90) return null;
-  const candidatos = TABLA_FASES.filter(f =>
-    f.marca === marca.toUpperCase() && f.origen === origen.toUpperCase()
-  );
-  if (candidatos.length === 0) return null;
-  const ordenados = [...candidatos].sort((a, b) => b.diasMin - a.diasMin);
-  for (const f of ordenados) {
-    if (diasDesc >= f.diasMin) return f;
-  }
-  return null;
-};
-
-const asignarBucketPreEOL = (diasDesc) => {
-  if (diasDesc === null) return null;
-  if (diasDesc >= 0) return BUCKET_EOL[0]; // Vencido
-  const diasHacia = Math.abs(diasDesc);
-  if (diasHacia <= 27) return BUCKET_EOL[1];   // Crítico
-  if (diasHacia <= 83) return BUCKET_EOL[2];   // Próximo
-  if (diasHacia <= 360) return BUCKET_EOL[3];  // Planificado
-  return BUCKET_EOL[3];
-};
-
 // ============================================================
 // COMPONENTE PRINCIPAL
 // ============================================================
@@ -329,6 +262,51 @@ export default function App() {
   
   // Estado: Tab activo
   const [activeTab, setActiveTab] = useState('config');
+  const [configurationRevision, setConfigurationRevision] = useState(0);
+  const [configurationSearch, setConfigurationSearch] = useState('');
+  const [configurationCategory, setConfigurationCategory] = useState('Todas');
+  const [configurationMessage, setConfigurationMessage] = useState(null);
+
+  const configurationSchema = configurationService.getSchema();
+  const configurationValues = configurationService.getConfiguration();
+  const configurationCategories = [...new Set(configurationSchema.map((parameter) => parameter.categoria))];
+  const visibleConfiguration = configurationSchema.filter((parameter) => {
+    const search = configurationSearch.trim().toLowerCase();
+    const matchesSearch = !search
+      || parameter.nombre?.toLowerCase().includes(search)
+      || parameter.key.toLowerCase().includes(search)
+      || parameter.descripcion.toLowerCase().includes(search);
+    const matchesCategory = configurationCategory === 'Todas' || parameter.categoria === configurationCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const updateConfiguration = (parameter, rawValue) => {
+    try {
+      const value = parameter.tipo === 'number' ? Number(rawValue)
+        : parameter.tipo === 'boolean' ? rawValue === 'true' : rawValue;
+      configurationService.setValue(parameter.key, value);
+      setConfigurationRevision((revision) => revision + 1);
+      setConfigurationMessage({ type: 'success', text: `Valor guardado: ${parameter.key}.` });
+    } catch (configurationError) {
+      setConfigurationMessage({ type: 'error', text: configurationError.message });
+    }
+  };
+
+  const resetConfigurationValue = (parameter) => {
+    try {
+      configurationService.resetValue(parameter.key);
+      setConfigurationRevision((revision) => revision + 1);
+      setConfigurationMessage({ type: 'success', text: `Valor restaurado: ${parameter.key}.` });
+    } catch (configurationError) {
+      setConfigurationMessage({ type: 'error', text: configurationError.message });
+    }
+  };
+
+  const resetAllConfiguration = () => {
+    configurationService.resetAll();
+    setConfigurationRevision((revision) => revision + 1);
+    setConfigurationMessage({ type: 'success', text: 'Todos los parámetros fueron restaurados a sus defaults.' });
+  };
   
   // Estado: Configuración del análisis
   const hoyISO = new Date().toISOString().slice(0, 10);
@@ -356,477 +334,20 @@ export default function App() {
   const procesar = () => {
     setError(null);
     try {
-      if (!rawMaestro.trim()) {
-        setError("Falta cargar el Maestro de Productos.");
-        return;
-      }
-      if (!rawInventario.trim()) {
-        setError("Falta cargar el Inventario del Cliente.");
-        return;
-      }
-
-      // ===== PARSER MAESTRO =====
-      const mLines = rawMaestro.trim().split('\n').filter(l => l.trim());
-      const mHeaders = mLines[0].split(/\t|,|;/).map(h => normalizeHeader(h));
-      const findM = (...kws) => {
-        for (const k of kws) { const i = mHeaders.findIndex(h => h === k); if (i >= 0) return i; }
-        for (const k of kws) { const i = mHeaders.findIndex(h => h.includes(k)); if (i >= 0) return i; }
-        return -1;
-      };
-      const mCols = {
-        marca: findM('marca'),
-        sku: findM('sku'),
-        modelo: findM('modelos', 'modelo', 'nombre', 'descripcion'),
-        categoria: findM('categorias', 'categoria', 'category', 'cat'),
-        fecha: findM('fechadescontinuacion', 'fechaeol', 'fecha'),
-        estado: findM('estado', 'status'),
-        usa: findM('usa', 'exwmia'),
-        china: findM('china'),
-      };
-      
-      if (mCols.sku < 0) {
-        setError("El Maestro necesita columna 'SKU'. Detecté: " + mLines[0]);
-        return;
-      }
-
-      const maestro = {};
-      mLines.slice(1).forEach(line => {
-        const v = line.split(/\t|,|;/).map(x => x.trim());
-        const sku = (v[mCols.sku] || '').trim();
-        if (!sku) return;
-        const estadoRaw = mCols.estado >= 0 ? (v[mCols.estado] || '').trim().toUpperCase() : 'ACTIVO';
-        const estado = (estadoRaw === 'EOL' || estadoRaw === 'DESCONTINUADO') ? 'EOL' : 'ACTIVO';
-        const fechaStr = mCols.fecha >= 0 ? (v[mCols.fecha] || '').trim() : '';
-        const fecha = estado === 'EOL' ? parseFecha(fechaStr) : null;
-        const categoriaRaw = (mCols.categoria >= 0 ? v[mCols.categoria] : '').trim().toUpperCase();
-        const categoria = categoriaRaw || 'SIN CATEGORIA';
-        maestro[sku] = {
-          sku,
-          marca: (mCols.marca >= 0 ? v[mCols.marca] : '').trim().toUpperCase(),
-          modelo: (mCols.modelo >= 0 ? v[mCols.modelo] : '').trim(),
-          categoria,
-          estado,
-          fecha,
-          fechaStr: fechaStr === '-' ? '' : fechaStr,
-          costoUSA: mCols.usa >= 0 ? parseCosto(v[mCols.usa]) : 0,
-          costoCHINA: mCols.china >= 0 ? parseCosto(v[mCols.china]) : 0,
-        };
+      const processingRepository = createSellThroughRepository({
+        rawMaestro,
+        rawInventario,
+        config,
       });
-
-      // ===== PARSER INVENTARIO =====
-      const iLines = rawInventario.trim().split('\n').filter(l => l.trim());
-      const iHeaders = iLines[0].split(/\t|,|;/).map(h => normalizeHeader(h));
-      const findI = (...kws) => {
-        for (const k of kws) { const i = iHeaders.findIndex(h => h === k); if (i >= 0) return i; }
-        for (const k of kws) { const i = iHeaders.findIndex(h => h.includes(k)); if (i >= 0) return i; }
-        return -1;
-      };
-      const iCols = {
-        tienda: findI('tienda', 'cuenta', 'sucursal'),
-        codigo: findI('codigo', 'codigocliente'),
-        ean13: findI('ean13', 'ean'),
-        sku: findI('sku'),
-        marca: findI('marca'),
-        tier: findI('tier'),
-        eol: findI('eol'),
-        nombre: findI('nombre', 'modelo', 'descripcion'),
-        origenInv: findI('origen'),
-        invSeguridad: findI('inventarioseguridad', 'invseguridad', 'safetystock'),
-        invInicial: findI('invinicial', 'inventarioinicial'),
-        compra: findI('compra', 'compras', 'recibido'),
-        ventas: findI('ventas', 'sales'),
-        invProyectado: findI('invproyectado', 'inventarioproyectado', 'proyectado'),
-        invFinal: findI('invfinal', 'inventariofinal', 'final'),
-      };
-
-      if (iCols.sku < 0) {
-        setError("El Inventario necesita columna 'SKU'. Detecté: " + iLines[0]);
-        return;
-      }
-      if (iCols.invFinal < 0) {
-        setError("El Inventario necesita columna 'Inv Final' o equivalente.");
+      const { resultados: nuevosResultados, error: errorProcesamiento } = processSellThrough(
+        processingRepository,
+      );
+      if (errorProcesamiento) {
+        setError(errorProcesamiento);
         return;
       }
 
-      // ===== CRUCE Y CÁLCULO =====
-      const fechaBase = primerDiaMes();
-      const recs = [];
-      const parseIntSafe = (s) => parseInt(String(s || '0').replace(/[^\d-]/g, '')) || 0;
-      
-      iLines.slice(1).forEach(line => {
-        const v = line.split(/\t|,|;/).map(x => x.trim());
-        const sku = (v[iCols.sku] || '').trim();
-        if (!sku) return;
-        
-        const tienda = iCols.tienda >= 0 ? (v[iCols.tienda] || 'N/A').trim() : 'N/A';
-        const codigo = iCols.codigo >= 0 ? (v[iCols.codigo] || '').trim() : '';
-        const ean13 = iCols.ean13 >= 0 ? (v[iCols.ean13] || '').trim() : '';
-        const nombreInv = iCols.nombre >= 0 ? (v[iCols.nombre] || '').trim() : '';
-        const tier = iCols.tier >= 0 ? (v[iCols.tier] || '').trim().toUpperCase() : '';
-        const eolInvRaw = iCols.eol >= 0 ? (v[iCols.eol] || '').trim().toUpperCase() : '';
-        const origenInv = iCols.origenInv >= 0 ? (v[iCols.origenInv] || '').trim().toUpperCase() : '';
-        
-        const invSeguridad = iCols.invSeguridad >= 0 ? parseIntSafe(v[iCols.invSeguridad]) : 0;
-        const invInicial = iCols.invInicial >= 0 ? parseIntSafe(v[iCols.invInicial]) : 0;
-        const compra = iCols.compra >= 0 ? parseIntSafe(v[iCols.compra]) : 0;
-        const ventas = iCols.ventas >= 0 ? parseIntSafe(v[iCols.ventas]) : 0;
-        const invProyectado = iCols.invProyectado >= 0 ? parseIntSafe(v[iCols.invProyectado]) : (invInicial + compra - ventas);
-        const invFinal = parseIntSafe(v[iCols.invFinal]);
-        
-        // Merma = lo que debería quedar vs lo que realmente quedó
-        const merma = invProyectado - invFinal;
-        const mermaPct = invInicial > 0 ? merma / invInicial : 0;
-        const alertaMerma = invInicial > 0 && mermaPct > UMBRAL_MERMA_PCT;
-        
-        // Índice de Rotación = Inv. Inicial / Ventas
-        // null si ventas = 0 (división indefinida)
-        const indiceRotacion = ventas > 0 ? invInicial / ventas : null;
-        
-        const m = maestro[sku];
-        if (!m) {
-          const sinMaestroAlertaQuiebre = invSeguridad > 0 && invFinal < invSeguridad;
-          recs.push({
-            sku, tienda, codigo, ean13, modelo: nombreInv || '(sin info)',
-            marca: 'SIN MAESTRO', estado: 'SIN MAESTRO', tier,
-            categoria: 'SIN CATEGORIA',
-            fechaStr: '—', diasDesc: null, bucket: null, fase: null,
-            origen: origenInv || '—', sinOrigenInv: !origenInv,
-            costo: 0, costoUSA: 0, costoCHINA: 0,
-            descPct: 0, descUSD: 0, ioaUSD: 0, retailUSD: 0,
-            invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
-            invSeguridadIOCA: invSeguridad, deltaInvSeguridad: 0, fuenteInvSeguridad: 'Cliente',
-            semanasPeriodo: obtenerSemanasPeriodo(config.periodoAnalizado, config.semanasPersonalizadas),
-            leadTimeAplicado: 0,
-            merma, mermaPct, alertaMerma,
-            indiceRotacion,
-            reposicionSugerida: 0,
-            alertaQuiebre: sinMaestroAlertaQuiebre,
-            accionSugerida: sinMaestroAlertaQuiebre ? 'Agregar al Maestro y decidir' : '',
-            valorInv: 0,
-            valorVentas: 0,
-            descTotal: 0, ioaTotal: 0, retailTotal: 0,
-          });
-          return;
-        }
-
-        // ===== REGLA NUEVA: Origen viene del Inventario (no del Maestro) =====
-        // Si el inventario no trae Origen para este SKU, asumir USA por default + alertar
-        const sinOrigenInv = !origenInv;
-        const origen = (origenInv === 'CHINA') ? 'CHINA' : 'USA'; // default USA
-        
-        const costo = origen === 'CHINA' ? m.costoCHINA : m.costoUSA;
-        let diasDesc = null;
-        let bucket = null;
-        let fase = null;
-        let descPct = 0, ioaPct = 0, retailPct = 0;
-        
-        if (m.estado === 'EOL' && m.fecha) {
-          diasDesc = diasEntre(fechaBase, m.fecha);
-          if (diasDesc >= 0) {
-            bucket = BUCKET_EOL[0]; // Vencido
-            const f = buscarFase(m.marca, origen, diasDesc);
-            if (f) {
-              fase = f.fase;
-              descPct = f.descConsumidor;
-              ioaPct = f.aporteIOCA;
-              retailPct = f.aporteRetail;
-            }
-          } else {
-            bucket = asignarBucketPreEOL(diasDesc);
-          }
-        }
-        
-        const descUSD = costo * descPct;
-        const ioaUSD = descUSD * ioaPct;
-        const retailUSD = descUSD * retailPct;
-        
-        // ===== MOTOR INV. SEGURIDAD IOCA V1 =====
-        // Fórmula: Inv. Seguridad IOCA = (Ventas ÷ Semanas del período) × (Safety Stock semanas + Lead Time del origen)
-        // Condiciones:
-        //   - Ventas > 0 → aplica fórmula IOCA (Fuente: IOCA)
-        //   - Ventas = 0 → fallback al valor reportado por el cliente (Fuente: Cliente)
-        //   - Lead Time se toma según origen del SKU (USA o China)
-        const semanasPeriodo = obtenerSemanasPeriodo(config.periodoAnalizado, config.semanasPersonalizadas);
-        const leadTimeAplicado = origen === 'CHINA' ? config.leadTimeCHINA : config.leadTimeUSA;
-        let invSeguridadIOCA;
-        let fuenteInvSeguridad;
-        if (ventas > 0 && semanasPeriodo > 0) {
-          invSeguridadIOCA = Math.ceil((ventas / semanasPeriodo) * (config.safetyStockSemanas + leadTimeAplicado));
-          fuenteInvSeguridad = 'IOCA';
-        } else {
-          invSeguridadIOCA = invSeguridad; // fallback al cliente
-          fuenteInvSeguridad = 'Cliente';
-        }
-        const deltaInvSeguridad = invSeguridadIOCA - invSeguridad;
-        
-        // Reposición sugerida y alerta de quiebre usan el Inv. Seguridad IOCA
-        // (no el del cliente) para reflejar la política institucional IOCA V1
-        const reposicionSugerida = m.estado === 'ACTIVO' 
-          ? Math.max(0, invSeguridadIOCA - invFinal) 
-          : 0;
-        const alertaQuiebre = invSeguridadIOCA > 0 && invFinal < invSeguridadIOCA;
-        
-        // Acción sugerida dinámica según estado y bucket EOL
-        let accionSugerida = '';
-        if (alertaQuiebre) {
-          if (m.estado === 'ACTIVO') {
-            accionSugerida = `Reponer ${invSeguridadIOCA - invFinal} u (orden de compra)`;
-          } else if (m.estado === 'EOL') {
-            const bucketName = bucket ? bucket.bucket : 'EOL Sin Fecha';
-            if (bucketName === 'EOL Planificado') {
-              accionSugerida = 'Rebalanceo C→A — traer de otra tienda/bodega';
-            } else if (bucketName === 'EOL Próximo') {
-              accionSugerida = 'Rebalanceo C→A o aceptar quiebre';
-            } else if (bucketName === 'EOL Crítico') {
-              accionSugerida = 'Aceptar quiebre — liquidar lo que queda';
-            } else if (bucketName === 'EOL Vencido') {
-              accionSugerida = 'Quiebre — dejar morir';
-            } else {
-              accionSugerida = 'Verificar Maestro y decidir';
-            }
-          }
-        }
-
-        recs.push({
-          sku, tienda, codigo, ean13,
-          modelo: m.modelo || nombreInv,
-          marca: m.marca,
-          estado: m.estado,
-          tier,
-          categoria: m.categoria || 'SIN CATEGORIA',
-          fechaStr: m.fechaStr || '—',
-          diasDesc,
-          bucket: bucket ? bucket.bucket : null,
-          fase,
-          origen,
-          sinOrigenInv,
-          costo,
-          costoUSA: m.costoUSA,
-          costoCHINA: m.costoCHINA,
-          descPct, descUSD,
-          ioaPct, ioaUSD,
-          retailPct, retailUSD,
-          invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
-          invSeguridadIOCA, deltaInvSeguridad, fuenteInvSeguridad,
-          semanasPeriodo, leadTimeAplicado,
-          merma, mermaPct, alertaMerma,
-          indiceRotacion,
-          reposicionSugerida, alertaQuiebre, accionSugerida,
-          valorInv: costo * invFinal,
-          valorVentas: costo * ventas,
-          valorReposicion: costo * reposicionSugerida,
-          descTotal: descUSD * invFinal,
-          ioaTotal: ioaUSD * invFinal,
-          retailTotal: retailUSD * invFinal,
-        });
-      });
-
-      // ===== AGRUPACIÓN =====
-      const eolVencidos = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc >= 0)
-        .sort((a, b) => b.diasDesc - a.diasDesc || b.descUSD - a.descUSD);
-      const eolFuturos = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc < 0)
-        .sort((a, b) => b.diasDesc - a.diasDesc);
-      const activos = recs.filter(r => r.estado === 'ACTIVO')
-        .sort((a, b) => b.valorInv - a.valorInv);
-      const sinMaestro = recs.filter(r => r.estado === 'SIN MAESTRO');
-
-      const totalUnidEOL = eolVencidos.reduce((s, r) => s + r.invFinal, 0);
-      const totalValorEOL = eolVencidos.reduce((s, r) => s + r.valorInv, 0);
-      const totalDescEOL = eolVencidos.reduce((s, r) => s + r.descTotal, 0);
-      const totalIOAEOL = eolVencidos.reduce((s, r) => s + r.ioaTotal, 0);
-      const totalRetailEOL = eolVencidos.reduce((s, r) => s + r.retailTotal, 0);
-      
-      // ===== ALERTAS OPERATIVAS =====
-      const skusSinOrigen = recs.filter(r => r.sinOrigenInv && r.estado !== 'SIN MAESTRO');
-      const skusConMerma = recs.filter(r => r.alertaMerma);
-      const totalMermaUnid = skusConMerma.reduce((s, r) => s + r.merma, 0);
-      const totalMermaValor = skusConMerma.reduce((s, r) => s + r.merma * r.costo, 0);
-      const skusEnQuiebre = recs.filter(r => r.alertaQuiebre);
-      const quiebreActivos = skusEnQuiebre.filter(r => r.estado === 'ACTIVO').length;
-      const quiebreEOL = skusEnQuiebre.filter(r => r.estado === 'EOL').length;
-      const totalReposicionUnid = activos.reduce((s, r) => s + r.reposicionSugerida, 0);
-      const totalReposicionValor = activos.reduce((s, r) => s + r.valorReposicion, 0);
-      
-      // ===== DISTRIBUCIÓN POR TIER (GBB) =====
-      const calcDistribTier = (records, unidField, valorField) => {
-        const tiers = ['GOOD', 'BETTER', 'BEST'];
-        const result = {};
-        let totalU = 0, totalV = 0, totalSKUs = 0;
-        tiers.forEach(t => { result[t] = { unidades: 0, valor: 0, skus: 0, pctUnidades: 0, pctValor: 0, pctSKUs: 0 }; });
-        records.forEach(r => {
-          const t = (r.tier || '').toUpperCase();
-          const validTier = tiers.includes(t) ? t : 'GOOD';
-          const u = r[unidField] || 0;
-          const v = r[valorField] || 0;
-          if (u > 0) {
-            result[validTier].unidades += u;
-            result[validTier].valor += v;
-            result[validTier].skus += 1;
-            totalU += u;
-            totalV += v;
-            totalSKUs += 1;
-          }
-        });
-        tiers.forEach(t => {
-          result[t].pctUnidades = totalU > 0 ? result[t].unidades / totalU : 0;
-          result[t].pctValor = totalV > 0 ? result[t].valor / totalV : 0;
-          result[t].pctSKUs = totalSKUs > 0 ? result[t].skus / totalSKUs : 0;
-        });
-        return { tiers: result, totalU, totalV, totalSKUs };
-      };
-      
-      const distribucionTier = {
-        inventario: calcDistribTier(recs, 'invFinal', 'valorInv'),
-        ventas: calcDistribTier(recs, 'ventas', 'valorVentas'),
-        reposicion: calcDistribTier(activos, 'reposicionSugerida', 'valorReposicion'),
-      };
-      
-      // ===== DISTRIBUCIÓN POR CATEGORÍA =====
-      const todasCategoriasSet = new Set();
-      recs.forEach(r => { if (r.categoria && r.categoria !== 'SIN CATEGORIA') todasCategoriasSet.add(r.categoria); });
-      const listaCategorias = Array.from(todasCategoriasSet).sort();
-      if (recs.some(r => r.categoria === 'SIN CATEGORIA')) listaCategorias.push('SIN CATEGORIA');
-      
-      const calcDistribCategoria = (records, listaCats, unidField, valorField) => {
-        const result = {};
-        let totalU = 0, totalV = 0, totalSKUs = 0;
-        listaCats.forEach(c => {
-          result[c] = { unidades: 0, valor: 0, skus: 0, pctUnidades: 0, pctValor: 0, pctSKUs: 0 };
-        });
-        records.forEach(r => {
-          const c = r.categoria || 'SIN CATEGORIA';
-          const u = r[unidField] || 0;
-          const v = r[valorField] || 0;
-          if (u > 0 && result[c]) {
-            result[c].unidades += u;
-            result[c].valor += v;
-            result[c].skus += 1;
-            totalU += u;
-            totalV += v;
-            totalSKUs += 1;
-          }
-        });
-        listaCats.forEach(c => {
-          result[c].pctUnidades = totalU > 0 ? result[c].unidades / totalU : 0;
-          result[c].pctValor = totalV > 0 ? result[c].valor / totalV : 0;
-          result[c].pctSKUs = totalSKUs > 0 ? result[c].skus / totalSKUs : 0;
-        });
-        return { categorias: result, totalU, totalV, totalSKUs };
-      };
-      
-      const distribucionCategoria = {
-        lista: listaCategorias,
-        inventario: calcDistribCategoria(recs, listaCategorias, 'invFinal', 'valorInv'),
-        ventas: calcDistribCategoria(recs, listaCategorias, 'ventas', 'valorVentas'),
-        reposicion: calcDistribCategoria(activos, listaCategorias, 'reposicionSugerida', 'valorReposicion'),
-      };
-      
-      // ===== ANÁLISIS PARETO 80/20 (basado en VENTAS) =====
-      const conVentas = recs.filter(r => r.ventas > 0)
-        .sort((a, b) => b.ventas - a.ventas);
-      const totalVentasPareto = conVentas.reduce((s, r) => s + r.ventas, 0);
-      
-      let acumulado = 0;
-      const skusConPareto = conVentas.map(r => {
-        const pctVentas = totalVentasPareto > 0 ? r.ventas / totalVentasPareto : 0;
-        const pctAcumAntes = totalVentasPareto > 0 ? acumulado / totalVentasPareto : 0;
-        acumulado += r.ventas;
-        const pctAcum = totalVentasPareto > 0 ? acumulado / totalVentasPareto : 0;
-        // Clase A: SKUs cuyo acumulado anterior aún no superaba el 80%
-        const paretoClase = pctAcumAntes < 0.80 ? 'A' : 'B';
-        return { ...r, pctVentas, pctAcum, paretoClase };
-      });
-      
-      const skusParetoA = skusConPareto.filter(r => r.paretoClase === 'A');
-      const skusParetoB = skusConPareto.filter(r => r.paretoClase === 'B');
-      const totalSkusConVentas = skusConPareto.length;
-      const pctSKUsA = totalSkusConVentas > 0 ? (skusParetoA.length / totalSkusConVentas) * 100 : 0;
-      const ventasA = skusParetoA.reduce((s, r) => s + r.ventas, 0);
-      const ventasB = skusParetoB.reduce((s, r) => s + r.ventas, 0);
-      const pctVentasA = totalVentasPareto > 0 ? (ventasA / totalVentasPareto) * 100 : 0;
-      const pctVentasB = totalVentasPareto > 0 ? (ventasB / totalVentasPareto) * 100 : 0;
-      
-      // Interpretación automática (máximo 2 líneas)
-      let paretoInterpretacion;
-      if (totalSkusConVentas === 0) {
-        paretoInterpretacion = {
-          titulo: 'Sin datos de ventas',
-          linea1: 'No hay SKUs con ventas en el período analizado.',
-          linea2: 'Validar el archivo de inventario o el período del análisis.',
-          color: '#92400e', bg: '#fef3c7',
-        };
-      } else if (pctSKUsA <= 20) {
-        paretoInterpretacion = {
-          titulo: 'Concentración saludable (Pareto clásico)',
-          linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}% del portafolio activo) generan el 80% de las ventas.`,
-          linea2: `Reposición agresiva y prioritaria de estos SKUs A; stock mínimo y revisión de racionalización para los ${skusParetoB.length} SKUs B.`,
-          color: '#065f46', bg: '#d1fae5',
-        };
-      } else if (pctSKUsA <= 35) {
-        paretoInterpretacion = {
-          titulo: 'Mix balanceado',
-          linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas — distribución algo más amplia que Pareto clásico.`,
-          linea2: `Mantener disponibilidad sostenida de los SKUs A y evaluar SKUs B con menor velocidad para evitar sobre-stock.`,
-          color: '#1e40af', bg: '#dbeafe',
-        };
-      } else {
-        paretoInterpretacion = {
-          titulo: 'Distribución plana — portafolio disperso',
-          linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas, dispersión alta.`,
-          linea2: `Cobertura amplia necesaria; oportunidad clara de racionalizar SKUs marginales en la cola larga.`,
-          color: '#92400e', bg: '#fef3c7',
-        };
-      }
-      
-      const analisisPareto = {
-        skusParetoA, skusParetoB,
-        totalSkusConVentas, totalVentas: totalVentasPareto,
-        pctSKUsA, pctSKUsB: 100 - pctSKUsA,
-        ventasA, ventasB, pctVentasA, pctVentasB,
-        interpretacion: paretoInterpretacion,
-      };
-
-      const semanasPeriodoUsadas = obtenerSemanasPeriodo(config.periodoAnalizado, config.semanasPersonalizadas);
-      
-      setResultados({
-        fechaCalculo: fechaBase,
-        recs, eolVencidos, eolFuturos, activos, sinMaestro,
-        distribucionTier,
-        distribucionCategoria,
-        analisisPareto,
-        semanasPeriodoUsadas,
-        configSnapshot: {
-          periodoAnalizado: config.periodoAnalizado,
-          semanasPeriodo: semanasPeriodoUsadas,
-          safetyStockSemanas: config.safetyStockSemanas,
-          leadTimeUSA: config.leadTimeUSA,
-          leadTimeCHINA: config.leadTimeCHINA,
-        },
-        alertas: {
-          skusSinOrigen,
-          skusConMerma,
-          totalMermaUnid,
-          totalMermaValor,
-          skusEnQuiebre,
-          quiebreActivos,
-          quiebreEOL,
-          totalReposicionUnid,
-          totalReposicionValor,
-          umbralMermaPct: UMBRAL_MERMA_PCT,
-        },
-        totales: {
-          totalSKUs: recs.length,
-          activos: activos.length,
-          eolVencidos: eolVencidos.length,
-          eolFuturos: eolFuturos.length,
-          sinMaestro: sinMaestro.length,
-          unidEOL: totalUnidEOL,
-          valorEOL: totalValorEOL,
-          descEOL: totalDescEOL,
-          ioaEOL: totalIOAEOL,
-          retailEOL: totalRetailEOL,
-        },
-      });
+      setResultados(nuevosResultados);
       // Saltar automáticamente al dashboard cuando termina el procesamiento
       setActiveTab('dashboard');
     } catch (e) {
@@ -835,8 +356,9 @@ export default function App() {
   };
 
   const cargarEjemplo = () => {
-    setRawMaestro(dataService.getMaestroSample());
-    setRawInventario(dataService.getInventarioSample());
+    const datosEjemplo = sourceRepository.getDatosEjemplo();
+    setRawMaestro(datosEjemplo.maestro);
+    setRawInventario(datosEjemplo.inventario);
     setError(null);
   };
 
@@ -1384,6 +906,7 @@ export default function App() {
           <nav className="flex">
             {[
               { id: 'config', label: 'Configuración', icon: Settings, done: configCompleta },
+              { id: 'configurationCenter', label: 'Configuration Center', icon: Settings, done: true },
               { id: 'carga', label: 'Carga de Información', icon: Upload, done: dataCargada },
               { id: 'dashboard', label: 'Dashboard', icon: BarChart3, done: !!resultados },
               { id: 'informe', label: 'Informe Ejecutivo', icon: FileText, done: !!resultados },
@@ -1418,6 +941,61 @@ export default function App() {
         </div>
 
         {/* ========================= TAB 1: CONFIGURACIÓN ========================= */}
+        {activeTab === 'configurationCenter' && (
+          <section className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+            <div className="px-6 py-4 border-b flex items-center justify-between flex-wrap gap-3" style={{ borderColor: '#e5e0d5', background: '#0a2540', color: '#faf8f3' }}>
+              <div>
+                <div className="text-[10px] uppercase tracking-widest" style={{ color: '#d4af37' }}>Configuration Center</div>
+                <h2 className="text-xl font-bold mt-1" style={{ fontFamily: '"Times New Roman", serif' }}>Parámetros registrados</h2>
+                <div className="text-xs opacity-75 mt-1">CONFIGURATION_SCHEMA es la única fuente autorizada.</div>
+              </div>
+              <button onClick={resetAllConfiguration} className="px-3 py-2 text-xs font-bold border" style={{ borderColor: '#d4af37', color: '#d4af37' }}>
+                Restaurar todos los parámetros
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {configurationMessage && (
+                <div className="px-4 py-3 text-sm border" style={{ borderColor: configurationMessage.type === 'success' ? '#86efac' : '#fca5a5', background: configurationMessage.type === 'success' ? '#f0fdf4' : '#fef2f2', color: configurationMessage.type === 'success' ? '#166534' : '#991b1b' }}>
+                  {configurationMessage.text}
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-3">
+                <input type="search" value={configurationSearch} onChange={(event) => setConfigurationSearch(event.target.value)} placeholder="Buscar por nombre, clave o descripción" className="border px-3 py-2 text-sm" style={{ borderColor: '#d6d3d1' }} />
+                <select value={configurationCategory} onChange={(event) => setConfigurationCategory(event.target.value)} className="border px-3 py-2 text-sm" style={{ borderColor: '#d6d3d1' }}>
+                  <option value="Todas">Todas las categorías</option>
+                  {configurationCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-3">
+                {visibleConfiguration.map((parameter) => {
+                  const currentValue = configurationValues[parameter.key];
+                  return (
+                    <div key={parameter.id} className="border p-4" style={{ borderColor: '#e5e0d5' }}>
+                      <div className="grid grid-cols-1 lg:grid-cols-[90px_1.1fr_1.1fr_1fr_1.5fr] gap-3 items-start">
+                        <div><div className="text-[10px] uppercase text-stone-500">ID</div><div className="font-bold text-sm" style={{ color: '#0a2540' }}>{parameter.id}</div></div>
+                        <div><div className="text-[10px] uppercase text-stone-500">Nombre</div><div className="font-bold text-sm" style={{ color: '#0a2540' }}>{parameter.nombre || parameter.key}</div></div>
+                        <div><div className="text-[10px] uppercase text-stone-500">Clave</div><div className="font-mono text-xs mt-1">{parameter.key}</div><div className="text-xs text-stone-500 mt-1">{parameter.categoria}</div></div>
+                        <div><div className="text-[10px] uppercase text-stone-500">Valor actual</div><input disabled={!parameter.editable} value={String(currentValue ?? '')} onChange={(event) => updateConfiguration(parameter, event.target.value)} className="w-full border px-2 py-1.5 text-sm mt-1 disabled:bg-stone-100 disabled:text-stone-500" style={{ borderColor: '#d6d3d1' }} /></div>
+                        <div><div className="text-[10px] uppercase text-stone-500">Descripción</div><div className="text-xs text-stone-600 mt-1">{parameter.descripcion}</div></div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                        <span className="px-2 py-1" style={{ background: parameter.editable ? '#dcfce7' : '#f1f5f9', color: parameter.editable ? '#166534' : '#475569' }}>{parameter.editable ? 'Editable' : 'No editable'}</span>
+                        <span className="text-stone-500">Default: <strong>{parameter.valorPorDefecto}</strong></span>
+                        <span className="text-stone-500">Fuente: <strong>{parameter.origen}</strong></span>
+                        <button disabled={!parameter.editable} onClick={() => updateConfiguration(parameter, String(currentValue))} className="px-2 py-1 border disabled:opacity-40" style={{ borderColor: '#d6d3d1', color: '#0a2540' }}>Guardar</button>
+                        <button disabled={!parameter.editable} onClick={() => resetConfigurationValue(parameter)} className="px-2 py-1 border disabled:opacity-40" style={{ borderColor: '#d6d3d1', color: '#0a2540' }}>Restaurar default</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {visibleConfiguration.length === 0 && <div className="text-center text-sm text-stone-500 py-8">No hay parámetros que coincidan con los filtros.</div>}
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeTab === 'config' && (
           <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
             <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
@@ -1695,6 +1273,124 @@ export default function App() {
             </button>
           </div>
         )}
+
+        {activeTab === 'dashboard' && resultados?.executiveReport && (() => {
+          const report = resultados.executiveReport;
+          const summary = report.executiveSummary;
+          const kpis = report.kpis;
+          const indicators = report.indicadoresGenerales;
+          const dashboard = report.dashboard;
+          const totals = report.totales;
+
+          return (
+            <section className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b flex items-center justify-between flex-wrap gap-3"
+                style={{ borderColor: '#e5e0d5', background: '#0a2540', color: '#faf8f3' }}>
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest" style={{ color: '#d4af37' }}>Executive Dashboard</div>
+                  <h2 className="text-xl font-bold mt-1" style={{ fontFamily: '"Times New Roman", serif' }}>Resumen para presentación ejecutiva</h2>
+                </div>
+                <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider" style={{ background: '#d4af37', color: '#0a2540' }}>MVP</span>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Executive Summary</div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    {[
+                      ['Fecha de cálculo', summary.fechaCalculo],
+                      ['Período analizado', summary.periodoAnalizado],
+                      ['Total SKUs', summary.totalSKUs],
+                      ['Activos', summary.activos],
+                      ['EOL vencidos', summary.eolVencidos],
+                      ['EOL futuros', summary.eolFuturos],
+                    ].map(([label, value]) => (
+                      <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                        <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
+                        <div className="mt-1 text-sm font-bold" style={{ color: '#0a2540' }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">KPIs ejecutivos</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {[
+                      ['Valor EOL', fmtUSD(kpis.valorEOL), '#b91c1c'],
+                      ['Reposición', fmtUSD(kpis.totalReposicionValor), '#0369a1'],
+                      ['Merma', fmtUSD(kpis.totalMermaValor), '#c2410c'],
+                      ['Ventas Pareto A', `${kpis.pctVentasA.toFixed(0)}%`, '#15803d'],
+                    ].map(([label, value, color]) => (
+                      <div key={label} className="border p-4" style={{ borderColor: '#e5e0d5' }}>
+                        <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
+                        <div className="text-2xl font-bold mt-1" style={{ color }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <div className="border p-4" style={{ borderColor: '#e5e0d5' }}>
+                    <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Indicadores generales</div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><div className="text-xs text-stone-500">Semanas utilizadas</div><div className="font-bold text-[#0a2540]">{indicators.semanasPeriodoUsadas}</div></div>
+                      <div><div className="text-xs text-stone-500">Umbral de merma</div><div className="font-bold text-[#0a2540]">{(indicators.umbralMermaPct * 100).toFixed(0)}%</div></div>
+                      <div><div className="text-xs text-stone-500">SKUs con ventas</div><div className="font-bold text-[#0a2540]">{kpis.totalSkusConVentas}</div></div>
+                      <div><div className="text-xs text-stone-500">SKUs Pareto A</div><div className="font-bold text-[#0a2540]">{kpis.pctSKUsA.toFixed(0)}%</div></div>
+                    </div>
+                    <div className="mt-4 px-3 py-2 text-xs border-l-4" style={{ borderColor: indicators.interpretacionPareto.color, background: indicators.interpretacionPareto.bg, color: indicators.interpretacionPareto.color }}>
+                      <div className="font-bold">{indicators.interpretacionPareto.titulo}</div>
+                      <div className="mt-1">{indicators.interpretacionPareto.linea1}</div>
+                      <div className="mt-1">{indicators.interpretacionPareto.linea2}</div>
+                    </div>
+                  </div>
+
+                  <div className="border p-4" style={{ borderColor: '#e5e0d5' }}>
+                    <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Resumen Dashboard</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {[
+                        ['Sin origen', dashboard.alertas.skusSinOrigen],
+                        ['Con merma', dashboard.alertas.skusConMerma],
+                        ['En quiebre', dashboard.alertas.skusEnQuiebre],
+                        ['Quiebre activos', dashboard.alertas.quiebreActivos],
+                        ['Quiebre EOL', dashboard.alertas.quiebreEOL],
+                      ].map(([label, value]) => (
+                        <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                          <div className="text-xs text-stone-500">{label}</div>
+                          <div className="text-lg font-bold" style={{ color: value > 0 ? '#b91c1c' : '#15803d' }}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                      <span className="px-2 py-1 font-bold" style={{ background: '#e0f2fe', color: '#075985' }}>Pareto SKUs: {dashboard.pareto.pctSKUsA.toFixed(0)}%</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto ventas: {dashboard.pareto.pctVentasA.toFixed(0)}%</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Con ventas: {dashboard.pareto.totalSkusConVentas}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Totales</div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {[
+                      ['Total SKUs', totals.totalSKUs],
+                      ['Activos', totals.activos],
+                      ['EOL vencidos', totals.eolVencidos],
+                      ['EOL futuros', totals.eolFuturos],
+                      ['Valor EOL', fmtUSD(totals.valorEOL)],
+                    ].map(([label, value]) => (
+                      <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5' }}>
+                        <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
+                        <div className="mt-1 font-bold" style={{ color: '#0a2540' }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+          );
+        })()}
 
         {activeTab === 'dashboard' && resultados && (
           <>
@@ -3083,11 +2779,6 @@ const getColorCategoria = (categoria, listaCategorias) => {
   if (categoria === 'SIN CATEGORIA') return { bg: '#cbd5e1', textColor: '#475569' };
   const idx = listaCategorias.indexOf(categoria);
   return idx >= 0 ? PALETA_CATEGORIA[idx % PALETA_CATEGORIA.length] : PALETA_CATEGORIA[PALETA_CATEGORIA.length - 1];
-};
-
-const fmtUSDInline = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
-  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 const DistribTierPanel = ({ titulo, subtitulo, data }) => {

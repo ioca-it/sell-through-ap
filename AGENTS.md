@@ -1,56 +1,38 @@
 # AGENTS.md — sell-through-ap
 
-## Propósito
+## Reglas permanentes
 
-Este archivo es el punto de entrada obligatorio para cualquier desarrollador o asistente de IA que modifique el proyecto.
+- Usar `docs/knowledge/INDEX.md` como único índice documental y seguir el contexto mínimo de `docs/knowledge/AI_WORKFLOW.md`; no releer documentos ya conocidos y sin cambios en la misma sesión.
+- No inventar funcionalidades, reglas, fuentes, parámetros, entidades ni columnas Dataverse.
+- Preservar comportamiento, reglas, fórmulas, defaults y contratos salvo autorización explícita.
+- Mantener cambios mínimos, reversibles y dentro del alcance; preservar trabajo preexistente.
+- No crear commits, push, ramas ni incluir logs en Git sin autorización expresa.
+- Verificar `git status --short`, `npm test -- --run`, `npm run build` y `git diff --check` según el alcance.
 
-## Revisión obligatoria antes de cambiar código
+## Estándares y convenciones
 
-1. Revisar el historial y los acuerdos aprobados del proyecto.
-2. Revisar docs/PROJECT_CONTEXT.md.
-3. Revisar docs/DATA_SOURCES.md.
-4. Revisar docs/ROADMAP.md.
-5. Revisar docs/PROMPT_HISTORY.md.
-6. Revisar la rama actual y git status.
-7. Identificar fuentes, parámetros y reglas afectadas.
+- Arquitectura AI-First y modular; una responsabilidad principal por módulo.
+- Flujo vigente: `UI -> Application Service -> Domain Service -> Repository -> Provider -> Fuente`.
+- Separar UI, negocio, configuración y acceso a datos.
+- React no accede directamente a JSON, Excel, Dataverse o Business Central; las fuentes pasan por Repository/Provider.
+- Las constantes de negocio modificables migran progresivamente al Configuration Center mediante prompt aprobado.
+- Documentar el motivo de reglas, fallbacks y contratos; evitar comentarios redundantes.
+- Cada cambio identifica objetivo, archivos, reglas, fuentes, parámetros, riesgos, validaciones y reversión.
+- Todo prompt relevante se registra en `docs/prompts/` y todo hito actualiza `ARCHITECTURE_STATE.md`.
 
-## Principios obligatorios
+## Flujo oficial de IA
 
-- Arquitectura AI-First y modular.
-- Una responsabilidad principal por archivo o módulo.
-- Separar UI, lógica de negocio, configuración y acceso a datos.
-- No acceder directamente a JSON, Excel, Dataverse o Business Central desde componentes React.
-- Todo acceso a datos deberá pasar progresivamente por Repository y Provider.
-- Toda constante de negocio modificable deberá migrar al Configuration Center.
-- Documentar decisiones funcionales y arquitectónicas.
-- Incluir comentarios que expliquen el motivo de reglas y contratos.
-- Evitar comentarios redundantes.
-- Preservar el comportamiento actual durante la refactorización.
-- Ejecutar build y validaciones antes de recomendar commits.
-- Mantener capacidad de reversión mediante Git.
-- No incluir logs en Git.
+- ChatGPT: arquitectura, roadmap, decisiones y definición de prompts.
+- Codex: implementación principal, pruebas, documentación técnica y logs.
+- Claude: auditoría independiente, riesgos, deuda técnica y validación arquitectónica; no implementa sin autorización posterior.
+- Copilot: asistencia local, refactorizaciones pequeñas y generación puntual; nunca toma decisiones arquitectónicas.
 
-## Flujo objetivo
+## Estructura del proyecto
 
-UI -> Application Service -> Domain Service -> Repository -> Provider -> Fuente
-
-## Validación mínima
-
-- npm run build
-- git diff --check
-- git status --short
-
-## Cambios mediante IA
-
-Cada cambio deberá identificar:
-
-- objetivo;
-- archivos afectados;
-- reglas afectadas;
-- fuentes afectadas;
-- parámetros afectados;
-- riesgos;
-- validaciones;
-- estrategia de reversión.
-
-Todo prompt relevante deberá documentarse dentro de docs/prompts.
+- `src/application/`: orquestación de casos de uso.
+- `src/domain/`: reglas y Business Services puros.
+- `src/repositories/` y `src/providers/`: fronteras de acceso a fuentes.
+- `src/configuration/`: schema, defaults y servicio de configuración.
+- `docs/knowledge/`: conocimiento oficial, índice y estado vigente.
+- `docs/prompts/`: acuerdos ejecutables por hito.
+- `logs/`: evidencia local excluida de Git.

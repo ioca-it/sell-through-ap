@@ -1,0 +1,295 @@
+// =============================================================================
+// Propósito: coordinar el caso de uso completo de procesamiento sell-through.
+// Responsabilidad: validar entradas y orquestar parsers y servicios de dominio.
+// Entradas/Salidas: recibe un Repository estable y devuelve resultado/error.
+// Reglas protegidas: Pareto, Distribution y el contrato público vigente.
+// Dependencias: parsers, record assembler, Portfolio Analysis, Executive Report y utilidades.
+// Fuentes: accede a Maestro, Inventario, parámetros y configuración solo por Repository.
+// Evolución: el origen podrá migrar a Dataverse sin cambiar este caso de uso.
+// =============================================================================
+
+import { parseMaster } from '../domain/parser/masterParser.js';
+import { parseInventory } from '../domain/parser/inventoryParser.js';
+import { assembleRecord } from '../domain/parser/recordAssembler.js';
+import { PortfolioAnalysisService } from '../domain/portfolio/PortfolioAnalysisService.js';
+import { ExecutiveReportService } from '../domain/report/ExecutiveReportService.js';
+import { primerDiaMes } from '../utils/dateUtils.js';
+
+const REQUIRED_PROCESSING_CONFIG_KEYS = [
+  'periodoAnalizado',
+  'semanasPersonalizadas',
+  'safetyStockSemanas',
+  'leadTimeUSA',
+  'leadTimeCHINA',
+];
+
+// La nulabilidad del Repository no se propaga al caso de uso de procesamiento.
+const validateProcessingConfig = (config) => {
+  if (config === null || config === undefined) {
+    return 'Falta la configuración requerida para procesar sell-through.';
+  }
+  if (typeof config !== 'object' || Array.isArray(config)) {
+    return 'La configuración requerida para procesar sell-through debe ser un objeto válido.';
+  }
+
+  const missingKeys = REQUIRED_PROCESSING_CONFIG_KEYS.filter((key) => (
+    !Object.prototype.hasOwnProperty.call(config, key)
+    || config[key] === null
+    || config[key] === undefined
+  ));
+  if (missingKeys.length > 0) {
+    return `La configuración requerida para procesar sell-through está incompleta. Faltan: ${missingKeys.join(', ')}.`;
+  }
+
+  return null;
+};
+
+// Agrupa unidades, valor y filas por Tier con el fallback GOOD vigente.
+const calculateTierDistribution = (records, unitField, valueField) => {
+  const tiers = ['GOOD', 'BETTER', 'BEST'];
+  const result = {};
+  let totalU = 0;
+  let totalV = 0;
+  let totalSKUs = 0;
+
+  tiers.forEach((tier) => {
+    result[tier] = {
+      unidades: 0,
+      valor: 0,
+      skus: 0,
+      pctUnidades: 0,
+      pctValor: 0,
+      pctSKUs: 0,
+    };
+  });
+  records.forEach((record) => {
+    const tier = (record.tier || '').toUpperCase();
+    const validTier = tiers.includes(tier) ? tier : 'GOOD';
+    const units = record[unitField] || 0;
+    const value = record[valueField] || 0;
+    if (units > 0) {
+      result[validTier].unidades += units;
+      result[validTier].valor += value;
+      result[validTier].skus += 1;
+      totalU += units;
+      totalV += value;
+      totalSKUs += 1;
+    }
+  });
+  tiers.forEach((tier) => {
+    result[tier].pctUnidades = totalU > 0 ? result[tier].unidades / totalU : 0;
+    result[tier].pctValor = totalV > 0 ? result[tier].valor / totalV : 0;
+    result[tier].pctSKUs = totalSKUs > 0 ? result[tier].skus / totalSKUs : 0;
+  });
+
+  return { tiers: result, totalU, totalV, totalSKUs };
+};
+
+// Agrupa unidades, valor y filas según las categorías ya derivadas del Maestro.
+const calculateCategoryDistribution = (records, categories, unitField, valueField) => {
+  const result = {};
+  let totalU = 0;
+  let totalV = 0;
+  let totalSKUs = 0;
+
+  categories.forEach((category) => {
+    result[category] = {
+      unidades: 0,
+      valor: 0,
+      skus: 0,
+      pctUnidades: 0,
+      pctValor: 0,
+      pctSKUs: 0,
+    };
+  });
+  records.forEach((record) => {
+    const category = record.categoria || 'SIN CATEGORIA';
+    const units = record[unitField] || 0;
+    const value = record[valueField] || 0;
+    if (units > 0 && result[category]) {
+      result[category].unidades += units;
+      result[category].valor += value;
+      result[category].skus += 1;
+      totalU += units;
+      totalV += value;
+      totalSKUs += 1;
+    }
+  });
+  categories.forEach((category) => {
+    result[category].pctUnidades = totalU > 0 ? result[category].unidades / totalU : 0;
+    result[category].pctValor = totalV > 0 ? result[category].valor / totalV : 0;
+    result[category].pctSKUs = totalSKUs > 0 ? result[category].skus / totalSKUs : 0;
+  });
+
+  return { categorias: result, totalU, totalV, totalSKUs };
+};
+
+// Conserva orden, corte 80/20 e interpretación textual del Pareto actual.
+const calculatePareto = (records) => {
+  const withSales = records.filter((record) => record.ventas > 0)
+    .sort((a, b) => b.ventas - a.ventas);
+  const totalSales = withSales.reduce((sum, record) => sum + record.ventas, 0);
+
+  let accumulated = 0;
+  const recordsWithPareto = withSales.map((record) => {
+    const pctVentas = totalSales > 0 ? record.ventas / totalSales : 0;
+    const pctAcumAntes = totalSales > 0 ? accumulated / totalSales : 0;
+    accumulated += record.ventas;
+    const pctAcum = totalSales > 0 ? accumulated / totalSales : 0;
+    const paretoClase = pctAcumAntes < 0.80 ? 'A' : 'B';
+    return { ...record, pctVentas, pctAcum, paretoClase };
+  });
+
+  const skusParetoA = recordsWithPareto.filter((record) => record.paretoClase === 'A');
+  const skusParetoB = recordsWithPareto.filter((record) => record.paretoClase === 'B');
+  const totalSkusConVentas = recordsWithPareto.length;
+  const pctSKUsA = totalSkusConVentas > 0
+    ? (skusParetoA.length / totalSkusConVentas) * 100
+    : 0;
+  const ventasA = skusParetoA.reduce((sum, record) => sum + record.ventas, 0);
+  const ventasB = skusParetoB.reduce((sum, record) => sum + record.ventas, 0);
+  const pctVentasA = totalSales > 0 ? (ventasA / totalSales) * 100 : 0;
+  const pctVentasB = totalSales > 0 ? (ventasB / totalSales) * 100 : 0;
+
+  let interpretacion;
+  if (totalSkusConVentas === 0) {
+    interpretacion = {
+      titulo: 'Sin datos de ventas',
+      linea1: 'No hay SKUs con ventas en el período analizado.',
+      linea2: 'Validar el archivo de inventario o el período del análisis.',
+      color: '#92400e', bg: '#fef3c7',
+    };
+  } else if (pctSKUsA <= 20) {
+    interpretacion = {
+      titulo: 'Concentración saludable (Pareto clásico)',
+      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}% del portafolio activo) generan el 80% de las ventas.`,
+      linea2: `Reposición agresiva y prioritaria de estos SKUs A; stock mínimo y revisión de racionalización para los ${skusParetoB.length} SKUs B.`,
+      color: '#065f46', bg: '#d1fae5',
+    };
+  } else if (pctSKUsA <= 35) {
+    interpretacion = {
+      titulo: 'Mix balanceado',
+      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas — distribución algo más amplia que Pareto clásico.`,
+      linea2: 'Mantener disponibilidad sostenida de los SKUs A y evaluar SKUs B con menor velocidad para evitar sobre-stock.',
+      color: '#1e40af', bg: '#dbeafe',
+    };
+  } else {
+    interpretacion = {
+      titulo: 'Distribución plana — portafolio disperso',
+      linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan el 80% de las ventas, dispersión alta.`,
+      linea2: 'Cobertura amplia necesaria; oportunidad clara de racionalizar SKUs marginales en la cola larga.',
+      color: '#92400e', bg: '#fef3c7',
+    };
+  }
+
+  return {
+    skusParetoA,
+    skusParetoB,
+    totalSkusConVentas,
+    totalVentas: totalSales,
+    pctSKUsA,
+    pctSKUsB: 100 - pctSKUsA,
+    ventasA,
+    ventasB,
+    pctVentasA,
+    pctVentasB,
+    interpretacion,
+  };
+};
+
+// Ejecuta el pipeline síncrono usando únicamente los contratos del Repository.
+export const processSellThrough = (repository) => {
+  const rawMaestro = repository.getMaestro();
+  const rawInventario = repository.getInventario();
+  if (!rawMaestro.trim()) {
+    return { resultados: null, error: 'Falta cargar el Maestro de Productos.' };
+  }
+  if (!rawInventario.trim()) {
+    return { resultados: null, error: 'Falta cargar el Inventario del Cliente.' };
+  }
+
+  const masterResult = parseMaster(rawMaestro);
+  if (masterResult.error) {
+    return { resultados: null, error: masterResult.error };
+  }
+  const inventoryResult = parseInventory(rawInventario);
+  if (inventoryResult.error) {
+    return { resultados: null, error: inventoryResult.error };
+  }
+
+  const config = repository.getConfiguracion();
+  const configError = validateProcessingConfig(config);
+  if (configError) {
+    return { resultados: null, error: configError };
+  }
+  const {
+    bucketEOL,
+    tablaFases,
+    umbralMermaPct,
+    semanasPorPeriodo,
+  } = repository.getParametros();
+
+  const fechaBase = primerDiaMes();
+  const recs = inventoryResult.inventoryRecords.map((inventoryRecord) => assembleRecord({
+    inventoryRecord,
+    masterRecord: masterResult.masterBySku[inventoryRecord.sku],
+    config,
+    fechaBase,
+    bucketEOL,
+    tablaFases,
+    umbralMermaPct,
+    semanasPorPeriodo,
+  }));
+
+  const portfolioConsolidation = PortfolioAnalysisService.consolidateRecords(recs);
+  const { activos } = portfolioConsolidation;
+
+  const distribucionTier = {
+    inventario: calculateTierDistribution(recs, 'invFinal', 'valorInv'),
+    ventas: calculateTierDistribution(recs, 'ventas', 'valorVentas'),
+    reposicion: calculateTierDistribution(activos, 'reposicionSugerida', 'valorReposicion'),
+  };
+
+  const categoriesSet = new Set();
+  recs.forEach((record) => {
+    if (record.categoria && record.categoria !== 'SIN CATEGORIA') {
+      categoriesSet.add(record.categoria);
+    }
+  });
+  const listaCategorias = Array.from(categoriesSet).sort();
+  if (recs.some((record) => record.categoria === 'SIN CATEGORIA')) {
+    listaCategorias.push('SIN CATEGORIA');
+  }
+  const distribucionCategoria = {
+    lista: listaCategorias,
+    inventario: calculateCategoryDistribution(recs, listaCategorias, 'invFinal', 'valorInv'),
+    ventas: calculateCategoryDistribution(recs, listaCategorias, 'ventas', 'valorVentas'),
+    reposicion: calculateCategoryDistribution(
+      activos,
+      listaCategorias,
+      'reposicionSugerida',
+      'valorReposicion',
+    ),
+  };
+
+  const analisisPareto = calculatePareto(recs);
+  const portfolioAnalysis = PortfolioAnalysisService.analyzePortfolio({
+    consolidation: portfolioConsolidation,
+    fechaCalculo: fechaBase,
+    config,
+    umbralMermaPct,
+    semanasPorPeriodo,
+    distribucionTier,
+    distribucionCategoria,
+    analisisPareto,
+  });
+  const executiveReport = ExecutiveReportService.buildExecutiveReport(portfolioAnalysis);
+
+  return {
+    error: null,
+    resultados: Object.freeze({
+      ...portfolioAnalysis,
+      executiveReport,
+    }),
+  };
+};
