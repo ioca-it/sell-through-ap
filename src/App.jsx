@@ -2,7 +2,14 @@ import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { Package, AlertCircle, CheckCircle2, FileText, Download, Trash2, PlayCircle, Database, AlertTriangle, TrendingDown, DollarSign, Calendar, Calculator, FileSpreadsheet, Settings, Upload, BarChart3, ChevronRight, ClipboardList } from 'lucide-react';
 import { createSellThroughRepository } from './repositories/sellThroughRepository.js';
-import { fmtUSD, fmtPct, fmtIdx, fmtUSDInline } from './utils/formatters.js';
+import {
+  fmtUSD,
+  fmtPct,
+  fmtPctPoints,
+  fmtIdx,
+  fmtUSDInline,
+  toDisplayValue,
+} from './utils/formatters.js';
 import { primerDiaMes } from './utils/dateUtils.js';
 import { processSellThrough } from './application/sellThroughApplicationService.js';
 import { configurationService } from './configuration/configurationService.js';
@@ -10,6 +17,14 @@ import { configurationService } from './configuration/configurationService.js';
 // La hidratación ocurre en el servicio; mantenerla fuera del componente permite
 // conservar los contratos de caracterización que ejecutan App como función pura.
 configurationService.loadPersistedValues();
+
+// Preserva elementos React intencionales y evita entregar objetos de los DTO
+// como hijos directos. null/undefined se muestran con el fallback institucional.
+const renderServiceValue = (value, fallback = '—') => (
+  Array.isArray(value)
+    ? value.map((entry) => renderServiceValue(entry, fallback))
+    : (React.isValidElement(value) ? value : toDisplayValue(value, fallback))
+);
 
 // ============================================================
 // BASE DE CONOCIMIENTO INSTITUCIONAL IOCA
@@ -1295,11 +1310,14 @@ export default function App() {
 
         {activeTab === 'dashboard' && resultados?.executiveReport && (() => {
           const report = resultados.executiveReport;
-          const summary = report.executiveSummary;
-          const kpis = report.kpis;
-          const indicators = report.indicadoresGenerales;
-          const dashboard = report.dashboard;
-          const totals = report.totales;
+          const summary = report.executiveSummary ?? {};
+          const kpis = report.kpis ?? {};
+          const valuation = report.valorizacion ?? {};
+          const indicators = report.indicadoresGenerales ?? {};
+          const paretoInterpretation = indicators.interpretacionPareto ?? {};
+          const dashboardAlerts = report.dashboard?.alertas ?? {};
+          const dashboardPareto = report.dashboard?.pareto ?? {};
+          const totals = report.totales ?? {};
 
           return (
             <section className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
@@ -1325,10 +1343,10 @@ export default function App() {
                     ].map(([label, value, unitLabel, unitValue]) => (
                       <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-                        <div className="mt-1 text-xl font-bold" style={{ color: '#0a2540' }}>{value}</div>
+                        <div className="mt-1 text-xl font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(value)}</div>
                         <div className="mt-2 pt-2 border-t" style={{ borderColor: '#e5e0d5' }}>
                           <div className="text-[9px] uppercase tracking-wider text-stone-500">{unitLabel}</div>
-                          <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{unitValue}</div>
+                          <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(unitValue)}</div>
                         </div>
                       </div>
                     ))}
@@ -1342,11 +1360,11 @@ export default function App() {
                       ['Valor EOL', fmtUSD(kpis.valorEOL), '#b91c1c'],
                       ['Reposición', fmtUSD(kpis.totalReposicionValor), '#0369a1'],
                       ['Merma', fmtUSD(kpis.totalMermaValor), '#c2410c'],
-                      ['Ventas Pareto A', `${kpis.pctVentasA.toFixed(0)}%`, '#15803d'],
+                      ['Ventas Pareto A', fmtPctPoints(kpis.pctVentasA), '#15803d'],
                     ].map(([label, value, color]) => (
                       <div key={label} className="border p-4" style={{ borderColor: '#e5e0d5' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-                        <div className="text-2xl font-bold mt-1" style={{ color }}>{value}</div>
+                        <div className="text-2xl font-bold mt-1" style={{ color }}>{renderServiceValue(value)}</div>
                       </div>
                     ))}
                   </div>
@@ -1356,11 +1374,11 @@ export default function App() {
                   <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Valorización del inventario</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {[
-                      ['Valor Total Inventario', report.valorizacion.valorTotalInventario],
-                      ['Valor Activo', report.valorizacion.valorActivo],
-                      ['Valor EOL', report.valorizacion.valorEOL],
-                      ['Valor EOL Futuro', report.valorizacion.valorEOLFuturo],
-                      ['Valor Sin Maestro', report.valorizacion.valorSinMaestro],
+                      ['Valor Total Inventario', valuation.valorTotalInventario],
+                      ['Valor Activo', valuation.valorActivo],
+                      ['Valor EOL', valuation.valorEOL],
+                      ['Valor EOL Futuro', valuation.valorEOLFuturo],
+                      ['Valor Sin Maestro', valuation.valorSinMaestro],
                     ].map(([label, value]) => (
                       <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
@@ -1374,15 +1392,15 @@ export default function App() {
                   <div className="border p-4" style={{ borderColor: '#e5e0d5' }}>
                     <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Indicadores generales</div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div><div className="text-xs text-stone-500">Semanas utilizadas</div><div className="font-bold text-[#0a2540]">{indicators.semanasPeriodoUsadas}</div></div>
-                      <div><div className="text-xs text-stone-500">Umbral de merma</div><div className="font-bold text-[#0a2540]">{(indicators.umbralMermaPct * 100).toFixed(0)}%</div></div>
-                      <div><div className="text-xs text-stone-500">SKUs con ventas</div><div className="font-bold text-[#0a2540]">{kpis.totalSkusConVentas}</div></div>
-                      <div><div className="text-xs text-stone-500">SKUs Pareto A</div><div className="font-bold text-[#0a2540]">{kpis.pctSKUsA.toFixed(0)}%</div></div>
+                      <div><div className="text-xs text-stone-500">Semanas utilizadas</div><div className="font-bold text-[#0a2540]">{renderServiceValue(indicators?.semanasPeriodoUsadas)}</div></div>
+                      <div><div className="text-xs text-stone-500">Umbral de merma</div><div className="font-bold text-[#0a2540]">{fmtPct(indicators?.umbralMermaPct)}</div></div>
+                      <div><div className="text-xs text-stone-500">SKUs con ventas</div><div className="font-bold text-[#0a2540]">{renderServiceValue(kpis?.totalSkusConVentas)}</div></div>
+                      <div><div className="text-xs text-stone-500">SKUs Pareto A</div><div className="font-bold text-[#0a2540]">{fmtPctPoints(kpis?.pctSKUsA)}</div></div>
                     </div>
-                    <div className="mt-4 px-3 py-2 text-xs border-l-4" style={{ borderColor: indicators.interpretacionPareto.color, background: indicators.interpretacionPareto.bg, color: indicators.interpretacionPareto.color }}>
-                      <div className="font-bold">{indicators.interpretacionPareto.titulo}</div>
-                      <div className="mt-1">{indicators.interpretacionPareto.linea1}</div>
-                      <div className="mt-1">{indicators.interpretacionPareto.linea2}</div>
+                    <div className="mt-4 px-3 py-2 text-xs border-l-4" style={{ borderColor: paretoInterpretation.color ?? '#d6d3d1', background: paretoInterpretation.bg ?? '#faf8f3', color: paretoInterpretation.color ?? '#444' }}>
+                      <div className="font-bold">{renderServiceValue(paretoInterpretation.titulo)}</div>
+                      <div className="mt-1">{renderServiceValue(paretoInterpretation.linea1)}</div>
+                      <div className="mt-1">{renderServiceValue(paretoInterpretation.linea2)}</div>
                     </div>
                   </div>
 
@@ -1390,22 +1408,22 @@ export default function App() {
                     <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Resumen Dashboard</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {[
-                        ['Sin origen', dashboard.alertas.skusSinOrigen],
-                        ['Con merma', dashboard.alertas.skusConMerma],
-                        ['En quiebre', dashboard.alertas.skusEnQuiebre],
-                        ['Quiebre activos', dashboard.alertas.quiebreActivos],
-                        ['Quiebre EOL', dashboard.alertas.quiebreEOL],
+                        ['Sin origen', dashboardAlerts.skusSinOrigen],
+                        ['Con merma', dashboardAlerts.skusConMerma],
+                        ['En quiebre', dashboardAlerts.skusEnQuiebre],
+                        ['Quiebre activos', dashboardAlerts.quiebreActivos],
+                        ['Quiebre EOL', dashboardAlerts.quiebreEOL],
                       ].map(([label, value]) => (
                         <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                           <div className="text-xs text-stone-500">{label}</div>
-                          <div className="text-lg font-bold" style={{ color: value > 0 ? '#b91c1c' : '#15803d' }}>{value}</div>
+                          <div className="text-lg font-bold" style={{ color: value > 0 ? '#b91c1c' : '#15803d' }}>{renderServiceValue(value)}</div>
                         </div>
                       ))}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto A: Pocos Vitales · {dashboard.pareto.skusPocosVitales} SKU · {dashboard.pareto.pctVentasA.toFixed(0)}%</span>
-                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Pareto B/C: Cola Larga · {dashboard.pareto.skusColaLarga} SKU · {dashboard.pareto.pctVentasColaLarga.toFixed(0)}%</span>
-                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Con ventas: {dashboard.pareto.totalSkusConVentas}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto A: Pocos Vitales · {renderServiceValue(dashboardPareto.skusPocosVitales)} SKU · {fmtPctPoints(dashboardPareto.pctVentasA)}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Pareto B/C: Cola Larga · {renderServiceValue(dashboardPareto.skusColaLarga)} SKU · {fmtPctPoints(dashboardPareto.pctVentasColaLarga)}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Con ventas: {renderServiceValue(dashboardPareto.totalSkusConVentas)}</span>
                     </div>
                   </div>
                 </div>
@@ -1422,7 +1440,7 @@ export default function App() {
                     ].map(([label, value]) => (
                       <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-                        <div className="mt-1 font-bold" style={{ color: '#0a2540' }}>{value}</div>
+                        <div className="mt-1 font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(value)}</div>
                       </div>
                     ))}
                   </div>
@@ -1471,7 +1489,7 @@ export default function App() {
                 </div>
                 <div>
                   <div className="text-stone-500 uppercase text-[10px] tracking-wider">SKUs en cruce</div>
-                  <div className="font-bold" style={{ color: '#0a2540' }}>{resultados.totales.totalSKUs}</div>
+                  <div className="font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(resultados.totales?.totalSKUs)}</div>
                 </div>
               </div>
             </div>
@@ -1657,7 +1675,7 @@ export default function App() {
                       <strong>Condiciones:</strong> Si Ventas &gt; 0 → aplica fórmula IOCA (Fuente: IOCA). Si Ventas = 0 → se mantiene el valor del cliente (Fuente: Cliente). Lead Time según origen del SKU.
                     </div>
                     <div className="mt-1">
-                      <strong>Semanas del período aplicadas:</strong> {resultados.semanasPeriodoUsadas} · <strong>Safety Stock:</strong> {config.safetyStockSemanas} sem · <strong>Lead Time USA:</strong> {config.leadTimeUSA} sem · <strong>Lead Time China:</strong> {config.leadTimeCHINA} sem
+                      <strong>Semanas del período aplicadas:</strong> {renderServiceValue(resultados.semanasPeriodoUsadas)} · <strong>Safety Stock:</strong> {config.safetyStockSemanas} sem · <strong>Lead Time USA:</strong> {config.leadTimeUSA} sem · <strong>Lead Time China:</strong> {config.leadTimeCHINA} sem
                     </div>
                   </div>
 
@@ -1690,7 +1708,7 @@ export default function App() {
                                 <span className="px-2 py-0.5 text-[10px]" style={{
                                   background: esActivo ? '#d1fae5' : '#fee2e2',
                                   color: esActivo ? '#065f46' : '#7f1d1d',
-                                }}>{r.estado}</span>
+                                }}>{renderServiceValue(r.estado)}</span>
                               </Td>
                               <Td align="center" className="text-stone-600">{r.origen}</Td>
                               <Td align="center">{r.invSeguridad}</Td>
@@ -1702,7 +1720,7 @@ export default function App() {
                                 <span className="px-2 py-0.5 text-[10px] font-bold" style={{
                                   background: r.fuenteInvSeguridad === 'IOCA' ? '#d4af37' : '#e5e0d5',
                                   color: r.fuenteInvSeguridad === 'IOCA' ? '#0a2540' : '#666',
-                                }}>{r.fuenteInvSeguridad}</span>
+                                }}>{renderServiceValue(r.fuenteInvSeguridad)}</span>
                               </Td>
                               <Td align="center" bold style={{ color: '#7f1d1d' }}>{r.invProyectado}</Td>
                               <Td align="center">{r.compra}</Td>
@@ -1739,7 +1757,7 @@ export default function App() {
                 </div>
                 <div className="px-4 py-2 text-center" style={{ background: '#dbeafe', color: '#1e40af' }}>
                   <div className="text-[10px] uppercase tracking-wider">Total unidades en tránsito</div>
-                  <div className="text-2xl font-bold">{resultados.alertas.totalUnidadesTransito}</div>
+                  <div className="text-2xl font-bold">{renderServiceValue(resultados.alertas?.totalUnidadesTransito)}</div>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -1882,10 +1900,10 @@ export default function App() {
                   borderColor: resultados.analisisPareto.interpretacion.color,
                 }}>
                   <div className="text-sm font-bold mb-1" style={{ color: resultados.analisisPareto.interpretacion.color }}>
-                    {resultados.analisisPareto.interpretacion.linea1}
+                    {renderServiceValue(resultados.analisisPareto?.interpretacion?.linea1)}
                   </div>
                   <div className="text-sm" style={{ color: resultados.analisisPareto.interpretacion.color }}>
-                    {resultados.analisisPareto.interpretacion.linea2}
+                    {renderServiceValue(resultados.analisisPareto?.interpretacion?.linea2)}
                   </div>
                 </div>
               </div>
@@ -1938,7 +1956,7 @@ export default function App() {
                                 <span className="px-2 py-0.5 text-[10px] font-bold" style={{
                                   background: esA ? '#065f46' : (esB ? '#92400e' : '#7f1d1d'),
                                   color: 'white',
-                                }}>{r.paretoClase}</span>
+                                }}>{renderServiceValue(r.paretoClase)}</span>
                               </Td>
                               <Td bold>{r.sku}</Td>
                               <Td className="text-stone-600">{r.modelo}</Td>
@@ -1947,12 +1965,12 @@ export default function App() {
                                 <span className="px-2 py-0.5 text-[10px]" style={{
                                   background: r.estado === 'ACTIVO' ? '#d1fae5' : '#fee2e2',
                                   color: r.estado === 'ACTIVO' ? '#065f46' : '#7f1d1d',
-                                }}>{r.estado}</span>
+                                }}>{renderServiceValue(r.estado)}</span>
                               </Td>
                               <Td align="center">
                                 <span className="px-2 py-0.5 text-[10px] font-bold" style={{
                                   background: tierColor.bg, color: tierColor.textColor,
-                                }}>{r.tier || 'GOOD'}</span>
+                                }}>{renderServiceValue(r.tier, 'GOOD')}</span>
                               </Td>
                               <Td align="right" bold>{r.ventas}</Td>
                               <Td align="right">{(r.pctVentas * 100).toFixed(0)}%</Td>
@@ -2014,7 +2032,7 @@ export default function App() {
                           <span className="px-2 py-0.5 font-bold" style={{
                             background: r.diasDesc >= 240 ? '#fee2e2' : r.diasDesc >= 150 ? '#fef3c7' : '#dbeafe',
                             color: r.diasDesc >= 240 ? '#7f1d1d' : r.diasDesc >= 150 ? '#92400e' : '#1e40af',
-                          }}>{r.diasDesc}</span>
+                          }}>{renderServiceValue(r.diasDesc)}</span>
                         </Td>
                         <Td align="center">
                           {r.fase !== null ? (
@@ -2028,7 +2046,7 @@ export default function App() {
                           <span className="px-2 py-0.5 text-[10px]" style={{
                             background: r.origen === 'CHINA' ? '#fef3c7' : '#dbeafe',
                             color: r.origen === 'CHINA' ? '#92400e' : '#1e40af',
-                          }}>{r.origen}</span>
+                          }}>{renderServiceValue(r.origen)}</span>
                         </Td>
                         <Td align="right">{fmtUSD(r.costo)}</Td>
                         <Td align="center" bold>{r.descPct > 0 ? fmtPct(r.descPct) : <span className="text-stone-400 font-normal">—</span>}</Td>
@@ -2054,7 +2072,7 @@ export default function App() {
                     <tfoot>
                       <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
                         <td colSpan={12} className="px-3 py-2 text-right font-bold">TOTALES</td>
-                        <td className="px-3 py-2 text-center font-bold">{resultados.totales.unidEOL}</td>
+                        <td className="px-3 py-2 text-center font-bold">{renderServiceValue(resultados.totales?.unidEOL)}</td>
                         <td className="px-3 py-2 text-center font-bold">—</td>
                         <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.descEOL)}</td>
                       </tr>
@@ -2106,13 +2124,13 @@ export default function App() {
                             <span className="px-2 py-0.5" style={{
                               background: r.bucket === 'EOL Crítico' ? '#fee2e2' : r.bucket === 'EOL Próximo' ? '#fef3c7' : '#dbeafe',
                               color: r.bucket === 'EOL Crítico' ? '#7f1d1d' : r.bucket === 'EOL Próximo' ? '#92400e' : '#1e40af',
-                            }}>{r.bucket}</span>
+                            }}>{renderServiceValue(r.bucket)}</span>
                           </Td>
                           <Td align="center" bold>
                             <span className="px-2 py-0.5 text-[10px]" style={{
                               background: r.origen === 'CHINA' ? '#fef3c7' : '#dbeafe',
                               color: r.origen === 'CHINA' ? '#92400e' : '#1e40af',
-                            }}>{r.origen}</span>
+                            }}>{renderServiceValue(r.origen)}</span>
                           </Td>
                           <Td align="right">{fmtUSD(r.costo)}</Td>
                           <Td align="center" bold>{r.invFinal}</Td>
@@ -2200,7 +2218,7 @@ export default function App() {
                               <span className="px-2 py-0.5 text-[10px]" style={{
                                 background: r.origen === 'CHINA' ? '#fef3c7' : '#dbeafe',
                                 color: r.origen === 'CHINA' ? '#92400e' : '#1e40af',
-                              }}>{r.origen}</span>
+                              }}>{renderServiceValue(r.origen)}</span>
                             </Td>
                             <Td align="right">{fmtUSD(r.costo)}</Td>
                             <Td align="center" bold>{r.invFinal}</Td>
@@ -2360,8 +2378,8 @@ export default function App() {
                   <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', fontSize: '11px', color: '#444' }}>
                     <div><strong style={{ color: '#0a2540' }}>Código cliente</strong><br />{config.codigoCliente || '—'}</div>
                     <div><strong style={{ color: '#0a2540' }}>Fecha de corte</strong><br />{config.fechaCorte}</div>
-                    <div><strong style={{ color: '#0a2540' }}>Período</strong><br />{config.periodoAnalizado}{config.periodoDetalle ? ` · ${config.periodoDetalle}` : ''} ({resultados.semanasPeriodoUsadas} sem)</div>
-                    <div><strong style={{ color: '#0a2540' }}>SKUs analizados</strong><br />{resultados.totales.totalSKUs}</div>
+                    <div><strong style={{ color: '#0a2540' }}>Período</strong><br />{config.periodoAnalizado}{config.periodoDetalle ? ` · ${config.periodoDetalle}` : ''} ({renderServiceValue(resultados.semanasPeriodoUsadas)} sem)</div>
+                    <div><strong style={{ color: '#0a2540' }}>SKUs analizados</strong><br />{renderServiceValue(resultados.totales?.totalSKUs)}</div>
                   </div>
                 </div>
                 
@@ -2381,9 +2399,9 @@ export default function App() {
                     ].map(([label, value, unitLabel, unitValue]) => (
                       <div key={label} style={{ border: '1px solid #e5e0d5', padding: '8px', background: '#faf8f3' }}>
                         <div style={{ fontSize: '8px', textTransform: 'uppercase', color: '#666' }}>{label}</div>
-                        <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#0a2540' }}>{value}</div>
+                        <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#0a2540' }}>{renderServiceValue(value)}</div>
                         <div style={{ borderTop: '1px solid #e5e0d5', marginTop: '5px', paddingTop: '5px', fontSize: '8px', color: '#666' }}>{unitLabel}</div>
-                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540' }}>{unitValue}</div>
+                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540' }}>{renderServiceValue(unitValue)}</div>
                       </div>
                     ))}
                   </div>
@@ -2410,7 +2428,7 @@ export default function App() {
                     <div style={{ background: '#faf8f3', border: '1px solid #e5e0d5', padding: '14px', borderLeft: '3px solid #0a2540' }}>
                       <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#0a2540' }}>Qué está pasando</div>
                       <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
-                        El portafolio analizado tiene <strong>{resultados.totales.totalSKUs} SKUs</strong> con un valor inmovilizado de <strong>{fmtUSD(informe.valorTotalInventario)}</strong>. 
+                        El portafolio analizado tiene <strong>{renderServiceValue(resultados.totales?.totalSKUs)} SKUs</strong> con un valor inmovilizado de <strong>{fmtUSD(informe.valorTotalInventario)}</strong>.
                         El <strong>{informe.pctValorEOL.toFixed(0)}%</strong> del valor está concentrado en SKUs ya descontinuados, 
                         y <strong>{informe.sinMovimiento.length} SKUs</strong> no registraron ventas en el período.
                       </div>
@@ -2430,7 +2448,7 @@ export default function App() {
                           <>El portafolio tiene <strong>{resultados.analisisPareto.skusParetoA.length} SKUs Pareto A — Pocos Vitales</strong> ({resultados.analisisPareto.pctSKUsA.toFixed(0)}% del activo) que concentran {resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas. La <strong>Cola Larga B/C</strong> contiene {resultados.analisisPareto.skusColaLarga.length} SKUs.{' '}
                           Reforzar disponibilidad y exhibición de estos SKUs puede aumentar el sell-through general.</>
                         ) : 'Se requieren más datos de ventas para identificar oportunidades de concentración.'}
-                        {informe.skuHeroe && <> El SKU héroe <strong>{informe.skuHeroe.sku}</strong> es la mejor vitrina para activar bundles y cross-sell.</>}
+                        {informe.skuHeroe && <> El SKU héroe <strong>{renderServiceValue(informe.skuHeroe.sku)}</strong> es la mejor vitrina para activar bundles y cross-sell.</>}
                       </div>
                     </div>
                     <div style={{ background: '#dbeafe', border: '1px solid #dbeafe', padding: '14px', borderLeft: '3px solid #1e40af' }}>
@@ -2512,7 +2530,7 @@ export default function App() {
                     </ul>
                   </div>
                   <div style={{ fontSize: '11px', lineHeight: '1.6', marginBottom: '8px' }}>
-                    <strong style={{ color: '#0a2540' }}>Parámetros aplicados en este análisis:</strong> Período <strong>{config.periodoAnalizado}</strong> = <strong>{resultados.semanasPeriodoUsadas} semanas</strong> · Safety Stock: <strong>{config.safetyStockSemanas} sem</strong> · Lead Time USA: <strong>{config.leadTimeUSA} sem</strong> · Lead Time China: <strong>{config.leadTimeCHINA} sem</strong>
+                    <strong style={{ color: '#0a2540' }}>Parámetros aplicados en este análisis:</strong> Período <strong>{config.periodoAnalizado}</strong> = <strong>{renderServiceValue(resultados.semanasPeriodoUsadas)} semanas</strong> · Safety Stock: <strong>{config.safetyStockSemanas} sem</strong> · Lead Time USA: <strong>{config.leadTimeUSA} sem</strong> · Lead Time China: <strong>{config.leadTimeCHINA} sem</strong>
                   </div>
                   <div style={{ fontSize: '10px', fontStyle: 'italic', color: '#666', borderTop: '1px solid #e5e0d5', paddingTop: '8px' }}>
                     <strong>Propósito consultivo:</strong> {NOTA_INV_SEGURIDAD.propositoConsultivo}
@@ -2650,11 +2668,11 @@ export default function App() {
                         <tbody>
                           {informe.topReponer.map((r, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
-                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{r.sku}</td>
-                              <td style={{ padding: '6px 8px', color: '#666' }}>{r.modelo}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.tier}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.ventas}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#065f46' }}>{r.reposicionSugerida}</td>
+                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{renderServiceValue(r.sku)}</td>
+                              <td style={{ padding: '6px 8px', color: '#666' }}>{renderServiceValue(r.modelo)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{renderServiceValue(r.tier)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{renderServiceValue(r.ventas)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#065f46' }}>{renderServiceValue(r.reposicionSugerida)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'right' }}>{fmtUSD(r.valorReposicion)}</td>
                             </tr>
                           ))}
@@ -2680,11 +2698,11 @@ export default function App() {
                         <tbody>
                           {informe.topLiquidar.map((r, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
-                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{r.sku}</td>
-                              <td style={{ padding: '6px 8px', color: '#666' }}>{r.modelo}</td>
+                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{renderServiceValue(r.sku)}</td>
+                              <td style={{ padding: '6px 8px', color: '#666' }}>{renderServiceValue(r.modelo)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.fase !== null ? `F${r.fase}` : '—'}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.diasDesc}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.invFinal}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{renderServiceValue(r.diasDesc)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{renderServiceValue(r.invFinal)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#7f1d1d' }}>{fmtUSD(r.valorInv)}</td>
                             </tr>
                           ))}
@@ -2709,10 +2727,10 @@ export default function App() {
                         <tbody>
                           {informe.topEliminar.map((r, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
-                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{r.sku}</td>
-                              <td style={{ padding: '6px 8px', color: '#666' }}>{r.modelo}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.tier}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{r.invFinal}</td>
+                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{renderServiceValue(r.sku)}</td>
+                              <td style={{ padding: '6px 8px', color: '#666' }}>{renderServiceValue(r.modelo)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'center' }}>{renderServiceValue(r.tier)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>{renderServiceValue(r.invFinal)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>{fmtUSD(r.valorInv)}</td>
                             </tr>
                           ))}
@@ -2734,11 +2752,11 @@ export default function App() {
                   {informe.skuHeroe && (
                     <div style={{ background: '#faf8f3', border: '1px solid #d4af37', padding: '14px', marginBottom: '12px' }}>
                       <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540', marginBottom: '8px' }}>
-                        PRODUCTO HÉROE: {informe.skuHeroe.sku} — {informe.skuHeroe.modelo}
+                        PRODUCTO HÉROE: {renderServiceValue(informe.skuHeroe.sku)} — {renderServiceValue(informe.skuHeroe.modelo)}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
-                        <div><strong style={{ color: '#d4af37' }}>Tier / Categoría:</strong> {informe.skuHeroe.tier} · {informe.skuHeroe.categoria}</div>
-                        <div><strong style={{ color: '#d4af37' }}>Venta:</strong> {informe.skuHeroe.ventas} unidades · {(informe.skuHeroe.pctVentas * 100).toFixed(0)}% del total</div>
+                        <div><strong style={{ color: '#d4af37' }}>Tier / Categoría:</strong> {renderServiceValue(informe.skuHeroe.tier)} · {renderServiceValue(informe.skuHeroe.categoria)}</div>
+                        <div><strong style={{ color: '#d4af37' }}>Venta:</strong> {renderServiceValue(informe.skuHeroe.ventas)} unidades · {fmtPct(informe.skuHeroe.pctVentas)} del total</div>
                         <div><strong style={{ color: '#d4af37' }}>Bundle recomendado:</strong> Combo con accesorio complementario (cable, funda o cargador) para subir ticket promedio.</div>
                         <div><strong style={{ color: '#d4af37' }}>Cross-sell natural:</strong> Productos de la misma categoría en tier inmediato superior (upgrade) o complementarios.</div>
                         <div><strong style={{ color: '#d4af37' }}>Mensaje comercial:</strong> Capitalizar el SKU héroe como "lo más vendido" para reforzar prueba social.</div>
@@ -2769,7 +2787,7 @@ export default function App() {
                   
                   <div style={{ background: '#faf8f3', border: '1px solid #e5e0d5', padding: '20px', fontFamily: '"Times New Roman", serif', fontSize: '13px', lineHeight: '1.7' }}>
                     <p style={{ marginBottom: '14px' }}>
-                      <strong style={{ color: '#d4af37' }}>"Esto es lo que vemos."</strong> Su portafolio de {resultados.totales.totalSKUs} SKUs representa {fmtUSD(informe.valorTotalInventario)} en inventario. 
+                      <strong style={{ color: '#d4af37' }}>"Esto es lo que vemos."</strong> Su portafolio de {renderServiceValue(resultados.totales?.totalSKUs)} SKUs representa {fmtUSD(informe.valorTotalInventario)} en inventario.
                       El {informe.pctValorEOL.toFixed(0)}% de ese valor está atrapado en SKUs descontinuados, y otro {informe.pctValorSinMov.toFixed(0)}% en SKUs sin movimiento. 
                       Simultáneamente, hay {informe.enQuiebreActivo.length} SKUs activos en sub-stock perdiendo venta cada día.
                     </p>
@@ -2886,20 +2904,20 @@ const KPIUnitPair = ({
   bg = '#faf8f3',
 }) => (
   <div className="border p-3 text-center" style={{ borderColor: '#e5e0d5', background: bg }}>
-    <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-    <div className="text-xl font-bold mt-1" style={{ color }}>{value}</div>
+    <div className="text-[10px] uppercase tracking-wider text-stone-500">{renderServiceValue(label)}</div>
+    <div className="text-xl font-bold mt-1" style={{ color }}>{renderServiceValue(value)}</div>
     <div className="mt-2 pt-2 border-t" style={{ borderColor: '#e5e0d5' }}>
-      <div className="text-[9px] uppercase tracking-wider text-stone-500">{unitLabel}</div>
-      <div className="text-sm font-bold mt-0.5" style={{ color }}>{unitValue}</div>
+      <div className="text-[9px] uppercase tracking-wider text-stone-500">{renderServiceValue(unitLabel)}</div>
+      <div className="text-sm font-bold mt-0.5" style={{ color }}>{renderServiceValue(unitValue)}</div>
     </div>
   </div>
 );
 
 const AlertaCard = ({ titulo, valor, sub, color, bg }) => (
   <div className="border p-3" style={{ borderColor: '#e5e0d5', background: bg }}>
-    <div className="text-[10px] uppercase tracking-wider" style={{ color }}>{titulo}</div>
-    <div className="text-2xl font-bold mt-1" style={{ color, fontFamily: '"Times New Roman", serif' }}>{valor}</div>
-    {sub && <div className="text-[10px] mt-1" style={{ color }}>{sub}</div>}
+    <div className="text-[10px] uppercase tracking-wider" style={{ color }}>{renderServiceValue(titulo)}</div>
+    <div className="text-2xl font-bold mt-1" style={{ color, fontFamily: '"Times New Roman", serif' }}>{renderServiceValue(valor)}</div>
+    {sub !== null && sub !== undefined && <div className="text-[10px] mt-1" style={{ color }}>{renderServiceValue(sub)}</div>}
   </div>
 );
 
@@ -2937,8 +2955,8 @@ const DistribTierPanel = ({ titulo, subtitulo, data }) => {
   return (
     <div>
       <div className="mb-3">
-        <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{titulo}</div>
-        <div className="text-xs text-stone-500 mt-0.5">{subtitulo}</div>
+        <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(titulo)}</div>
+        <div className="text-xs text-stone-500 mt-0.5">{renderServiceValue(subtitulo)}</div>
       </div>
 
       {hayDatos ? (
@@ -2989,8 +3007,8 @@ const DistribTierPanel = ({ titulo, subtitulo, data }) => {
                       color: TIER_COLORS[t].textColor,
                     }}>{TIER_COLORS[t].label}</span>
                   </td>
-                  <td className="px-2 py-1.5 text-center">{data[t].skus}</td>
-                  <td className="px-2 py-1.5 text-right font-bold">{data[t].unidades}</td>
+                  <td className="px-2 py-1.5 text-center">{renderServiceValue(data[t]?.skus)}</td>
+                  <td className="px-2 py-1.5 text-right font-bold">{renderServiceValue(data[t]?.unidades)}</td>
                   <td className="px-2 py-1.5 text-right">{(data[t].pctUnidades * 100).toFixed(0)}%</td>
                   <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(data[t].valor)}</td>
                   <td className="px-2 py-1.5 text-right">{(data[t].pctValor * 100).toFixed(0)}%</td>
@@ -3010,9 +3028,9 @@ const DistribTierPanel = ({ titulo, subtitulo, data }) => {
 
 const KPIBig = ({ label, value, sub, color = '#0a2540' }) => (
   <div className="border p-4" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
-    <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-    <div className="text-2xl font-bold mt-1" style={{ color, fontFamily: '"Times New Roman", serif' }}>{value}</div>
-    {sub && <div className="text-[10px] text-stone-500 mt-1">{sub}</div>}
+    <div className="text-[10px] uppercase tracking-wider text-stone-500">{renderServiceValue(label)}</div>
+    <div className="text-2xl font-bold mt-1" style={{ color, fontFamily: '"Times New Roman", serif' }}>{renderServiceValue(value)}</div>
+    {sub !== null && sub !== undefined && <div className="text-[10px] text-stone-500 mt-1">{renderServiceValue(sub)}</div>}
   </div>
 );
 
@@ -3022,8 +3040,8 @@ const DistribCategoriaPanel = ({ titulo, subtitulo, data, listaCategorias }) => 
   return (
     <div>
       <div className="mb-3">
-        <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{titulo}</div>
-        <div className="text-xs text-stone-500 mt-0.5">{subtitulo}</div>
+        <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(titulo)}</div>
+        <div className="text-xs text-stone-500 mt-0.5">{renderServiceValue(subtitulo)}</div>
       </div>
 
       {hayDatos ? (
@@ -3085,10 +3103,10 @@ const DistribCategoriaPanel = ({ titulo, subtitulo, data, listaCategorias }) => 
                     <td className="px-2 py-1.5">
                       <span className="px-2 py-0.5 text-[10px] font-bold" style={{
                         background: color.bg, color: color.textColor,
-                      }}>{c}</span>
+                      }}>{renderServiceValue(c)}</span>
                     </td>
-                    <td className="px-2 py-1.5 text-center">{d.skus}</td>
-                    <td className="px-2 py-1.5 text-right font-bold">{d.unidades}</td>
+                    <td className="px-2 py-1.5 text-center">{renderServiceValue(d?.skus)}</td>
+                    <td className="px-2 py-1.5 text-right font-bold">{renderServiceValue(d?.unidades)}</td>
                     <td className="px-2 py-1.5 text-right">{(d.pctUnidades * 100).toFixed(0)}%</td>
                     <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(d.valor)}</td>
                     <td className="px-2 py-1.5 text-right">{(d.pctValor * 100).toFixed(0)}%</td>
@@ -3108,9 +3126,9 @@ const DistribCategoriaPanel = ({ titulo, subtitulo, data, listaCategorias }) => 
 };
 
 const Th = ({ children, align = 'left' }) => (
-  <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider" style={{ textAlign: align }}>{children}</th>
+  <th className="px-3 py-2 font-bold text-[10px] uppercase tracking-wider" style={{ textAlign: align }}>{renderServiceValue(children)}</th>
 );
 
 const Td = ({ children, align = 'left', bold = false, className = '', style = {} }) => (
-  <td className={`px-3 py-2 ${className}`} style={{ textAlign: align, fontWeight: bold ? 'bold' : 'normal', ...style }}>{children}</td>
+  <td className={`px-3 py-2 ${className}`} style={{ textAlign: align, fontWeight: bold ? 'bold' : 'normal', ...style }}>{renderServiceValue(children)}</td>
 );
