@@ -256,6 +256,8 @@ describe('Pareto, Mix Balanceado, KPIs y valorización', () => {
       unidadesPorVencer: 0,
       skuMaestro: 3,
       unidadesMaestro: 9,
+      sinMaestro: 1,
+      unidadesSinMaestro: 5,
       valorActivo: 20,
       valorEOL: 60,
       valorEOLFuturo: 100,
@@ -268,7 +270,47 @@ describe('Pareto, Mix Balanceado, KPIs y valorización', () => {
       + resultados.totales.valorEOLFuturo
       + resultados.totales.valorSinMaestro,
     );
+    expect(resultados.executiveReport.executiveSummary).toMatchObject({
+      skuEOL: 2,
+      unidadesEOL: 7,
+      skuSinMaestro: 1,
+      unidadesSinMaestro: 5,
+      valorTotalInventario: 180,
+      valorActivo: 20,
+      valorEOL: 60,
+      valorSinMaestro: 0,
+    });
     expect(resultados.executiveReport.valorizacion.valorTotalInventario).toBe(180);
+  });
+
+  it('expone pares SKU/unidades para los indicadores del Resumen Dashboard', () => {
+    const resultados = processData({
+      maestro: [
+        'SKU\tUSA',
+        'SIN-ORIGEN\t10',
+        'CON-MERMA\t10',
+        'EN-QUIEBRE\t10',
+      ].join('\n'),
+      inventario: [
+        'SKU\tORIGEN\tINV SEGURIDAD\tINV INICIAL\tINV PROYECTADO\tINV FINAL',
+        'SIN-ORIGEN\t\t0\t4\t4\t4',
+        'CON-MERMA\tUSA\t0\t10\t10\t8',
+        'EN-QUIEBRE\tUSA\t5\t2\t2\t2',
+      ].join('\n'),
+    });
+
+    expect(resultados.executiveReport.dashboard.alertas).toMatchObject({
+      skusSinOrigen: 1,
+      unidadesSinOrigen: 4,
+      skusConMerma: 1,
+      unidadesConMerma: 2,
+      skusEnQuiebre: 1,
+      unidadesEnQuiebre: 2,
+      quiebreActivos: 1,
+      unidadesQuiebreActivos: 2,
+      quiebreEOL: 0,
+      unidadesQuiebreEOL: 0,
+    });
   });
 
   it('clasifica producto sin rotación exclusivamente por Ventas igual a cero', () => {

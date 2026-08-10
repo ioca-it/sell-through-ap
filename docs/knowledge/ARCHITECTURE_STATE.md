@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-Foundation 1.0 con reglas funcionales V2 implementadas. Prompt 031 completa los acuerdos Astrid–Jesús sobre reposición, tránsito, temporalidad, F4, Distribution, Pareto, KPIs y valorización sin cambiar fuentes ni Configuration Center.
+Foundation 1.0 con reglas funcionales V2 implementadas. AP01 consolida la presentación local del Dashboard, amplía de forma aditiva sus DTO de unidades y presenta importes redondeados sin decimales mediante el formatter común, sin cambiar reglas, fórmulas, fuentes ni Configuration Center.
 
 ## Último prompt aprobado
 
-Prompt 031 — Reglas funcionales Astrid–Jesús.
+AP01 — Revisión Dashboard.
 
 ## Última auditoría aprobada
 
@@ -16,7 +16,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 
 - `sellThroughApplicationService`: orquesta Repository, parsers, ensamblaje, Portfolio Analysis, Distribution Tier GOOD/BETTER/BEST/EOL y Pareto A/B/C.
 - `PortfolioAnalysisService`: consolidación, tránsito, sin rotación, alertas, temporalidad agregada, KPIs, valorización y estructura final.
-- `ExecutiveReportService`: Executive Summary con pares SKU/unidades, valorización, KPIs, indicadores generales y resumen para Dashboard.
+- `ExecutiveReportService`: Executive Summary con pares SKU/unidades/valores aplicables, valorización, KPIs, indicadores generales y resumen para Dashboard.
 - Inventory Engine y EOL Engine: necesidad/reposición final, seguridad sobre proyectado, temporalidad, ciclo EOL y F4.
 - Master Parser, Inventory Parser y Record Assembler: normalización y records procesados.
 - `sellThroughRepository` y Local Provider: frontera síncrona vigente de fuentes.
@@ -46,7 +46,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Auditar de forma independiente Prompt 031 y definir después la persistencia remota o Recommendation Engine mediante alcance separado.
+Revisar AP01 localmente contra la base protegida antes de autorizar cualquier commit, push o despliegue; después, definir la auditoría independiente o el siguiente hito mediante alcance separado.
 
 ## Decisiones congeladas
 
@@ -70,12 +70,12 @@ Auditar de forma independiente Prompt 031 y definir después la persistencia rem
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Diez archivos de pruebas automatizadas.
+- Once archivos de pruebas automatizadas.
 
 ## Cantidad de pruebas
 
-179/179 aprobadas.
+190/190 aprobadas.
 
 ## Estado del build
 
-Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: Prompt 031, 2026-08-06.
+Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: AP01, 2026-08-10.

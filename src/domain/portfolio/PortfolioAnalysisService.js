@@ -130,6 +130,16 @@ const analyzePortfolio = ({
   const skusEnQuiebreEOL = skusEnQuiebre.filter((record) => record.estado === 'EOL');
   const quiebreActivos = skusEnQuiebreActivos.length;
   const quiebreEOL = skusEnQuiebreEOL.length;
+  const unidadesSinOrigen = skusSinOrigen.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesEnQuiebre = skusEnQuiebre.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesQuiebreActivos = skusEnQuiebreActivos.reduce(
+    (sum, record) => sum + record.invFinal,
+    0,
+  );
+  const unidadesQuiebreEOL = skusEnQuiebreEOL.reduce(
+    (sum, record) => sum + record.invFinal,
+    0,
+  );
   const productosSinRotacion = recs.filter((record) => record.ventas === 0);
 
   const transitoPorSku = new Map();
@@ -165,6 +175,7 @@ const analyzePortfolio = ({
   const unidadesVencidas = skusVencidos.reduce((sum, record) => sum + record.invFinal, 0);
   const unidadesPorVencer = skusPorVencer.reduce((sum, record) => sum + record.invFinal, 0);
   const unidadesMaestro = skusMaestro.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesSinMaestro = sinMaestro.reduce((sum, record) => sum + record.invFinal, 0);
   const valorActivo = activos.reduce((sum, record) => sum + record.valorInv, 0);
   const valorEOLFuturo = eolFuturos.reduce((sum, record) => sum + record.valorInv, 0);
   const valorSinMaestro = sinMaestro.reduce((sum, record) => sum + record.valorInv, 0);
@@ -207,6 +218,10 @@ const analyzePortfolio = ({
       skusEnQuiebreEOL,
       quiebreActivos,
       quiebreEOL,
+      unidadesSinOrigen,
+      unidadesEnQuiebre,
+      unidadesQuiebreActivos,
+      unidadesQuiebreEOL,
       productosSinRotacion,
       productosEnTransito,
       totalUnidadesTransito,
@@ -229,6 +244,7 @@ const analyzePortfolio = ({
       unidadesVencidas,
       unidadesPorVencer,
       unidadesMaestro,
+      unidadesSinMaestro,
       unidEOL: totalUnidEOL,
       valorActivo,
       valorEOL: totalValorEOL,

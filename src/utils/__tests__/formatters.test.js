@@ -3,9 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { fmtUSD, fmtPct, fmtIdx, fmtUSDInline } from '../formatters.js';
 
 const usdCases = [
-  ['formatea un importe normal', 1234.5, '$1,234.50'],
-  ['formatea cero', 0, '$0.00'],
-  ['conserva el signo negativo después del símbolo USD', -1234.5, '$-1,234.50'],
+  ['redondea 255142.86 al entero más cercano', 255142.86, '$255,143'],
+  ['redondea 211063.30 al entero más cercano', 211063.30, '$211,063'],
+  ['redondea 44079.56 al entero más cercano', 44079.56, '$44,080'],
+  ['presenta 2275.00 sin decimales', 2275.00, '$2,275'],
+  ['redondea 15658.40 al entero más cercano', 15658.40, '$15,658'],
+  ['formatea cero sin decimales', 0, '$0'],
+  ['conserva el signo negativo después del símbolo USD', -1234.5, '$-1,235'],
 ];
 
 const absentNumberCases = [

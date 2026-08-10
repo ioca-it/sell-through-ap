@@ -345,6 +345,8 @@ export default function App() {
   // Validaciones para habilitar navegación
   const configCompleta = config.codigoCliente.trim() !== '' && config.nombreCliente.trim() !== '';
   const dataCargada = rawMaestro.trim() !== '' && rawInventario.trim() !== '';
+  const productosReposicionSugerida = resultados?.recs
+    ?.filter((record) => record.reposicionSugerida > 0) ?? [];
 
   const procesar = () => {
     setError(null);
@@ -1312,12 +1314,10 @@ export default function App() {
           const report = resultados.executiveReport;
           const summary = report.executiveSummary ?? {};
           const kpis = report.kpis ?? {};
-          const valuation = report.valorizacion ?? {};
           const indicators = report.indicadoresGenerales ?? {};
           const paretoInterpretation = indicators.interpretacionPareto ?? {};
           const dashboardAlerts = report.dashboard?.alertas ?? {};
           const dashboardPareto = report.dashboard?.pareto ?? {};
-          const totals = report.totales ?? {};
 
           return (
             <section className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
@@ -1335,12 +1335,12 @@ export default function App() {
                   <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Executive Summary</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {[
-                      ['Total SKU', summary.totalSKUs, 'Total Unidades', summary.totalUnidades],
-                      ['SKU Activos', summary.skuActivos, 'Total Unidades Activas', summary.unidadesActivas],
-                      ['SKU Vencidos', summary.skuVencidos, 'Total Unidades Vencidas', summary.unidadesVencidas],
-                      ['SKU por Vencer', summary.skuPorVencer, 'Total Unidades por Vencer', summary.unidadesPorVencer],
-                      ['SKU Maestro', summary.skuMaestro, 'Total Unidades Maestro', summary.unidadesMaestro],
-                    ].map(([label, value, unitLabel, unitValue]) => (
+                      ['Total SKU', summary.totalSKUs, 'Total Unidades', summary.totalUnidades, 'Valor Inventario Total', summary.valorTotalInventario],
+                      ['SKU Activos', summary.skuActivos, 'Unidades Activas', summary.unidadesActivas, 'Valor Inventario SKU Activos', summary.valorActivo],
+                      ['SKU EOL', summary.skuEOL, 'Unidades EOL', summary.unidadesEOL, 'Valor Inventario EOL', summary.valorEOL],
+                      ['SKU por Vencer', summary.skuPorVencer, 'Unidades por Vencer', summary.unidadesPorVencer],
+                      ['SKU Sin Maestro', summary.skuSinMaestro, 'Unidades Sin Maestro', summary.unidadesSinMaestro, 'Valor Inventario Sin Maestro', summary.valorSinMaestro],
+                    ].map(([label, value, unitLabel, unitValue, moneyLabel, moneyValue]) => (
                       <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
                         <div className="mt-1 text-xl font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(value)}</div>
@@ -1348,41 +1348,24 @@ export default function App() {
                           <div className="text-[9px] uppercase tracking-wider text-stone-500">{unitLabel}</div>
                           <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(unitValue)}</div>
                         </div>
+                        {moneyLabel && (
+                          <div className="mt-2 pt-2 border-t" style={{ borderColor: '#e5e0d5' }}>
+                            <div className="text-[9px] uppercase tracking-wider text-stone-500">{moneyLabel}</div>
+                            <div className="text-sm font-bold" style={{ color: '#0a2540' }}>{fmtUSD(moneyValue)}</div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">KPIs ejecutivos</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     {[
-                      ['Valor EOL', fmtUSD(kpis.valorEOL), '#b91c1c'],
-                      ['Reposición', fmtUSD(kpis.totalReposicionValor), '#0369a1'],
                       ['Merma', fmtUSD(kpis.totalMermaValor), '#c2410c'],
                       ['Ventas Pareto A', fmtPctPoints(kpis.pctVentasA), '#15803d'],
+                      ['Reposición', fmtUSD(kpis.totalReposicionValor), '#0369a1'],
                     ].map(([label, value, color]) => (
                       <div key={label} className="border p-4" style={{ borderColor: '#e5e0d5' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
                         <div className="text-2xl font-bold mt-1" style={{ color }}>{renderServiceValue(value)}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Valorización del inventario</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                    {[
-                      ['Valor Total Inventario', valuation.valorTotalInventario],
-                      ['Valor Activo', valuation.valorActivo],
-                      ['Valor EOL', valuation.valorEOL],
-                      ['Valor EOL Futuro', valuation.valorEOLFuturo],
-                      ['Valor Sin Maestro', valuation.valorSinMaestro],
-                    ].map(([label, value]) => (
-                      <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5' }}>
-                        <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-                        <div className="mt-1 font-bold" style={{ color: label === 'Valor Total Inventario' ? '#0a2540' : '#444' }}>{fmtUSD(value)}</div>
                       </div>
                     ))}
                   </div>
@@ -1408,41 +1391,26 @@ export default function App() {
                     <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Resumen Dashboard</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {[
-                        ['Sin origen', dashboardAlerts.skusSinOrigen],
-                        ['Con merma', dashboardAlerts.skusConMerma],
-                        ['En quiebre', dashboardAlerts.skusEnQuiebre],
-                        ['Quiebre activos', dashboardAlerts.quiebreActivos],
-                        ['Quiebre EOL', dashboardAlerts.quiebreEOL],
-                      ].map(([label, value]) => (
+                        ['Sin origen', dashboardAlerts.skusSinOrigen, dashboardAlerts.unidadesSinOrigen],
+                        ['Con merma', dashboardAlerts.skusConMerma, dashboardAlerts.unidadesConMerma],
+                        ['En quiebre', dashboardAlerts.skusEnQuiebre, dashboardAlerts.unidadesEnQuiebre],
+                        ['Quiebre activos', dashboardAlerts.quiebreActivos, dashboardAlerts.unidadesQuiebreActivos],
+                        ['Quiebre EOL', dashboardAlerts.quiebreEOL, dashboardAlerts.unidadesQuiebreEOL],
+                      ].map(([label, skuValue, unitValue]) => (
                         <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                           <div className="text-xs text-stone-500">{label}</div>
-                          <div className="text-lg font-bold" style={{ color: value > 0 ? '#b91c1c' : '#15803d' }}>{renderServiceValue(value)}</div>
+                          <div className="text-lg font-bold" style={{ color: skuValue > 0 ? '#b91c1c' : '#15803d' }}>{renderServiceValue(skuValue)} SKU</div>
+                          {unitValue !== null && unitValue !== undefined && (
+                            <div className="text-xs font-bold text-stone-600">{renderServiceValue(unitValue)} Unidades</div>
+                          )}
                         </div>
                       ))}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto A: Pocos Vitales · {renderServiceValue(dashboardPareto.skusPocosVitales)} SKU · {fmtPctPoints(dashboardPareto.pctVentasA)}</span>
-                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Pareto B/C: Cola Larga · {renderServiceValue(dashboardPareto.skusColaLarga)} SKU · {fmtPctPoints(dashboardPareto.pctVentasColaLarga)}</span>
-                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Con ventas: {renderServiceValue(dashboardPareto.totalSkusConVentas)}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto A: Pocos Vitales · {renderServiceValue(dashboardPareto.skusPocosVitales)} SKU · {renderServiceValue(dashboardPareto.unidadesPocosVitales)} Unidades · {fmtPctPoints(dashboardPareto.pctVentasA)}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Pareto B/C: Cola Larga · {renderServiceValue(dashboardPareto.skusColaLarga)} SKU · {renderServiceValue(dashboardPareto.unidadesColaLarga)} Unidades · {fmtPctPoints(dashboardPareto.pctVentasColaLarga)}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Con ventas: {renderServiceValue(dashboardPareto.totalSkusConVentas)} SKU · {renderServiceValue(dashboardPareto.totalUnidadesConVentas)} Unidades</span>
                     </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Totales</div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                    {[
-                      ['Total SKUs', totals.totalSKUs],
-                      ['Activos', totals.activos],
-                      ['EOL vencidos', totals.eolVencidos],
-                      ['EOL futuros', totals.eolFuturos],
-                      ['Valor EOL', fmtUSD(totals.valorEOL)],
-                    ].map(([label, value]) => (
-                      <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5' }}>
-                        <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
-                        <div className="mt-1 font-bold" style={{ color: '#0a2540' }}>{renderServiceValue(value)}</div>
-                      </div>
-                    ))}
                   </div>
                 </div>
               </div>
@@ -1519,11 +1487,11 @@ export default function App() {
                 </div>
               </div>
               <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <KPIUnitPair label="Total SKU" value={resultados.totales.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.totales.totalUnidades} />
-                <KPIUnitPair label="SKU Activos" value={resultados.totales.skuActivos} unitLabel="Total Unidades Activas" unitValue={resultados.totales.unidadesActivas} color="#065f46" bg="#d1fae5" />
-                <KPIUnitPair label="SKU Vencidos" value={resultados.totales.skuVencidos} unitLabel="Total Unidades Vencidas" unitValue={resultados.totales.unidadesVencidas} color="#7f1d1d" bg="#fee2e2" />
-                <KPIUnitPair label="SKU por Vencer" value={resultados.totales.skuPorVencer} unitLabel="Total Unidades por Vencer" unitValue={resultados.totales.unidadesPorVencer} color="#92400e" bg="#fef3c7" />
-                <KPIUnitPair label="SKU Maestro" value={resultados.totales.skuMaestro} unitLabel="Total Unidades Maestro" unitValue={resultados.totales.unidadesMaestro} />
+                <KPIUnitPair label="Total SKU" value={resultados.totales.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.totales.totalUnidades} moneyLabel="Valor Inventario Total" moneyValue={fmtUSD(resultados.totales.valorTotalInventario)} />
+                <KPIUnitPair label="SKU Activos" value={resultados.totales.skuActivos} unitLabel="Unidades Activas" unitValue={resultados.totales.unidadesActivas} moneyLabel="Valor Inventario SKU Activos" moneyValue={fmtUSD(resultados.totales.valorActivo)} color="#065f46" bg="#d1fae5" />
+                <KPIUnitPair label="SKU EOL" value={resultados.totales.skuVencidos} unitLabel="Unidades EOL" unitValue={resultados.totales.unidadesVencidas} moneyLabel="Valor Inventario EOL" moneyValue={fmtUSD(resultados.totales.valorEOL)} color="#7f1d1d" bg="#fee2e2" />
+                <KPIUnitPair label="SKU por Vencer" value={resultados.totales.skuPorVencer} unitLabel="Unidades por Vencer" unitValue={resultados.totales.unidadesPorVencer} color="#92400e" bg="#fef3c7" />
+                <KPIUnitPair label="SKU Sin Maestro" value={resultados.totales.sinMaestro} unitLabel="Unidades Sin Maestro" unitValue={resultados.totales.unidadesSinMaestro} moneyLabel="Valor Inventario Sin Maestro" moneyValue={fmtUSD(resultados.totales.valorSinMaestro)} />
               </div>
 
               <div className="px-6 pb-6 grid grid-cols-1 md:grid-cols-4 gap-3 border-t pt-5" style={{ borderColor: '#e5e0d5' }}>
@@ -1795,6 +1763,19 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="px-6 pt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <KPIBig
+                  label="Cantidad de SKU"
+                  value={resultados.distribucionTier.inventario.totalSKUs}
+                  sub="GOOD + BETTER + BEST + EOL"
+                />
+                <KPIBig
+                  label="Cantidad de Unidades"
+                  value={resultados.distribucionTier.inventario.totalU}
+                  sub="GOOD + BETTER + BEST + EOL"
+                />
+              </div>
+
               <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <DistribTierPanel
                   titulo="Inventario Actual del Cliente"
@@ -1990,13 +1971,55 @@ export default function App() {
               )}
             </div>
 
+            {/* La UI solo selecciona resultados positivos; la reposición llega calculada por dominio. */}
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <Package className="w-5 h-5" style={{ color: '#1e40af' }} />
+                  Productos de Reposición Sugerida
+                </h2>
+                <div className="text-xs text-stone-500 mt-1">
+                  Productos con reposición sugerida mayor que cero, según el cálculo vigente del dominio.
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                    <tr>
+                      <Th>SKU</Th>
+                      <Th>Descripción</Th>
+                      <Th align="center">Nivel</Th>
+                      <Th align="center">Inv. Proyectado</Th>
+                      <Th align="center">Compra / Tránsito</Th>
+                      <Th align="center">Reposición Sugerida</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productosReposicionSugerida.length === 0 && (
+                      <tr><td colSpan={6} className="p-6 text-center text-stone-500">No hay productos con reposición sugerida.</td></tr>
+                    )}
+                    {productosReposicionSugerida.map((record, index) => (
+                      <tr key={`${record.sku}-${index}`} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
+                        <Td bold>{record.sku}</Td>
+                        <Td className="text-stone-600">{record.modelo}</Td>
+                        <Td align="center">{record.tier}</Td>
+                        <Td align="center">{record.invProyectado}</Td>
+                        <Td align="center">{record.compra}</Td>
+                        <Td align="center" bold style={{ color: '#1e40af', background: '#dbeafe' }}>{record.reposicionSugerida}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* TABLA EOL CON FASE */}
             <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
               <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                 <div>
                   <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
                     <Package className="w-5 h-5" style={{ color: '#7f1d1d' }} />
-                    SKUs EOL ya descontinuados — con fase activa
+                    SKUs EOL
                   </h2>
                   <div className="text-xs text-stone-500 mt-1">
                     Ordenados por días descontinuados descendente. El <strong>Origen</strong> aplicado por SKU viene del Inventario.
@@ -2900,6 +2923,8 @@ const KPIUnitPair = ({
   value,
   unitLabel,
   unitValue,
+  moneyLabel,
+  moneyValue,
   color = '#0a2540',
   bg = '#faf8f3',
 }) => (
@@ -2910,6 +2935,12 @@ const KPIUnitPair = ({
       <div className="text-[9px] uppercase tracking-wider text-stone-500">{renderServiceValue(unitLabel)}</div>
       <div className="text-sm font-bold mt-0.5" style={{ color }}>{renderServiceValue(unitValue)}</div>
     </div>
+    {moneyLabel && (
+      <div className="mt-2 pt-2 border-t" style={{ borderColor: '#e5e0d5' }}>
+        <div className="text-[9px] uppercase tracking-wider text-stone-500">{renderServiceValue(moneyLabel)}</div>
+        <div className="text-sm font-bold mt-0.5" style={{ color }}>{renderServiceValue(moneyValue)}</div>
+      </div>
+    )}
   </div>
 );
 

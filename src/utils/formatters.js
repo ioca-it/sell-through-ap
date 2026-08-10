@@ -6,11 +6,14 @@
 // Preparación para Dataverse: no conoce fuentes; formatea cualquier valor ya normalizado.
 // =============================================================================
 
-// Presenta importes en USD con el contrato visual vigente de dos decimales.
-export const fmtUSD = (v) => {
+// Redondea únicamente la presentación monetaria; el valor numérico recibido no se modifica.
+const formatRoundedUSD = (v) => {
   if (v === null || v === undefined || isNaN(v)) return '—';
-  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 };
+
+// Presenta importes en USD sin decimales según el contrato visual vigente.
+export const fmtUSD = formatRoundedUSD;
 
 // Los porcentajes visibles se presentan sin decimales por acuerdo funcional.
 export const fmtPct = (v) => {
@@ -30,11 +33,8 @@ export const fmtIdx = (v) => {
   return v.toFixed(2);
 };
 
-// Conserva el formato USD específico usado por los paneles de distribución.
-export const fmtUSDInline = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
-  return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
+// Conserva el export específico de distribución sobre la misma regla monetaria común.
+export const fmtUSDInline = formatRoundedUSD;
 
 // La UI solo puede entregar a React valores escalares como texto visible. Los
 // objetos de los DTO se consumen por sus campos y nunca como hijos directos.
