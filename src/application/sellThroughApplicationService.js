@@ -13,6 +13,8 @@ import { parseInventory } from '../domain/parser/inventoryParser.js';
 import { assembleRecord } from '../domain/parser/recordAssembler.js';
 import { PortfolioAnalysisService } from '../domain/portfolio/PortfolioAnalysisService.js';
 import { ExecutiveReportService } from '../domain/report/ExecutiveReportService.js';
+import { findNewProductsMissingInventory } from '../domain/product/newProduct.js';
+import { listarFasesEOLDisponibles } from '../domain/eol/eolEngine.js';
 import { primerDiaMes } from '../utils/dateUtils.js';
 
 const REQUIRED_PROCESSING_CONFIG_KEYS = [
@@ -42,6 +44,13 @@ const validateProcessingConfig = (config) => {
   }
 
   return null;
+};
+
+// Entrega a presentación la lista efectiva de fases sin exponerle la regla F4
+// ni permitir acceso directo a la fuente física.
+export const getPhaseDiscountTable = (repository) => {
+  const { tablaFases } = repository.getParametros();
+  return listarFasesEOLDisponibles({ tablaFases });
 };
 
 // Agrupa todas las unidades por nivel operativo. EOL es la cuarta clasificación;
@@ -176,21 +185,21 @@ export const calculatePareto = (records) => {
     interpretacion = {
       titulo: 'Concentración saludable (Pareto clásico)',
       linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}% del portafolio activo) generan ${pctVentasA.toFixed(0)}% de las ventas.`,
-      linea2: `Reposición prioritaria de los SKUs A; revisar los ${skusColaLarga.length} SKUs B/C de cola larga.`,
+      linea2: `Reposición prioritaria de los SKUs A; revisar los ${skusColaLarga.length} SKUs B/C complementarios.`,
       color: '#065f46', bg: '#d1fae5',
     };
   } else if (pctSKUsA <= 35) {
     interpretacion = {
       titulo: 'Mix balanceado',
       linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan ${pctVentasA.toFixed(0)}% de las ventas — distribución algo más amplia que Pareto clásico.`,
-      linea2: 'Mantener disponibilidad de los SKUs A y evaluar la cola larga B/C para evitar sobre-stock.',
+      linea2: 'Mantener disponibilidad de los SKUs A y evaluar los complementarios B/C para evitar sobre-stock.',
       color: '#1e40af', bg: '#dbeafe',
     };
   } else {
     interpretacion = {
       titulo: 'Distribución plana — portafolio disperso',
       linea1: `${skusParetoA.length} SKUs (${pctSKUsA.toFixed(0)}%) acumulan ${pctVentasA.toFixed(0)}% de las ventas, dispersión alta.`,
-      linea2: 'Cobertura amplia necesaria; oportunidad clara de racionalizar SKUs marginales en la cola larga.',
+      linea2: 'Cobertura amplia necesaria; oportunidad clara de racionalizar SKUs complementarios marginales.',
       color: '#92400e', bg: '#fef3c7',
     };
   }
@@ -250,6 +259,11 @@ export const processSellThrough = (repository) => {
   } = repository.getParametros();
 
   const fechaBase = primerDiaMes();
+  const newProductsMissingInventory = findNewProductsMissingInventory({
+    masterBySku: masterResult.masterBySku,
+    inventoryRecords: inventoryResult.inventoryRecords,
+    processingDate: fechaBase,
+  });
   const recs = inventoryResult.inventoryRecords.map((inventoryRecord) => assembleRecord({
     inventoryRecord,
     masterRecord: masterResult.masterBySku[inventoryRecord.sku],
@@ -302,6 +316,7 @@ export const processSellThrough = (repository) => {
     distribucionTier,
     distribucionCategoria,
     analisisPareto,
+    newProductsMissingInventory,
   });
   const executiveReport = ExecutiveReportService.buildExecutiveReport(portfolioAnalysis);
 

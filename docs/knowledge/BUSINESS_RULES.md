@@ -23,6 +23,7 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - Fechas aceptadas: `d/m/aaaa`, `d-m-aaaa` y `aaaa-m-d`.
 - Categoría vacía en un SKU presente en Maestro se muestra como `—`; `SIN CATEGORIA` queda reservado a SKU sin correspondencia en Maestro.
 - Los costos eliminan `$` y comas antes de convertirse a número; un valor inválido queda en cero.
+- El contrato incorpora `creationDate`; el origen local reconoce el encabezado normalizado `creationDate` y conserva `null` cuando falta o no puede interpretarse.
 
 ### BR-004 — Inventario del Cliente
 
@@ -71,7 +72,7 @@ La estrategia, descuento base textual y prioridad de cada bucket están en `src/
 - Se selecciona la mayor fase cuyo `diasMin` sea menor o igual a los días transcurridos.
 - La tabla actual contiene únicamente marca `SKULLCANDY` y orígenes `USA`/`CHINA`.
 - Umbrales actuales: F0 desde 90 días, F1 desde 120, F2 desde 150, F3 desde 240 y F4 con más de 365 días.
-- F4 aplica descuento consumidor de `50%` y reconoce un inventario mínimo de 12 unidades.
+- F4 aplica descuento consumidor de `15%` y reconoce un inventario mínimo de 12 unidades.
 - Antes de F4, si no existe combinación de marca y origen, no se aplica fase ni descuento; F4 es global para productos con más de 365 días.
 
 ### BR-010 — Descuento y aportes
@@ -107,6 +108,7 @@ ceil((Ventas / Semanas del período) × (Safety Stock en semanas + Lead Time del
 - La alerta de nivel de seguridad ocurre si el Inventario de Seguridad IOCA es mayor que cero y el Inventario Proyectado es menor. No usa Inventario Final para esa comparación.
 - Inventario Proyectado conserva valores negativos.
 - Un EOL en quiebre no genera reposición: la acción depende del bucket (`rebalanceo`, aceptar quiebre, liquidar o dejar morir).
+- Las alertas operativas, conteos y tablas de bajo inventario/seguridad exponen únicamente productos `ACTIVO`. La señal calculada por el Inventory Engine para EOL se conserva internamente y no participa en esos indicadores.
 
 ### BR-013 — Merma
 
@@ -153,7 +155,8 @@ Distribution y Pareto no forman parte de este Business Service. Application Serv
 - Se ordenan de mayor a menor por unidades vendidas.
 - Un SKU es clase A si el acumulado anterior a incluirlo aún era menor que `80%`, B si era menor que `95%` y C en el resto.
 - La vista técnica muestra A, B y C con cantidad de SKU y participaciones reales.
-- La vista ejecutiva agrupa A como `Pocos Vitales` y B/C como `Cola Larga`.
+- La vista ejecutiva presenta A como `Vitales` y B/C como `Complementarios`.
+- La tabla Pareto ABC identifica A en verde, B en azul y C en rojo; esta convención visual no modifica la clasificación.
 - Los porcentajes visibles provienen del cálculo; no se usan porcentajes fijos como etiquetas.
 - Interpretación por proporción de SKU A: hasta 20% es concentración clásica; más de 20% y hasta 35% es mix balanceado; más de 35% es distribución plana.
 
@@ -164,6 +167,7 @@ Distribution y Pareto no forman parte de este Business Service. Application Serv
 El informe aplica, entre otras, estas condiciones implementadas:
 
 - sin movimiento: Ventas igual a cero, independientemente del Inventario Final;
+- `Sin ventas` reutiliza esa clasificación y totaliza cantidad de SKU, Inventario Final y valor de inventario de los mismos registros;
 - subinventario activo: Inventario Proyectado menor que Inventario de Seguridad IOCA;
 - obsolescencia: EOL vencido con Inventario Final mayor que cero;
 - activación requerida: activo Tier `BEST`, con inventario y Ventas menores o iguales a 1;
@@ -184,15 +188,36 @@ Las recomendaciones narrativas se generan con reglas fijas en `App.jsx`; no son 
 
 ### BR-023 — Inventario en Tránsito
 
-- Incluye todo registro con `Compra > 0`, agregado por SKU y sin valorización monetaria.
+- Incluye todo registro con `Compra > 0`, agregado por SKU.
 - El total es la suma de unidades `Compra`; incluye productos EOL aunque su reposición final sea cero.
+- `Valor en tránsito por SKU = Compra × costo aplicado vigente`; el total global suma esos valores sin seleccionar un precio nuevo.
 
 ### BR-024 — KPIs y formato ejecutivo
 
-- Cada KPI de SKU presenta debajo su homólogo de unidades: Total, Activos, Vencidos, Por Vencer y Maestro.
+- Dashboard y Resumen Ejecutivo sustituyen la presentación `Por Vencer` por `Sin ventas`, con cantidad de SKU, unidades y valor de inventario.
+- Los campos internos de temporalidad `POR VENCER` se conservan para consumidores que todavía los necesiten.
 - Total Unidades Maestro suma Inventario Final de registros con correspondencia en Maestro.
 - Unidades, cantidades, porcentajes y KPI se muestran sin decimales; los importes conservan formato monetario.
 - Las etiquetas financieras omiten los sufijos `(20%)` y `(80%)` sin cambiar los cálculos de aportes.
+
+### BR-025 — Producto Nuevo
+
+- `Producto Nuevo = diferencia entre fecha de procesamiento y creationDate < 90 días`.
+- La comparación es estricta: 89 días clasifica como nuevo; 90 días o más no clasifica.
+- `creationDate` vacía o inválida no clasifica como Producto Nuevo.
+- La fecha de procesamiento es la misma fecha base mensual oficial del Dashboard.
+
+### BR-026 — Nuevos no presentes
+
+- Un producto participa cuando cumple BR-025, existe en Maestro Producto y su SKU no aparece en Inventario del Cliente.
+- Dashboard muestra únicamente la cantidad de SKU y la nota funcional aprobada.
+- No se calcula Reposición Sugerida para estos productos.
+
+### BR-027 — Tipo de Cliente
+
+- El contrato normalizado es `{ customerCode, customerName, country, customerType }`.
+- `customerType` admite cadena vacía como fallback controlado y se muestra en Configuración al seleccionar un cliente.
+- El nombre lógico y mapping real de Dataverse permanecen pendientes; no se aprobó ninguna fórmula basada en Tipo de Cliente.
 
 ## Salidas
 

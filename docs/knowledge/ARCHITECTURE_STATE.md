@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-Foundation 1.0 con reglas funcionales V2 implementadas. AP01 consolida la presentación local del Dashboard, amplía de forma aditiva sus DTO de unidades y presenta importes redondeados sin decimales mediante el formatter común, sin cambiar reglas, fórmulas, fuentes ni Configuration Center.
+El ajuste F4 fija el descuento consumidor en 15% para USA y CHINA desde la fuente única de Domain; cálculo EOL, Tabla de Descuento por Fase y Excel consumen la misma regla efectiva. Local Customer Test Mode permanece habilitado y Dataverse Customer Provider sigue disponible sin avanzar MSAL, Entra, Render, Azure ni Dataverse real.
 
 ## Último prompt aprobado
 
-AP01 — Revisión Dashboard.
+FIX F4 — Descuento 15%.
 
 ## Última auditoría aprobada
 
@@ -17,16 +17,32 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - `sellThroughApplicationService`: orquesta Repository, parsers, ensamblaje, Portfolio Analysis, Distribution Tier GOOD/BETTER/BEST/EOL y Pareto A/B/C.
 - `PortfolioAnalysisService`: consolidación, tránsito, sin rotación, alertas, temporalidad agregada, KPIs, valorización y estructura final.
 - `ExecutiveReportService`: Executive Summary con pares SKU/unidades/valores aplicables, valorización, KPIs, indicadores generales y resumen para Dashboard.
-- Inventory Engine y EOL Engine: necesidad/reposición final, seguridad sobre proyectado, temporalidad, ciclo EOL y F4.
+- Inventory Engine y EOL Engine: necesidad/reposición final, seguridad sobre proyectado, temporalidad, ciclo EOL, F4 y lista efectiva de fases para presentación.
 - Master Parser, Inventory Parser y Record Assembler: normalización y records procesados.
+- New Product Domain Service: regla estricta `< 90 días` desde `creationDate` y cruce de Nuevos no presentes sin calcular reposición.
 - `sellThroughRepository` y Local Provider: frontera síncrona vigente de fuentes.
+- `customerRepository`, Customer Master Application Service y contrato `Customer`: frontera asíncrona de búsqueda/selección con `{ customerCode, customerName, country, customerType }`.
+- Dataverse Customer Provider frontend: consume exclusivamente la Customer API configurada por `VITE_API_BASE_URL`.
+- Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
+- Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
+- Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
+- Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
+- Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name` y `crbbe_nombrepais`.
+- Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse.
+- Rate Limiter: límites por IP y `oid/sub`, store in-memory inyectable y respuesta 429/Retry-After.
+- Health endpoint: `/health` anónimo y sin dependencias externas.
 - Configuration Center Foundation: PAR-001, PAR-002 y PAR-003 con schema como fuente única de IDs/keys.
 
 ## Servicios pendientes
 
 - Extracción futura de las narrativas consultivas restantes de `App.jsx` y Recommendation Engine: pendientes de alcance específico.
 - Extracción futura de Distribution y Pareto: pendiente de prompt independiente.
-- DataverseProvider, persistencia, autenticación y asincronía: no implementados.
+- Registro Entra de Customer API, scope delegado, integración MSAL frontend y adquisición real de token: pendientes de configuración aprobada.
+- Configuración/despliegue Render/Vercel, permisos Entra/Dataverse y smoke test real: pendientes de ejecución manual.
+- Store distribuido de rate limiting: obligatorio antes de múltiples instancias o escala horizontal en Azure.
+- DataverseProvider para Maestro Producto y cualquier otra entidad: no implementados.
+- Mapping/nombre lógico real de `customerType`: pendiente de confirmación; el contrato usa fallback vacío y no selecciona una columna Dataverse nueva.
+- Redefinición de Sin origen, buckets/fases EOL, reposición para productos nuevos y fórmulas por Tipo de Cliente: no definidas y no implementadas.
 - Configuration Center completo: pendiente migrar parámetros adicionales; el MVP visual y local está habilitado solo para el schema actual.
 
 ## Arquitectura vigente
@@ -40,20 +56,41 @@ UI (App.jsx)
         -> fuentes locales y datos de sesión
 
 Configuration Schema -> Configuration Service -> Repository
+
+Configuración UI
+  -> Customer Master Application Service
+    -> Customer Repository
+      -> Customer Provider Factory (`VITE_CUSTOMER_SOURCE`)
+        -> Local Customer Provider (fallback con fixtures ficticios)
+        -> Dataverse Customer Provider frontend
+          -> getAccessToken / Microsoft Entra ID (JWT delegado)
+            -> Customer API portable / JWT Authenticator / Rate Limiter
+              -> Customer Service
+                -> Account Customer Gateway
+                  -> Dataverse Client
+                    -> Entra Token Provider (client_credentials separado)
+                      -> Microsoft Entra ID / Dataverse
 ```
 
 Distribution y Pareto permanecen en Application Service. Executive Report consume el DTO de Portfolio Analysis; presentación, narrativas y exportaciones permanecen en `App.jsx` sin acceder directamente a fuentes físicas.
 
 ## Siguiente hito
 
-Revisar AP01 localmente contra la base protegida antes de autorizar cualquier commit, push o despliegue; después, definir la auditoría independiente o el siguiente hito mediante alcance separado.
+Validar localmente Customer Master con `VITE_CUSTOMER_SOURCE=local`. Los pendientes de Astrid, Entra, MSAL, Render, Azure y Dataverse real continúan como hitos separados que requieren autorización expresa.
 
 ## Decisiones congeladas
 
 - Preservar comportamiento, fórmulas, defaults, ordenamientos y contratos públicos durante refactorizaciones.
 - `BUSINESS_PARAMETERS.md` es el catálogo oficial del Configuration Center.
 - `CONFIGURATION_SCHEMA` es la fuente única de IDs, keys y metadatos migrados; defaults se declaran una sola vez.
-- Repository/Provider son la frontera obligatoria de fuentes; Dataverse no tiene entidades ni campos aprobados.
+- Repository/Provider son la frontera obligatoria de fuentes; Customer es el único contrato Dataverse normalizado aprobado. `customerType` pertenece al contrato lógico, pero su nombre físico no está confirmado y no se agregó al gateway backend.
+- La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.
+- `VITE_CUSTOMER_SOURCE` selecciona exclusivamente `local` o `dataverse`; `local` es el fallback compatible cuando la variable no está definida.
+- Render es hosting temporal y no una dependencia arquitectónica; Azure podrá sustituirlo manteniendo handler, variables neutrales y contratos.
+- Tenant, client secret y access token Dataverse existen solo en backend. El token delegado de usuario se limita al Provider frontend; la UI no interpreta JWT, consulta Dataverse ni envía OData.
+- Usuario→Customer API usa JWT delegado `AUTH_*`; API→Dataverse usa `DV_*` y client_credentials. Las credenciales nunca se reutilizan entre fronteras.
+- CORS no es autenticación; toda ruta Customer exige Bearer válido. `/health` es la única ruta funcional anónima.
+- Rate limiting in-memory solo es válido para una instancia temporal; Azure horizontal requiere store distribuido.
 - El procesamiento vigente es síncrono y local.
 - Portfolio Analysis clona estructuras externas y congela únicamente objetos de su propia salida; las referencias originales del llamador nunca se congelan.
 - Executive Report sólo consume el DTO de Portfolio Analysis y no accede a UI, Repository, Provider o fuentes físicas.
@@ -61,7 +98,11 @@ Revisar AP01 localmente contra la base protegida antes de autorizar cualquier co
 - Compra es Inventario en Tránsito y la reposición final la descuenta de la necesidad vigente.
 - La seguridad usa Inventario Proyectado; Estado EOL fuerza nivel EOL y temporalidad VENCIDO.
 - Pareto A/B/C usa unidades vendidas y cortes acumulados 80%/95%.
-- F4 aplica después de 365 días con descuento 50% y umbral de 12 unidades.
+- La presentación Pareto usa Vitales/Complementarios y colores A verde, B azul, C rojo sin alterar cortes ni cálculo.
+- Las alertas y tablas de bajo inventario exponen solo ACTIVO; el Inventory Engine no cambia.
+- Producto Nuevo compara `creationDate` con la fecha oficial de procesamiento y exige menos de 90 días; Nuevos no presentes no genera reposición.
+- F4 aplica después de 365 días con descuento 15% y umbral de 12 unidades.
+- La Tabla de Descuento por Fase y su hoja Excel consumen todas las fases efectivas entregadas por Application Service; F4 se resuelve con la regla de Domain y `datos.json` conserva F0–F3.
 - Executive Report, Recommendation Engine y Configuration Center UI requieren prompts separados.
 - `sell-through-ap` permanece separado de NEXUS.
 
@@ -70,12 +111,12 @@ Revisar AP01 localmente contra la base protegida antes de autorizar cualquier co
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Once archivos de pruebas automatizadas.
+- Diecinueve archivos de pruebas frontend y siete archivos de pruebas backend.
 
 ## Cantidad de pruebas
 
-190/190 aprobadas.
+Frontend: 238/238 aprobadas. Backend: no ejecutado en este hito porque `server/` no fue modificado.
 
 ## Estado del build
 
-Aprobado con Vite 5.4.21 y 1518 módulos transformados. Última validación: AP01, 2026-08-10.
+Frontend aprobado con Vite 5.4.21 y 1527 módulos transformados. Backend no afectado. Última validación: FIX F4 Descuento 15%, 2026-08-11.

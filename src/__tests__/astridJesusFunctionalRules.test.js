@@ -129,10 +129,39 @@ describe('reposición, nivel de seguridad y tránsito', () => {
     });
 
     expect(resultados.alertas.totalUnidadesTransito).toBe(9);
+    expect(resultados.alertas.totalValorTransito).toBe(90);
     expect(resultados.alertas.productosEnTransito).toEqual([
-      expect.objectContaining({ sku: 'ACTIVO-1', unidadesEnTransito: 5 }),
-      expect.objectContaining({ sku: 'EOL-1', estado: 'EOL', unidadesEnTransito: 4 }),
+      expect.objectContaining({
+        sku: 'ACTIVO-1', unidadesEnTransito: 5, valorEnTransito: 50,
+      }),
+      expect.objectContaining({
+        sku: 'EOL-1', estado: 'EOL', unidadesEnTransito: 4, valorEnTransito: 40,
+      }),
     ]);
+  });
+
+  it('excluye EOL de alertas, conteos y tablas operativas de bajo inventario', () => {
+    const resultados = processData({
+      maestro: [
+        'SKU\tESTADO\tFECHA EOL\tUSA',
+        'ACTIVO-BAJO\tACTIVO\t-\t10',
+        'EOL-BAJO\tEOL\t2026-01-01\t10',
+      ].join('\n'),
+      inventario: [
+        'SKU\tINV SEGURIDAD\tINV PROYECTADO\tINV FINAL',
+        'ACTIVO-BAJO\t10\t1\t1',
+        'EOL-BAJO\t10\t1\t1',
+      ].join('\n'),
+    });
+
+    expect(resultados.alertas.skusEnQuiebre.map(({ sku }) => sku)).toEqual(['ACTIVO-BAJO']);
+    expect(resultados.alertas.skusEnQuiebreEOL.map(({ sku }) => sku)).toEqual(['EOL-BAJO']);
+    expect(resultados.executiveReport.dashboard.alertas).toMatchObject({
+      skusEnQuiebre: 1,
+      unidadesEnQuiebre: 1,
+      quiebreActivos: 1,
+      unidadesQuiebreActivos: 1,
+    });
   });
 });
 
@@ -160,38 +189,61 @@ describe('clasificación temporal y EOL Fase 4', () => {
     }).clasificacionTemporal).toBe('VENCIDO');
   });
 
-  it('asigna Fase 4 solamente con más de 365 días y descuento consumidor de 50%', () => {
-    const fase365 = seleccionarFaseEOL({
-      marca: 'SKULLCANDY', origen: 'USA', diasDesc: 365, tablaFases,
-    });
-    const fase366 = seleccionarFaseEOL({
-      marca: 'SKULLCANDY', origen: 'USA', diasDesc: 366, tablaFases,
-    });
+  it.each(['USA', 'CHINA'])(
+    'asigna Fase 4 solamente con más de 365 días y descuento consumidor de 15% para %s',
+    (origen) => {
+      const fase365 = seleccionarFaseEOL({
+        marca: 'SKULLCANDY', origen, diasDesc: 365, tablaFases,
+      });
+      const fase366 = seleccionarFaseEOL({
+        marca: 'SKULLCANDY', origen, diasDesc: 366, tablaFases,
+      });
+      const resultado = calcularDescuentoYAportes({
+        costo: 100, faseConfig: fase366, invFinal: 12,
+      });
 
-    expect(fase365.fase).toBe(3);
-    expect(fase366).toMatchObject({
-      fase: 4,
-      descConsumidor: 0.5,
-      inventarioMinimoReconocido: 12,
-    });
-  });
+      expect(fase365.fase).toBe(3);
+      expect(fase366).toMatchObject({
+        fase: 4,
+        diasMin: 366,
+        descConsumidor: 0.15,
+        aporteIOCA: 0.2,
+        aporteRetail: 0.8,
+        inventarioMinimoReconocido: 12,
+      });
+      expect(resultado).toMatchObject({
+        descPct: 0.15,
+        ioaPct: 0.2,
+        retailPct: 0.8,
+        descUSD: 15,
+        descTotal: 180,
+        ioaTotal: 36,
+        retailTotal: 144,
+      });
+    },
+  );
 
-  it('asigna la liquidación F4 con inventario menor a 12 únicamente a Retail', () => {
-    const fase = seleccionarFaseEOL({
-      marca: 'SKULLCANDY', origen: 'USA', diasDesc: 366, tablaFases,
-    });
-    const resultado = calcularDescuentoYAportes({ costo: 100, faseConfig: fase, invFinal: 11 });
+  it.each(['USA', 'CHINA'])(
+    'asigna la liquidación F4 con inventario menor a 12 únicamente a Retail para %s',
+    (origen) => {
+      const fase = seleccionarFaseEOL({
+        marca: 'SKULLCANDY', origen, diasDesc: 366, tablaFases,
+      });
+      const resultado = calcularDescuentoYAportes({
+        costo: 100, faseConfig: fase, invFinal: 11,
+      });
 
-    expect(resultado).toMatchObject({
-      descPct: 0.5,
-      ioaPct: 0,
-      retailPct: 1,
-      inventarioMinimoReconocido: 12,
-      liquidacionSoloRetail: true,
-      ioaTotal: 0,
-      retailTotal: 550,
-    });
-  });
+      expect(resultado).toMatchObject({
+        descPct: 0.15,
+        ioaPct: 0,
+        retailPct: 1,
+        inventarioMinimoReconocido: 12,
+        liquidacionSoloRetail: true,
+        ioaTotal: 0,
+        retailTotal: 165,
+      });
+    },
+  );
 });
 
 describe('Pareto, Mix Balanceado, KPIs y valorización', () => {
@@ -313,13 +365,43 @@ describe('Pareto, Mix Balanceado, KPIs y valorización', () => {
     });
   });
 
-  it('clasifica producto sin rotación exclusivamente por Ventas igual a cero', () => {
+  it('clasifica Sin ventas por la lógica existente y agrega SKU, unidades y valor', () => {
     const resultados = processData({
-      maestro: 'SKU\nSIN-VENTA\nCON-VENTA',
-      inventario: 'SKU\tVENTAS\tINV FINAL\nSIN-VENTA\t0\t0\nCON-VENTA\t1\t0',
+      maestro: 'SKU\tUSA\nSIN-VENTA\t10\nCON-VENTA\t20',
+      inventario: 'SKU\tVENTAS\tINV FINAL\nSIN-VENTA\t0\t3\nCON-VENTA\t1\t2',
     });
 
     expect(resultados.alertas.productosSinRotacion.map(({ sku }) => sku)).toEqual(['SIN-VENTA']);
+    expect(resultados.totales).toMatchObject({
+      skuSinVentas: 1,
+      unidadesSinVentas: 3,
+      valorInventarioSinVentas: 30,
+    });
+    expect(resultados.executiveReport.executiveSummary).toMatchObject({
+      skuSinVentas: 1,
+      unidadesSinVentas: 3,
+      valorInventarioSinVentas: 30,
+    });
+  });
+
+  it('cuenta productos nuevos del Maestro ausentes del Inventario sin calcular reposición', () => {
+    const resultados = processData({
+      maestro: [
+        'SKU\tcreationDate\tUSA',
+        'NUEVO-AUSENTE\t2026-05-04\t10',
+        'LIMITE-90\t2026-05-03\t10',
+        'FECHA-INVALIDA\tno-es-fecha\t10',
+        'NUEVO-PRESENTE\t2026-07-01\t10',
+      ].join('\n'),
+      inventario: 'SKU\tINV FINAL\nNUEVO-PRESENTE\t0',
+    });
+
+    expect(resultados.alertas.productosNuevosNoPresentes.map(({ sku }) => sku)).toEqual([
+      'NUEVO-AUSENTE',
+    ]);
+    expect(resultados.executiveReport.dashboard.alertas.nuevosNoPresentes).toBe(1);
+    expect(resultados.recs).toHaveLength(1);
+    expect(resultados.recs[0].reposicionSugerida).toBe(0);
   });
 
   it('muestra porcentajes visuales sin decimales', () => {

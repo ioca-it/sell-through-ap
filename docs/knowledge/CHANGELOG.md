@@ -1,5 +1,99 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-11 — Prompt Astrid Confirmed Changes
+
+### Implementado
+
+- Sustitución visual Por Vencer → Sin ventas con SKU, unidades y valor de inventario, conservando la temporalidad interna.
+- Quiebres Activos como único indicador de quiebre en Resumen Dashboard y exclusión EOL de alertas/tablas/conteos de bajo inventario.
+- Textos Vitales/Complementarios y colores Pareto A verde, B azul, C rojo sin cambiar el cálculo ABC.
+- Totalización final de Productos de Reposición Sugerida con SKU incluidos y unidades ya calculadas.
+- Valor en tránsito por SKU y total global mediante Compra por costo aplicado vigente, presentado sin decimales.
+- Contrato Maestro Producto con `creationDate`, regla Producto Nuevo `< 90 días` y Nuevos no presentes sin reposición sugerida.
+- Contrato Customer ampliado a `customerType`, fallback vacío y presentación en Configuración.
+- Ayudas UI derivadas de las reglas vigentes para Merma, Ventas Pareto A, Reposición y Umbral de Merma.
+
+### Pruebas
+
+- Bordes de Producto Nuevo en 89/90/más de 90 días y fecha vacía/inválida.
+- Cobertura de Sin ventas, exclusión EOL, Nuevos no presentes, tránsito, reposición, textos/colores Pareto, Customer y formato monetario.
+- Suite frontend: 230/230 aprobadas antes de la validación final de build.
+
+### No implementado
+
+- Sin origen, nuevos buckets/fases EOL, reposición para productos nuevos, fórmula por Tipo de Cliente y mapping físico de `customerType`.
+- MSAL, Entra, Render, Azure, Dataverse real, commits, push o despliegues.
+
+## 2026-08-10 — Phase1-004
+
+### Seguridad corregida
+
+- Customer API exige Bearer JWT delegado validado con firma/JWKS, issuer, audience, expiración, tenant y scope.
+- Fronteras Usuario→API (`AUTH_*`) y API→Dataverse (`DV_*`) quedan explícitamente separadas.
+- Rate limiting por IP e identidad con 429/Retry-After; store in-memory reemplazable.
+- CORS admite `Authorization` pero continúa sin considerarse autenticación.
+- Tokens, secretos y errores JWT técnicos no se registran ni exponen.
+
+### Agregado
+
+- `GET /health` anónimo, sin consultas externas ni exposición de configuración.
+- Respuesta 400 para percent-encoding inválido en `customerCode`.
+- Abstracción frontend `getAccessToken()` para futura integración MSAL.
+- Dependencia backend `jose` 6.2.4, estándar mantenido JWT/JWKS, ESM y sin dependencias transitivas.
+- Suite backend ampliada a 41 pruebas y frontend a 221 pruebas.
+
+### Pendiente operativo
+
+- Registrar API/scope en Entra, integrar MSAL, configurar IDs reales y sustituir rate limit in-memory antes de escala horizontal.
+
+### Sin cambios
+
+- Customer contract, Repository, Customer Master Service, Maestro Producto, Inventario Cliente, Configuration Center, motores, fórmulas y reglas AP01.
+- No se configuran credenciales reales ni se realiza commit, push o despliegue.
+
+## 2026-08-10 — Phase1-003
+
+### Agregado
+
+- Backend Node portable con configuración validada, CORS allowlist y tres endpoints Customer.
+- OAuth client_credentials, scope derivado, cache/expiración de token y cliente Dataverse con timeout.
+- Gateway `accounts` con mapping confirmado, escape OData, select/orden/límite internos y errores normalizados.
+- Guía de migración Render → Azure y `.env.example` sin valores sensibles.
+- 24 pruebas backend; suite frontend ampliada a 219 pruebas.
+
+### Modificado
+
+- Dataverse Customer Provider frontend ahora consume exclusivamente Customer API mediante `VITE_API_BASE_URL`.
+- App compone el Provider API cuando existe la variable y conserva el fallback local inyectable sin datos.
+- Errores técnicos de búsqueda se sustituyen por un mensaje controlado al usuario.
+
+### Pendiente operativo
+
+- Configurar Entra/Dataverse/Render/Vercel, desplegar con autorización separada y ejecutar smoke test real.
+
+### Sin cambios
+
+- Customer contract, Customer Repository, Customer Master Application Service, Maestro Producto, Inventario Cliente, motores, fórmulas y reglas AP01.
+- No se realiza commit, push ni despliegue.
+
+## 2026-08-10 — Phase1-002
+
+### Agregado
+
+- Contrato normalizado Customer y Customer Master Application Service.
+- Dataverse Customer Provider configurable, Customer Repository y Provider local temporal inyectable.
+- Búsqueda UI por código/nombre con una selección sincronizada que carga código, nombre y país.
+- 23 pruebas nuevas; suite total de 213 pruebas.
+
+### Pendiente de conexión
+
+- URL, tabla, campos reales, forma del país, autenticación, permisos y transporte seguro de Dataverse.
+
+### Sin cambios
+
+- Maestro Producto, Inventario Cliente, Inventory/EOL Engine, fórmulas, parámetros, dependencias y Repository histórico de sell-through.
+- No se realiza commit, push ni despliegue y el log local permanece fuera de Git.
+
 ## 2026-08-06 — Prompt 031
 
 ### Agregado

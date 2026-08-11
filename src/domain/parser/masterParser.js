@@ -40,6 +40,7 @@ export const parseMaster = (rawMaster) => {
     modelo: findColumn(headers, 'modelos', 'modelo', 'nombre', 'descripcion'),
     categoria: findColumn(headers, 'categorias', 'categoria', 'category', 'cat'),
     fecha: findColumn(headers, 'fechadescontinuacion', 'fechaeol', 'fecha'),
+    creationDate: findColumn(headers, 'creationdate'),
     estado: findColumn(headers, 'estado', 'status'),
     usa: findColumn(headers, 'usa', 'exwmia'),
     china: findColumn(headers, 'china'),
@@ -64,6 +65,9 @@ export const parseMaster = (rawMaster) => {
     const estado = rawStatus === 'EOL' || rawStatus === 'DESCONTINUADO' ? 'EOL' : 'ACTIVO';
     const fechaStr = columns.fecha >= 0 ? (values[columns.fecha] || '').trim() : '';
     const fecha = parseFecha(fechaStr);
+    const creationDateStr = columns.creationDate >= 0
+      ? (values[columns.creationDate] || '').trim()
+      : '';
     const rawCategory = (columns.categoria >= 0 ? values[columns.categoria] : '')
       .trim()
       .toUpperCase();
@@ -76,6 +80,7 @@ export const parseMaster = (rawMaster) => {
       estado,
       fecha,
       fechaStr: fechaStr === '-' ? '' : fechaStr,
+      creationDate: parseFecha(creationDateStr),
       costoUSA: columns.usa >= 0 ? parseCosto(values[columns.usa]) : 0,
       costoCHINA: columns.china >= 0 ? parseCosto(values[columns.china]) : 0,
     };

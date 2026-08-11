@@ -59,7 +59,7 @@ El Dashboard lista todos los SKU con `Compra > 0`, agregados por SKU, con unidad
 
 - Sin rotación significa exclusivamente `Ventas = 0`.
 - F4 aplica con más de 365 días desde descontinuación.
-- F4 usa descuento consumidor `50%` e inventario mínimo reconocido de 12 unidades.
+- F4 usa descuento consumidor `15%` e inventario mínimo reconocido de 12 unidades.
 - Con Inventario Final menor que 12, IOCA aporta `0%` y Retail `100%`.
 - Con 12 o más unidades, F4 conserva los porcentajes de aporte de la última fase configurada para la marca/origen; si no existe combinación previa, no se inventa un reparto.
 - F4 nunca genera reposición.

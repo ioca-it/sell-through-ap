@@ -89,6 +89,7 @@ const analyzePortfolio = ({
   distribucionTier,
   distribucionCategoria,
   analisisPareto,
+  newProductsMissingInventory = [],
 }) => {
   const {
     recs,
@@ -107,6 +108,7 @@ const analyzePortfolio = ({
   const ownedDistribucionTier = cloneStructure(distribucionTier);
   const ownedDistribucionCategoria = cloneStructure(distribucionCategoria);
   const ownedAnalisisPareto = cloneStructure(analisisPareto);
+  const ownedNewProductsMissingInventory = cloneStructure(newProductsMissingInventory);
 
   const totalUnidEOL = eolVencidos.reduce((sum, record) => sum + record.invFinal, 0);
   const totalValorEOL = recs.filter((record) =>
@@ -125,13 +127,21 @@ const analyzePortfolio = ({
     (sum, record) => sum + record.merma * record.costo,
     0,
   );
-  const skusEnQuiebre = recs.filter((record) => record.alertaQuiebre);
-  const skusEnQuiebreActivos = skusEnQuiebre.filter((record) => record.estado === 'ACTIVO');
-  const skusEnQuiebreEOL = skusEnQuiebre.filter((record) => record.estado === 'EOL');
+  const todosSkusEnQuiebre = recs.filter((record) => record.alertaQuiebre);
+  const skusEnQuiebreActivos = todosSkusEnQuiebre.filter(
+    (record) => record.estado === 'ACTIVO',
+  );
+  const skusEnQuiebreEOL = todosSkusEnQuiebre.filter((record) => record.estado === 'EOL');
+  // Las alertas y tablas de bajo inventario exponen solo ACTIVO. Los EOL se
+  // conservan internamente para consumidores no operativos y no cambian el Engine.
+  const skusEnQuiebre = skusEnQuiebreActivos;
   const quiebreActivos = skusEnQuiebreActivos.length;
   const quiebreEOL = skusEnQuiebreEOL.length;
   const unidadesSinOrigen = skusSinOrigen.reduce((sum, record) => sum + record.invFinal, 0);
-  const unidadesEnQuiebre = skusEnQuiebre.reduce((sum, record) => sum + record.invFinal, 0);
+  const unidadesEnQuiebre = skusEnQuiebreActivos.reduce(
+    (sum, record) => sum + record.invFinal,
+    0,
+  );
   const unidadesQuiebreActivos = skusEnQuiebreActivos.reduce(
     (sum, record) => sum + record.invFinal,
     0,
@@ -141,12 +151,21 @@ const analyzePortfolio = ({
     0,
   );
   const productosSinRotacion = recs.filter((record) => record.ventas === 0);
+  const unidadesSinVentas = productosSinRotacion.reduce(
+    (sum, record) => sum + record.invFinal,
+    0,
+  );
+  const valorInventarioSinVentas = productosSinRotacion.reduce(
+    (sum, record) => sum + record.valorInv,
+    0,
+  );
 
   const transitoPorSku = new Map();
   recs.filter((record) => record.compra > 0).forEach((record) => {
     const existente = transitoPorSku.get(record.sku);
     if (existente) {
       existente.unidadesEnTransito += record.compra;
+      existente.valorEnTransito += record.compra * record.costo;
       return;
     }
     transitoPorSku.set(record.sku, {
@@ -155,11 +174,18 @@ const analyzePortfolio = ({
       estado: record.estado,
       tier: record.tier,
       unidadesEnTransito: record.compra,
+      valorEnTransito: record.compra * record.costo,
     });
   });
   const productosEnTransito = Array.from(transitoPorSku.values());
   const totalUnidadesTransito = productosEnTransito.reduce(
     (sum, record) => sum + record.unidadesEnTransito,
+    0,
+  );
+  // La totalización conserva la valorización ya calculada por SKU con el costo
+  // aplicable vigente; no selecciona ni inventa un precio alternativo.
+  const totalValorTransito = productosEnTransito.reduce(
+    (sum, record) => sum + record.valorEnTransito,
     0,
   );
   const totalReposicionUnid = activos.reduce(
@@ -200,6 +226,7 @@ const analyzePortfolio = ({
     distribucionTier: ownedDistribucionTier,
     distribucionCategoria: ownedDistribucionCategoria,
     analisisPareto: ownedAnalisisPareto,
+    newProductsMissingInventory: ownedNewProductsMissingInventory,
     semanasPeriodoUsadas,
     configSnapshot: {
       periodoAnalizado: config.periodoAnalizado,
@@ -223,8 +250,12 @@ const analyzePortfolio = ({
       unidadesQuiebreActivos,
       unidadesQuiebreEOL,
       productosSinRotacion,
+      unidadesSinVentas,
+      valorInventarioSinVentas,
+      productosNuevosNoPresentes: ownedNewProductsMissingInventory,
       productosEnTransito,
       totalUnidadesTransito,
+      totalValorTransito,
       totalReposicionUnid,
       totalReposicionValor,
       umbralMermaPct,
@@ -238,11 +269,13 @@ const analyzePortfolio = ({
       skuActivos: skusActivos.length,
       skuVencidos: skusVencidos.length,
       skuPorVencer: skusPorVencer.length,
+      skuSinVentas: productosSinRotacion.length,
       skuMaestro: skusMaestro.length,
       totalUnidades,
       unidadesActivas,
       unidadesVencidas,
       unidadesPorVencer,
+      unidadesSinVentas,
       unidadesMaestro,
       unidadesSinMaestro,
       unidEOL: totalUnidEOL,
@@ -250,6 +283,7 @@ const analyzePortfolio = ({
       valorEOL: totalValorEOL,
       valorEOLFuturo,
       valorSinMaestro,
+      valorInventarioSinVentas,
       valorTotalInventario,
       pctValorEOL: valorTotalInventario > 0
         ? (totalValorEOL / valorTotalInventario) * 100

@@ -2,7 +2,7 @@
 
 ## Principio vigente
 
-La UI y la lógica de negocio no dependen directamente de una fuente. `sellThroughRepository.js` es el único consumidor del Provider y valida sus seis métodos; `localDataProvider.js` es el único consumidor de `dataService` y valida formas locales mínimas; y el Application Service obtiene sus datos exclusivamente mediante Repository.
+La UI y la lógica de negocio no dependen directamente de una fuente. `sellThroughRepository.js` conserva los seis métodos del flujo analítico y `localDataProvider.js` sigue siendo el único consumidor de `dataService`. Para Maestro Cliente, `customerRepository.js` consume el Provider seleccionado por `VITE_CUSTOMER_SOURCE`: fixtures ficticios locales o la Customer API existente; Customer Service y Account Customer Gateway encapsulan Dataverse en backend.
 
 ## DS-001 — Configuración institucional local
 
@@ -74,12 +74,12 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-004 — Configuración de sesión
 
-- Fuente: formulario y valores iniciales dentro de `src/App.jsx`.
+- Fuente: estado de sesión dentro de `src/App.jsx`; código, nombre, país y tipo se cargan desde una única selección de Customer Master.
 - Estado: objeto `config` de React.
 - Acceso al caso de uso: `getConfiguracion()` del Repository, respaldado por `readConfiguracion()` del Local Provider.
 - Nulabilidad: puede ser `null` en un Repository parcial usado solo para catálogos o ejemplos.
 - Procesamiento: Application Service exige un objeto con `periodoAnalizado`, `semanasPersonalizadas`, `safetyStockSemanas`, `leadTimeUSA` y `leadTimeCHINA`; si falta devuelve error controlado.
-- Contenido: cliente, país, fecha de corte, período, detalle, semanas personalizadas, safety stock y lead times.
+- Contenido: selección de cliente, incluido `customerType`, fecha de corte, período, detalle, semanas personalizadas, safety stock y lead times.
 - Persistencia: ninguna.
 - Uso: cálculo del Inventario de Seguridad IOCA y contexto de dashboard/exportaciones.
 - Futuro documentado: Configuration Center y Dataverse.
@@ -93,13 +93,26 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-006 — Dataverse
 
-- Estado: no conectado; no existe DataverseProvider.
-- Entidades aprobadas: ninguna documentada.
-- Columnas aprobadas: ninguna documentada.
-- Mapeos aprobados: ninguno documentado.
-- Regla: cualquier esquema deberá confirmarse y documentarse antes de implementarse.
+- Estado: transporte real asegurado con JWT delegado; configuración MSAL/Entra, despliegue y smoke test contra Dataverse real pendientes.
+- Alcance aprobado: Maestro Cliente con búsqueda por código/nombre y contrato `{ customerCode, customerName, country, customerType }`.
+- Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`.
+- Selector de Provider: `src/providers/customerProviderFactory.js`, configurado mediante `VITE_CUSTOMER_SOURCE=local|dataverse`; `local` es el fallback cuando la variable no está definida.
+- Repository: `src/repositories/customerRepository.js`.
+- Consumidor: Customer Master Application Service; la UI no recibe nombres físicos Dataverse.
+- Alternativa temporal: `localCustomerProvider.js`, con cinco clientes claramente ficticios desde `customerFixtures.js` e inyección opcional de otros fixtures.
+- Backend: `server/`, portable y sin dependencias de Render/Azure.
+- Entity Set confirmado: `accounts`.
+- Mapping confirmado dentro de Account Customer Gateway: `new_codigocliente` → `customerCode`, `name` → `customerName`, `crbbe_nombrepais` → `country`.
+- API: búsquedas específicas por código/nombre y lectura por código; select/filtro/orden/top se construyen solo en backend.
+- Autenticación: OAuth 2.0 client_credentials contra Entra; scope derivado de `DV_BASE_URL` y token cacheado con margen de seguridad.
+- Seguridad: variables, secretos y access token `DV_*` solo backend. El token delegado de usuario se obtiene mediante `getAccessToken` y se limita al header Bearer del Provider frontend; UI, Repository y Service no conocen JWT, nombres lógicos ni OData.
+- CORS: allowlist desde `ALLOWED_ORIGINS`; wildcard rechazado.
+- Autenticación API: Bearer JWT delegado obligatorio en rutas Customer; firma/JWKS, issuer, audience, expiración, tenant y scope validados con configuración `AUTH_*` separada.
+- Rate limiting: por IP antes de Auth y por identidad después de Auth; 429 con `Retry-After`. Store in-memory temporal e inyectable.
+- Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
+- Hosting: Render temporal, Azure objetivo; ninguno está codificado en módulos Customer/Dataverse.
 
-Los nombres que aparecen en comentarios futuros de `dataService.js` no constituyen un contrato ni una aprobación de entidades.
+Las credenciales, URL real, permisos y endpoints públicos de hosting no se versionan. Los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.
 
 ## DS-007 — Business Central
 
@@ -119,6 +132,7 @@ CSV, Excel y la impresión del informe se generan desde resultados en memoria. N
 | Inventarios, compras y ventas | Inventario |
 | Semanas estándar y umbral de merma | JSON local vía Local Provider y Repository |
 | Safety stock y lead times | Configuración de sesión vía Local Provider y Repository |
+| Código, nombre, país y tipo del cliente | Fixtures locales o Customer API → Account Customer Gateway → `accounts`, según `VITE_CUSTOMER_SOURCE`; despliegue real pendiente |
 | Bucket y fase | JSON local vía Local Provider/Repository + EOL Engine coordinado por `recordAssembler.js` |
 | Fecha base EOL | Reloj del navegador |
 
@@ -142,4 +156,4 @@ Prompt 016 trasladó el contrato a `masterParser.js` e `inventoryParser.js`, sin
 
 Prompt 019 consolidó en `docs/knowledge/BUSINESS_PARAMETERS.md` la procedencia actual de los parámetros y contratos observables: JSON local, estado React, reloj del navegador y literales de App/Application Service/Domain. El catálogo es la fuente oficial para planificar Configuration Center y una migración posterior mediante Repository/Provider.
 
-No se aprobó una fuente remota nueva. Dataverse continúa sin entidades, campos o mapeos definidos; `datos.json` sigue siendo la fuente física institucional temporal y la configuración de cliente/análisis sigue siendo estado de sesión.
+Este hito no aprueba una fuente remota nueva ni modifica mappings Dataverse. Los fixtures son exclusivamente locales y ficticios; `datos.json` conserva las fuentes del flujo sell-through y la configuración de cliente/análisis sigue siendo estado de sesión.

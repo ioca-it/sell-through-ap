@@ -11,8 +11,15 @@ import {
   toDisplayValue,
 } from './utils/formatters.js';
 import { primerDiaMes } from './utils/dateUtils.js';
-import { processSellThrough } from './application/sellThroughApplicationService.js';
+import {
+  getPhaseDiscountTable,
+  processSellThrough,
+} from './application/sellThroughApplicationService.js';
+import { createCustomerMasterService } from './application/customerMasterService.js';
+import { getAccessToken } from './auth/customerApiAccessToken.js';
 import { configurationService } from './configuration/configurationService.js';
+import { createCustomerRepository } from './repositories/customerRepository.js';
+import { createCustomerProvider } from './providers/customerProviderFactory.js';
 
 // La hidratación ocurre en el servicio; mantenerla fuera del componente permite
 // conservar los contratos de caracterización que ejecutan App como función pura.
@@ -32,17 +39,30 @@ const renderServiceValue = (value, fallback = '—') => (
 // ============================================================
 
 const sourceRepository = createSellThroughRepository();
+const customerSourceRepository = createCustomerRepository({
+  provider: createCustomerProvider({
+    source: import.meta.env.VITE_CUSTOMER_SOURCE,
+    getAccessToken,
+  }),
+});
+const defaultCustomerMasterService = createCustomerMasterService({
+  repository: customerSourceRepository,
+});
 const {
   bucketEOL: BUCKET_EOL,
-  tablaFases: TABLA_FASES,
 } = sourceRepository.getParametros();
+const DEFAULT_PHASE_DISCOUNT_TABLE = getPhaseDiscountTable(sourceRepository);
 const {
-  paisesIOCA: PAISES_IOCA,
   periodosAnalisis: PERIODOS_ANALISIS,
   notaInvSeguridadIOCA: NOTA_INV_SEGURIDAD,
 } = sourceRepository.getCatalogos();
 const APP_VERSION = 'V1';
 const APP_NAME = 'IOCA Sell-Through Intelligence V1';
+const PARETO_CLASS_STYLES = Object.freeze({
+  A: Object.freeze({ badge: '#166534', background: '#dcfce7', text: '#166534' }),
+  B: Object.freeze({ badge: '#1e40af', background: '#dbeafe', text: '#1e40af' }),
+  C: Object.freeze({ badge: '#b91c1c', background: '#fee2e2', text: '#991b1b' }),
+});
 
 // ============================================================
 // HELPERS
@@ -267,7 +287,14 @@ const generarInformeEjecutivo = (resultados, config) => {
 // COMPONENTE PRINCIPAL
 // ============================================================
 
-export default function App() {
+export default function App({
+  customerMasterService = defaultCustomerMasterService,
+  phaseDiscountTable = DEFAULT_PHASE_DISCOUNT_TABLE,
+} = {}) {
+  const fase4Referencial = phaseDiscountTable.find((fase) => fase.fase === 4);
+  const fase4DiscountLabel = fase4Referencial
+    ? fmtPct(fase4Referencial.descConsumidor)
+    : '—';
   const [rawMaestro, setRawMaestro] = useState('');
   const [rawInventario, setRawInventario] = useState('');
   const [resultados, setResultados] = useState(null);
@@ -328,7 +355,8 @@ export default function App() {
   const [config, setConfig] = useState({
     codigoCliente: '',
     nombreCliente: '',
-    pais: 'Guatemala',
+    pais: '',
+    customerType: '',
     fechaCorte: hoyISO,
     periodoAnalizado: 'Mensual',
     periodoDetalle: '',
@@ -337,9 +365,131 @@ export default function App() {
     leadTimeUSA: 4,
     leadTimeCHINA: 12,
   });
+  const [customerSearchState, setCustomerSearchState] = useState({
+    mode: null,
+    query: '',
+    status: 'idle',
+    results: [],
+    message: '',
+  });
   
   const updateConfig = (campo, valor) => {
     setConfig(prev => ({ ...prev, [campo]: valor }));
+  };
+
+  const searchCustomers = async (mode, query) => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      setCustomerSearchState({ mode, query: '', status: 'idle', results: [], message: '' });
+      return;
+    }
+
+    setCustomerSearchState({
+      mode,
+      query: normalizedQuery,
+      status: 'loading',
+      results: [],
+      message: '',
+    });
+    try {
+      const results = mode === 'code'
+        ? await customerMasterService.searchByCode(normalizedQuery)
+        : await customerMasterService.searchByName(normalizedQuery);
+      setCustomerSearchState((currentSearch) => (
+        currentSearch.mode === mode && currentSearch.query === normalizedQuery
+          ? {
+            mode,
+            query: normalizedQuery,
+            status: 'ready',
+            results,
+            message: results.length === 0 ? 'No se encontraron clientes.' : '',
+          }
+          : currentSearch
+      ));
+    } catch {
+      setCustomerSearchState((currentSearch) => (
+        currentSearch.mode === mode && currentSearch.query === normalizedQuery
+          ? {
+            mode,
+            query: normalizedQuery,
+            status: 'error',
+            results: [],
+            message: 'No fue posible consultar clientes. Intenta nuevamente.',
+          }
+          : currentSearch
+      ));
+    }
+  };
+
+  const updateCustomerSearch = (mode, value) => {
+    setConfig((previousConfig) => ({
+      ...previousConfig,
+      codigoCliente: mode === 'code' ? value : '',
+      nombreCliente: mode === 'name' ? value : '',
+      pais: '',
+      customerType: '',
+    }));
+    void searchCustomers(mode, value);
+  };
+
+  const selectCustomer = (customer) => {
+    setConfig((previousConfig) => (
+      customerMasterService.selectCustomer(previousConfig, customer)
+    ));
+    setCustomerSearchState({
+      mode: null,
+      query: '',
+      status: 'idle',
+      results: [],
+      message: '',
+    });
+  };
+
+  const renderCustomerOptions = (mode) => {
+    if (customerSearchState.mode !== mode) return null;
+    if (customerSearchState.status === 'loading') {
+      return <div className="mt-1 px-3 py-2 border text-xs text-stone-500">Buscando clientes…</div>;
+    }
+    if (customerSearchState.message) {
+      return (
+        <div
+          className="mt-1 px-3 py-2 border text-xs"
+          style={{ color: customerSearchState.status === 'error' ? '#991b1b' : '#57534e' }}
+        >
+          {customerSearchState.message}
+        </div>
+      );
+    }
+    if (customerSearchState.results.length === 0) return null;
+
+    return (
+      <div
+        id={`customer-${mode}-options`}
+        role="listbox"
+        className="mt-1 border bg-white shadow-sm max-h-48 overflow-y-auto"
+        style={{ borderColor: '#e5e0d5' }}
+      >
+        {customerSearchState.results.map((customer, index) => (
+          <button
+            key={`${customer.customerCode}-${customer.customerName}-${index}`}
+            type="button"
+            role="option"
+            aria-selected="false"
+            onClick={() => selectCustomer(customer)}
+            className="w-full px-3 py-2 text-left text-xs border-b last:border-b-0 hover:bg-stone-50"
+            style={{ borderColor: '#e5e0d5' }}
+          >
+            <span className="font-bold" style={{ color: '#0a2540' }}>
+              {customer.customerCode || 'Sin código'}
+            </span>
+            {' — '}{customer.customerName || 'Sin nombre'}
+            <span className="block text-[10px] text-stone-500">
+              {customer.country || 'País no informado'} · {customer.customerType || 'Tipo no informado'}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
   };
   
   // Validaciones para habilitar navegación
@@ -457,8 +607,9 @@ export default function App() {
       ['Total Unidades Activas', resultados.totales.unidadesActivas],
       ['SKUs Vencidos', resultados.totales.skuVencidos],
       ['Total Unidades Vencidas', resultados.totales.unidadesVencidas],
-      ['SKUs por Vencer', resultados.totales.skuPorVencer],
-      ['Total Unidades por Vencer', resultados.totales.unidadesPorVencer],
+      ['SKUs sin ventas', resultados.totales.skuSinVentas],
+      ['Total Unidades sin ventas', resultados.totales.unidadesSinVentas],
+      ['Valor inventario sin ventas', resultados.totales.valorInventarioSinVentas],
       ['SKUs Maestro', resultados.totales.skuMaestro],
       ['Total Unidades Maestro', resultados.totales.unidadesMaestro],
       [],
@@ -495,7 +646,7 @@ export default function App() {
       'Valor Total Inventario', 'Valor Activo', 'Valor EOL', 'Valor EOL Futuro',
       'Valor Sin Maestro', 'Valor del Inventario EOL', 'Descuento Total al Consumidor',
       'Absorbe IOCA', 'Absorbe Retail', 'Valor total de Merma (USD)',
-      'Valor total Reposición (USD)',
+      'Valor total Reposición (USD)', 'Valor inventario sin ventas',
     ]);
     resumenData.forEach((row, r) => {
       if (!etiquetasMoneda.has(row[0])) return;
@@ -891,7 +1042,7 @@ export default function App() {
     // ===== HOJA 12: REF TABLA FASES =====
     const fasesData = [
       ['Marca', 'Fase', 'Días Mín.', 'Origen', 'Desc. Consumidor', 'Aporte IOCA', 'Aporte Retail'],
-      ...TABLA_FASES.map(f => [f.marca, f.fase, f.diasMin, f.origen, f.descConsumidor, f.aporteIOCA, f.aporteRetail])
+      ...phaseDiscountTable.map(f => [f.marca, f.fase, f.diasMin, f.origen, f.descConsumidor, f.aporteIOCA, f.aporteRetail])
     ];
     const wsFases = XLSX.utils.aoa_to_sheet(fasesData);
     wsFases['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 11 }, { wch: 9 }, { wch: 18 }, { wch: 14 }, { wch: 14 }];
@@ -1056,35 +1207,52 @@ export default function App() {
                 <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>
                   Código del cliente <span className="text-red-700">*</span>
                 </label>
-                <input type="text" value={config.codigoCliente}
-                  onChange={e => updateConfig('codigoCliente', e.target.value)}
-                  placeholder="Ej: DIST-GT-001"
+                <input type="search" value={config.codigoCliente}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={customerSearchState.mode === 'code' && customerSearchState.results.length > 0}
+                  aria-controls="customer-code-options"
+                  onChange={e => updateCustomerSearch('code', e.target.value)}
+                  placeholder="Buscar por código"
                   className="w-full px-3 py-2 border text-sm"
                   style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+                {renderCustomerOptions('code')}
               </div>
 
               <div>
                 <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>
                   Nombre del cliente <span className="text-red-700">*</span>
                 </label>
-                <input type="text" value={config.nombreCliente}
-                  onChange={e => updateConfig('nombreCliente', e.target.value)}
-                  placeholder="Ej: DISTELSA Guatemala"
+                <input type="search" value={config.nombreCliente}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={customerSearchState.mode === 'name' && customerSearchState.results.length > 0}
+                  aria-controls="customer-name-options"
+                  onChange={e => updateCustomerSearch('name', e.target.value)}
+                  placeholder="Buscar por nombre"
                   className="w-full px-3 py-2 border text-sm"
                   style={{ borderColor: '#e5e0d5', background: '#faf8f3' }} />
+                {renderCustomerOptions('name')}
               </div>
 
               <div>
                 <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>País</label>
-                <select value={config.pais}
-                  onChange={e => updateConfig('pais', e.target.value)}
+                <input value={config.pais}
+                  readOnly
+                  placeholder="Se carga al seleccionar el cliente"
                   className="w-full px-3 py-2 border text-sm"
-                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
-                  {PAISES_IOCA.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                  style={{ borderColor: '#e5e0d5', background: '#f5f5f4' }} />
               </div>
 
-              <div></div>
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>Tipo de cliente</label>
+                <input value={config.customerType}
+                  readOnly
+                  aria-label="Tipo de cliente"
+                  placeholder="Tipo no informado"
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#f5f5f4' }} />
+              </div>
 
               {/* Periodo y fechas */}
               <div className="md:col-span-2 mt-2">
@@ -1240,7 +1408,7 @@ export default function App() {
                 1. Maestro de Productos IOCA
               </label>
               <div className="text-[11px] text-stone-500 mb-2">
-                Columnas: <code className="bg-stone-100 px-1">MARCA</code> · <code className="bg-stone-100 px-1">SKU</code> · <code className="bg-stone-100 px-1">Modelos</code> · <code className="bg-stone-100 px-1">CATEGORIAS</code> · <code className="bg-stone-100 px-1">Fecha Descontinuacion</code> · <code className="bg-stone-100 px-1">ESTADO</code> · <code className="bg-stone-100 px-1">USA</code> · <code className="bg-stone-100 px-1">CHINA</code>
+                Columnas: <code className="bg-stone-100 px-1">MARCA</code> · <code className="bg-stone-100 px-1">SKU</code> · <code className="bg-stone-100 px-1">Modelos</code> · <code className="bg-stone-100 px-1">CATEGORIAS</code> · <code className="bg-stone-100 px-1">Fecha Descontinuacion</code> · <code className="bg-stone-100 px-1">creationDate</code> · <code className="bg-stone-100 px-1">ESTADO</code> · <code className="bg-stone-100 px-1">USA</code> · <code className="bg-stone-100 px-1">CHINA</code>
               </div>
               <textarea
                 value={rawMaestro}
@@ -1338,7 +1506,7 @@ export default function App() {
                       ['Total SKU', summary.totalSKUs, 'Total Unidades', summary.totalUnidades, 'Valor Inventario Total', summary.valorTotalInventario],
                       ['SKU Activos', summary.skuActivos, 'Unidades Activas', summary.unidadesActivas, 'Valor Inventario SKU Activos', summary.valorActivo],
                       ['SKU EOL', summary.skuEOL, 'Unidades EOL', summary.unidadesEOL, 'Valor Inventario EOL', summary.valorEOL],
-                      ['SKU por Vencer', summary.skuPorVencer, 'Unidades por Vencer', summary.unidadesPorVencer],
+                      ['SKU sin ventas', summary.skuSinVentas, 'Unidades sin ventas', summary.unidadesSinVentas, 'Valor inventario sin ventas', summary.valorInventarioSinVentas],
                       ['SKU Sin Maestro', summary.skuSinMaestro, 'Unidades Sin Maestro', summary.unidadesSinMaestro, 'Valor Inventario Sin Maestro', summary.valorSinMaestro],
                     ].map(([label, value, unitLabel, unitValue, moneyLabel, moneyValue]) => (
                       <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
@@ -1359,13 +1527,14 @@ export default function App() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     {[
-                      ['Merma', fmtUSD(kpis.totalMermaValor), '#c2410c'],
-                      ['Ventas Pareto A', fmtPctPoints(kpis.pctVentasA), '#15803d'],
-                      ['Reposición', fmtUSD(kpis.totalReposicionValor), '#0369a1'],
-                    ].map(([label, value, color]) => (
+                      ['Merma', fmtUSD(kpis.totalMermaValor), '#c2410c', 'Valor de la merma de los SKU que superan el umbral vigente.'],
+                      ['Ventas Pareto A', fmtPctPoints(kpis.pctVentasA), '#15803d', 'Participación de las unidades vendidas generada por los SKU clase A.'],
+                      ['Reposición', fmtUSD(kpis.totalReposicionValor), '#0369a1', 'Costo aplicado por las unidades de reposición sugerida ya calculadas.'],
+                    ].map(([label, value, color, help]) => (
                       <div key={label} className="border p-4" style={{ borderColor: '#e5e0d5' }}>
                         <div className="text-[10px] uppercase tracking-wider text-stone-500">{label}</div>
                         <div className="text-2xl font-bold mt-1" style={{ color }}>{renderServiceValue(value)}</div>
+                        <div className="text-[10px] text-stone-500 mt-2">{help}</div>
                       </div>
                     ))}
                   </div>
@@ -1376,7 +1545,7 @@ export default function App() {
                     <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Indicadores generales</div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div><div className="text-xs text-stone-500">Semanas utilizadas</div><div className="font-bold text-[#0a2540]">{renderServiceValue(indicators?.semanasPeriodoUsadas)}</div></div>
-                      <div><div className="text-xs text-stone-500">Umbral de merma</div><div className="font-bold text-[#0a2540]">{fmtPct(indicators?.umbralMermaPct)}</div></div>
+                      <div><div className="text-xs text-stone-500">Umbral de merma</div><div className="font-bold text-[#0a2540]">{fmtPct(indicators?.umbralMermaPct)}</div><div className="text-[10px] text-stone-500 mt-1">La alerta aplica cuando Merma ÷ Inv. Inicial supera estrictamente este porcentaje.</div></div>
                       <div><div className="text-xs text-stone-500">SKUs con ventas</div><div className="font-bold text-[#0a2540]">{renderServiceValue(kpis?.totalSkusConVentas)}</div></div>
                       <div><div className="text-xs text-stone-500">SKUs Pareto A</div><div className="font-bold text-[#0a2540]">{fmtPctPoints(kpis?.pctSKUsA)}</div></div>
                     </div>
@@ -1393,22 +1562,22 @@ export default function App() {
                       {[
                         ['Sin origen', dashboardAlerts.skusSinOrigen, dashboardAlerts.unidadesSinOrigen],
                         ['Con merma', dashboardAlerts.skusConMerma, dashboardAlerts.unidadesConMerma],
-                        ['En quiebre', dashboardAlerts.skusEnQuiebre, dashboardAlerts.unidadesEnQuiebre],
-                        ['Quiebre activos', dashboardAlerts.quiebreActivos, dashboardAlerts.unidadesQuiebreActivos],
-                        ['Quiebre EOL', dashboardAlerts.quiebreEOL, dashboardAlerts.unidadesQuiebreEOL],
-                      ].map(([label, skuValue, unitValue]) => (
+                        ['Quiebres Activos', dashboardAlerts.quiebreActivos, dashboardAlerts.unidadesQuiebreActivos],
+                        ['Nuevos no presentes', dashboardAlerts.nuevosNoPresentes, null, 'Productos nuevos que aún no están presentes en el inventario del cliente.'],
+                      ].map(([label, skuValue, unitValue, note]) => (
                         <div key={label} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                           <div className="text-xs text-stone-500">{label}</div>
                           <div className="text-lg font-bold" style={{ color: skuValue > 0 ? '#b91c1c' : '#15803d' }}>{renderServiceValue(skuValue)} SKU</div>
                           {unitValue !== null && unitValue !== undefined && (
                             <div className="text-xs font-bold text-stone-600">{renderServiceValue(unitValue)} Unidades</div>
                           )}
+                          {note && <div className="text-[10px] text-stone-500 mt-2">{note}</div>}
                         </div>
                       ))}
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto A: Pocos Vitales · {renderServiceValue(dashboardPareto.skusPocosVitales)} SKU · {renderServiceValue(dashboardPareto.unidadesPocosVitales)} Unidades · {fmtPctPoints(dashboardPareto.pctVentasA)}</span>
-                      <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Pareto B/C: Cola Larga · {renderServiceValue(dashboardPareto.skusColaLarga)} SKU · {renderServiceValue(dashboardPareto.unidadesColaLarga)} Unidades · {fmtPctPoints(dashboardPareto.pctVentasColaLarga)}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#dcfce7', color: '#166534' }}>Pareto A: Vitales · {renderServiceValue(dashboardPareto.skusPocosVitales)} SKU · {renderServiceValue(dashboardPareto.unidadesPocosVitales)} Unidades · {fmtPctPoints(dashboardPareto.pctVentasA)}</span>
+                      <span className="px-2 py-1 font-bold" style={{ background: '#dbeafe', color: '#1e40af' }}>Pareto B/C: Complementarios · {renderServiceValue(dashboardPareto.skusColaLarga)} SKU · {renderServiceValue(dashboardPareto.unidadesColaLarga)} Unidades · {fmtPctPoints(dashboardPareto.pctVentasColaLarga)}</span>
                       <span className="px-2 py-1 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>Con ventas: {renderServiceValue(dashboardPareto.totalSkusConVentas)} SKU · {renderServiceValue(dashboardPareto.totalUnidadesConVentas)} Unidades</span>
                     </div>
                   </div>
@@ -1490,7 +1659,7 @@ export default function App() {
                 <KPIUnitPair label="Total SKU" value={resultados.totales.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.totales.totalUnidades} moneyLabel="Valor Inventario Total" moneyValue={fmtUSD(resultados.totales.valorTotalInventario)} />
                 <KPIUnitPair label="SKU Activos" value={resultados.totales.skuActivos} unitLabel="Unidades Activas" unitValue={resultados.totales.unidadesActivas} moneyLabel="Valor Inventario SKU Activos" moneyValue={fmtUSD(resultados.totales.valorActivo)} color="#065f46" bg="#d1fae5" />
                 <KPIUnitPair label="SKU EOL" value={resultados.totales.skuVencidos} unitLabel="Unidades EOL" unitValue={resultados.totales.unidadesVencidas} moneyLabel="Valor Inventario EOL" moneyValue={fmtUSD(resultados.totales.valorEOL)} color="#7f1d1d" bg="#fee2e2" />
-                <KPIUnitPair label="SKU por Vencer" value={resultados.totales.skuPorVencer} unitLabel="Unidades por Vencer" unitValue={resultados.totales.unidadesPorVencer} color="#92400e" bg="#fef3c7" />
+                <KPIUnitPair label="SKU sin ventas" value={resultados.totales.skuSinVentas} unitLabel="Unidades sin ventas" unitValue={resultados.totales.unidadesSinVentas} moneyLabel="Valor inventario sin ventas" moneyValue={fmtUSD(resultados.totales.valorInventarioSinVentas)} color="#92400e" bg="#fef3c7" />
                 <KPIUnitPair label="SKU Sin Maestro" value={resultados.totales.sinMaestro} unitLabel="Unidades Sin Maestro" unitValue={resultados.totales.unidadesSinMaestro} moneyLabel="Valor Inventario Sin Maestro" moneyValue={fmtUSD(resultados.totales.valorSinMaestro)} />
               </div>
 
@@ -1532,7 +1701,7 @@ export default function App() {
                 <AlertaCard 
                   titulo="Bajo Inv. Seguridad" 
                   valor={resultados.alertas.skusEnQuiebre.length}
-                  sub={`${resultados.alertas.quiebreActivos} Activos · ${resultados.alertas.quiebreEOL} EOL`}
+                  sub="Solo productos ACTIVO"
                   color={resultados.alertas.skusEnQuiebre.length > 0 ? '#7f1d1d' : '#065f46'}
                   bg={resultados.alertas.skusEnQuiebre.length > 0 ? '#fee2e2' : '#d1fae5'}
                 />
@@ -1723,19 +1892,25 @@ export default function App() {
                   </h2>
                   <div className="text-xs text-stone-500 mt-1">Compra representa unidades en tránsito; incluye productos EOL aunque su reposición final sea cero.</div>
                 </div>
-                <div className="px-4 py-2 text-center" style={{ background: '#dbeafe', color: '#1e40af' }}>
-                  <div className="text-[10px] uppercase tracking-wider">Total unidades en tránsito</div>
-                  <div className="text-2xl font-bold">{renderServiceValue(resultados.alertas?.totalUnidadesTransito)}</div>
+                <div className="flex flex-wrap gap-2">
+                  <div className="px-4 py-2 text-center" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                    <div className="text-[10px] uppercase tracking-wider">Total unidades en tránsito</div>
+                    <div className="text-2xl font-bold">{renderServiceValue(resultados.alertas?.totalUnidadesTransito)}</div>
+                  </div>
+                  <div className="px-4 py-2 text-center" style={{ background: '#dcfce7', color: '#166534' }}>
+                    <div className="text-[10px] uppercase tracking-wider">Total valor en tránsito</div>
+                    <div className="text-2xl font-bold">{fmtUSD(resultados.alertas?.totalValorTransito)}</div>
+                  </div>
                 </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px]">
                   <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
-                    <tr><Th>SKU</Th><Th>Modelo</Th><Th align="center">Estado</Th><Th align="center">Nivel</Th><Th align="right">Unidades en tránsito</Th></tr>
+                    <tr><Th>SKU</Th><Th>Modelo</Th><Th align="center">Estado</Th><Th align="center">Nivel</Th><Th align="right">Unidades en tránsito</Th><Th align="right">Valor en tránsito</Th></tr>
                   </thead>
                   <tbody>
                     {resultados.alertas.productosEnTransito.length === 0 && (
-                      <tr><td colSpan={5} className="p-6 text-center text-stone-500">No hay unidades en tránsito.</td></tr>
+                      <tr><td colSpan={6} className="p-6 text-center text-stone-500">No hay unidades en tránsito.</td></tr>
                     )}
                     {resultados.alertas.productosEnTransito.map((r) => (
                       <tr key={r.sku} className="border-t" style={{ borderColor: '#e5e0d5' }}>
@@ -1744,9 +1919,17 @@ export default function App() {
                         <Td align="center">{r.estado}</Td>
                         <Td align="center" bold>{r.tier || 'SIN CATEGORIA'}</Td>
                         <Td align="right" bold style={{ color: '#1e40af' }}>{r.unidadesEnTransito}</Td>
+                        <Td align="right" bold style={{ color: '#166534' }}>{fmtUSD(r.valorEnTransito)}</Td>
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-bold" style={{ borderColor: '#0a2540', background: '#faf8f3' }}>
+                      <td colSpan={4} className="p-3 text-right">TOTAL GLOBAL</td>
+                      <td className="p-3 text-right">{renderServiceValue(resultados.alertas?.totalUnidadesTransito)}</td>
+                      <td className="p-3 text-right" style={{ color: '#166534' }}>{fmtUSD(resultados.alertas?.totalValorTransito)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
@@ -1914,7 +2097,8 @@ export default function App() {
                           ...resultados.analisisPareto.skusParetoC,
                         ].map((r, i) => {
                           const esA = r.paretoClase === 'A';
-                          const esB = r.paretoClase === 'B';
+                          const paretoStyle = PARETO_CLASS_STYLES[r.paretoClase]
+                            || PARETO_CLASS_STYLES.C;
                           const tierColor = TIER_COLORS[r.tier?.toUpperCase()] || TIER_COLORS.GOOD;
                           let accionRepo = '';
                           let accionColor = '#999';
@@ -1935,7 +2119,7 @@ export default function App() {
                             <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
                               <Td align="center">
                                 <span className="px-2 py-0.5 text-[10px] font-bold" style={{
-                                  background: esA ? '#065f46' : (esB ? '#92400e' : '#7f1d1d'),
+                                  background: paretoStyle.badge,
                                   color: 'white',
                                 }}>{renderServiceValue(r.paretoClase)}</span>
                               </Td>
@@ -1956,8 +2140,8 @@ export default function App() {
                               <Td align="right" bold>{r.ventas}</Td>
                               <Td align="right">{(r.pctVentas * 100).toFixed(0)}%</Td>
                               <Td align="right" bold style={{
-                                background: esA ? '#d1fae5' : (esB ? '#fef3c7' : '#fee2e2'),
-                                color: esA ? '#065f46' : (esB ? '#92400e' : '#7f1d1d'),
+                                background: paretoStyle.background,
+                                color: paretoStyle.text,
                               }}>{(r.pctAcum * 100).toFixed(0)}%</Td>
                               <Td align="right" bold>{r.invFinal}</Td>
                               <Td align="center" bold style={{ color: accionColor, fontSize: '10px' }}>{accionRepo}</Td>
@@ -2009,6 +2193,15 @@ export default function App() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    {/* Totaliza la selección visible con el total de reposición provisto por dominio. */}
+                    <tr className="border-t-2 font-bold" style={{ borderColor: '#0a2540', background: '#faf8f3' }}>
+                      <td colSpan={3} className="p-3 text-right">TOTAL</td>
+                      <td className="p-3 text-center">Total SKU incluidos: {productosReposicionSugerida.length}</td>
+                      <td className="p-3 text-center">—</td>
+                      <td className="p-3 text-center" style={{ color: '#1e40af' }}>Total unidades de Reposición Sugerida: {renderServiceValue(resultados.alertas.totalReposicionUnid)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
@@ -2255,7 +2448,7 @@ export default function App() {
                       </tbody>
                     </table>
                     <div className="mt-2 text-[10px] text-stone-600">
-                      F4: más de 365 días, descuento consumidor 50%, inventario mínimo reconocido 12; con menos de 12 unidades la liquidación la asume Retail.
+                      F4: más de 365 días, descuento consumidor {fase4DiscountLabel}, inventario mínimo reconocido 12; con menos de 12 unidades la liquidación la asume Retail.
                     </div>
                   </div>
                 )}
@@ -2299,11 +2492,11 @@ export default function App() {
                         <tr><Th>Marca</Th><Th align="center">Fase</Th><Th align="center">Días</Th><Th align="center">Origen</Th><Th align="center">Desc.</Th><Th align="center">IOCA</Th><Th align="center">Retail</Th></tr>
                       </thead>
                       <tbody>
-                        {TABLA_FASES.map((f, i) => (
+                        {phaseDiscountTable.map((f, i) => (
                           <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
                             <Td>{f.marca}</Td>
                             <Td align="center" bold>F{f.fase}</Td>
-                            <Td align="center">{'>'+f.diasMin}</Td>
+                            <Td align="center">{`≥${f.diasMin}`}</Td>
                             <Td align="center">{f.origen}</Td>
                             <Td align="center" bold>{fmtPct(f.descConsumidor)}</Td>
                             <Td align="center">{fmtPct(f.aporteIOCA)}</Td>
@@ -2417,14 +2610,15 @@ export default function App() {
                       ['Total SKU', resultados.totales.totalSKUs, 'Total Unidades', resultados.totales.totalUnidades],
                       ['SKU Activos', resultados.totales.skuActivos, 'Total Unidades Activas', resultados.totales.unidadesActivas],
                       ['SKU Vencidos', resultados.totales.skuVencidos, 'Total Unidades Vencidas', resultados.totales.unidadesVencidas],
-                      ['SKU por Vencer', resultados.totales.skuPorVencer, 'Total Unidades por Vencer', resultados.totales.unidadesPorVencer],
+                      ['SKU sin ventas', resultados.totales.skuSinVentas, 'Unidades sin ventas', resultados.totales.unidadesSinVentas, 'Valor inventario sin ventas', resultados.totales.valorInventarioSinVentas],
                       ['SKU Maestro', resultados.totales.skuMaestro, 'Total Unidades Maestro', resultados.totales.unidadesMaestro],
-                    ].map(([label, value, unitLabel, unitValue]) => (
+                    ].map(([label, value, unitLabel, unitValue, moneyLabel, moneyValue]) => (
                       <div key={label} style={{ border: '1px solid #e5e0d5', padding: '8px', background: '#faf8f3' }}>
                         <div style={{ fontSize: '8px', textTransform: 'uppercase', color: '#666' }}>{label}</div>
                         <div style={{ fontSize: '17px', fontWeight: 'bold', color: '#0a2540' }}>{renderServiceValue(value)}</div>
                         <div style={{ borderTop: '1px solid #e5e0d5', marginTop: '5px', paddingTop: '5px', fontSize: '8px', color: '#666' }}>{unitLabel}</div>
                         <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540' }}>{renderServiceValue(unitValue)}</div>
+                        {moneyLabel && <><div style={{ borderTop: '1px solid #e5e0d5', marginTop: '5px', paddingTop: '5px', fontSize: '8px', color: '#666' }}>{moneyLabel}</div><div style={{ fontSize: '11px', fontWeight: 'bold', color: '#0a2540' }}>{fmtUSD(moneyValue)}</div></>}
                       </div>
                     ))}
                   </div>
@@ -2468,7 +2662,7 @@ export default function App() {
                       <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#065f46' }}>Qué oportunidad existe</div>
                       <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
                         {resultados.analisisPareto.skusParetoA.length > 0 ? (
-                          <>El portafolio tiene <strong>{resultados.analisisPareto.skusParetoA.length} SKUs Pareto A — Pocos Vitales</strong> ({resultados.analisisPareto.pctSKUsA.toFixed(0)}% del activo) que concentran {resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas. La <strong>Cola Larga B/C</strong> contiene {resultados.analisisPareto.skusColaLarga.length} SKUs.{' '}
+                          <>El portafolio tiene <strong>{resultados.analisisPareto.skusParetoA.length} SKUs Pareto A — Vitales</strong> ({resultados.analisisPareto.pctSKUsA.toFixed(0)}% del activo) que concentran {resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas. Los <strong>Complementarios B/C</strong> contienen {resultados.analisisPareto.skusColaLarga.length} SKUs.{' '}
                           Reforzar disponibilidad y exhibición de estos SKUs puede aumentar el sell-through general.</>
                         ) : 'Se requieren más datos de ventas para identificar oportunidades de concentración.'}
                         {informe.skuHeroe && <> El SKU héroe <strong>{renderServiceValue(informe.skuHeroe.sku)}</strong> es la mejor vitrina para activar bundles y cross-sell.</>}

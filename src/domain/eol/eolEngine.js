@@ -9,6 +9,24 @@
 
 import { diasEntre } from '../../utils/dateUtils.js';
 
+const FASE_4_DIAS_LIMITE = 365;
+const FASE_4_DIAS_MIN = FASE_4_DIAS_LIMITE + 1;
+const FASE_4_DESCUENTO_CONSUMIDOR = 0.15;
+
+const crearFase4 = ({ marca, origen, candidatos }) => {
+  const ultimaFase = [...candidatos].sort((a, b) => b.diasMin - a.diasMin)[0];
+  return {
+    marca: marca.toUpperCase(),
+    origen: origen.toUpperCase(),
+    fase: 4,
+    diasMin: FASE_4_DIAS_MIN,
+    descConsumidor: FASE_4_DESCUENTO_CONSUMIDOR,
+    aporteIOCA: ultimaFase?.aporteIOCA ?? 0,
+    aporteRetail: ultimaFase?.aporteRetail ?? 0,
+    inventarioMinimoReconocido: 12,
+  };
+};
+
 // Calcula los días EOL usando exclusivamente la fecha base recibida del orquestador.
 export const calcularDiasEOL = ({ fechaBase, fechaEOL }) => diasEntre(fechaBase, fechaEOL);
 
@@ -52,18 +70,8 @@ export const seleccionarFaseEOL = ({ marca, origen, diasDesc, tablaFases }) => {
   const candidatos = tablaFases.filter((fase) =>
     fase.marca === marca.toUpperCase() && fase.origen === origen.toUpperCase()
   );
-  if (diasDesc > 365) {
-    const ultimaFase = [...candidatos].sort((a, b) => b.diasMin - a.diasMin)[0];
-    return {
-      marca: marca.toUpperCase(),
-      origen: origen.toUpperCase(),
-      fase: 4,
-      diasMin: 366,
-      descConsumidor: 0.50,
-      aporteIOCA: ultimaFase?.aporteIOCA ?? 0,
-      aporteRetail: ultimaFase?.aporteRetail ?? 0,
-      inventarioMinimoReconocido: 12,
-    };
+  if (diasDesc > FASE_4_DIAS_LIMITE) {
+    return crearFase4({ marca, origen, candidatos });
   }
   if (candidatos.length === 0) return null;
   const ordenados = [...candidatos].sort((a, b) => b.diasMin - a.diasMin);
@@ -71,6 +79,25 @@ export const seleccionarFaseEOL = ({ marca, origen, diasDesc, tablaFases }) => {
     if (diasDesc >= fase.diasMin) return fase;
   }
   return null;
+};
+
+// Expone la tabla efectiva para consumidores de presentación. Conserva todas
+// las filas configuradas y completa F4 por cada marca/origen mediante la misma
+// regla autorizada que usa el cálculo, sin modificar la fuente física.
+export const listarFasesEOLDisponibles = ({ tablaFases }) => {
+  const grupos = new Map();
+  tablaFases.forEach((fase) => {
+    const marca = fase.marca.toUpperCase();
+    const origen = fase.origen.toUpperCase();
+    const clave = `${marca}::${origen}`;
+    if (!grupos.has(clave)) grupos.set(clave, { marca, origen, fases: [] });
+    grupos.get(clave).fases.push(fase);
+  });
+
+  return [...grupos.values()].flatMap(({ marca, origen, fases }) => {
+    if (fases.some((fase) => fase.fase === 4)) return fases;
+    return [...fases, crearFase4({ marca, origen, candidatos: fases })];
+  });
 };
 
 // Calcula porcentajes, valores unitarios y totales sin alterar la tabla de fases.
