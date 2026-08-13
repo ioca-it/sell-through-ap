@@ -23,12 +23,14 @@ publicJwk.alg = 'RS256';
 publicJwk.use = 'sig';
 const jwks = createLocalJWKSet({ keys: [publicJwk] });
 
-const authenticator = createCustomerApiAuthenticator({
+const createAuthenticator = ({ diagnosticLogger = () => {} } = {}) => createCustomerApiAuthenticator({
   tenantId,
   audience,
   requiredScope,
   jwks,
+  diagnosticLogger,
 });
+const authenticator = createAuthenticator();
 
 const signToken = ({
   tokenIssuer = issuer,
@@ -37,15 +39,21 @@ const signToken = ({
   scope = requiredScope,
   expirationTime = '5m',
   signingKey = privateKey,
+  tokenSubject = 'user-subject',
+  tokenObjectId = 'user-object-id',
+  tokenUsername,
+  tokenSecret,
 } = {}) => new SignJWT({
   tid: tokenTenant,
   scp: scope,
-  oid: 'user-object-id',
+  oid: tokenObjectId,
+  ...(tokenUsername ? { preferred_username: tokenUsername } : {}),
+  ...(tokenSecret ? { diagnosticSecret: tokenSecret } : {}),
 })
   .setProtectedHeader({ alg: 'RS256', kid: 'security-test-key' })
   .setIssuer(tokenIssuer)
   .setAudience(tokenAudience)
-  .setSubject('user-subject')
+  .setSubject(tokenSubject)
   .setIssuedAt()
   .setExpirationTime(expirationTime)
   .sign(signingKey);
@@ -112,7 +120,12 @@ test('/health es anónimo y no consulta auth, rate limit ni Customer', async () 
 });
 
 test('Customer API sin Authorization responde 401 aunque CORS permita el origen', async () => {
-  const app = createSecureApp();
+  const diagnostics = [];
+  const app = createSecureApp({
+    requestAuthenticator: createAuthenticator({
+      diagnosticLogger: (reason) => diagnostics.push(reason),
+    }),
+  });
 
   await withServer(app, async (baseUrl) => {
     const searchResponse = await fetch(`${baseUrl}/api/customers/search?type=code&q=C`, {
@@ -120,8 +133,22 @@ test('Customer API sin Authorization responde 401 aunque CORS permita el origen'
     });
     assert.equal(searchResponse.status, 401);
     assert.equal(searchResponse.headers.get('access-control-allow-origin'), 'https://sell-through-ap.vercel.app');
-    assert.equal((await fetch(`${baseUrl}/api/customers/C-001`)).status, 401);
+    assert.deepEqual(await searchResponse.json(), {
+      error: {
+        code: 'AUTHENTICATION_REQUIRED',
+        message: 'Se requiere autenticación válida.',
+      },
+    });
+    const byCodeResponse = await fetch(`${baseUrl}/api/customers/C-001`);
+    assert.equal(byCodeResponse.status, 401);
+    assert.deepEqual(await byCodeResponse.json(), {
+      error: {
+        code: 'AUTHENTICATION_REQUIRED',
+        message: 'Se requiere autenticación válida.',
+      },
+    });
   });
+  assert.deepEqual(diagnostics, ['JWT_MISSING_BEARER', 'JWT_MISSING_BEARER']);
 });
 
 test('rate limit por IP también protege intentos sin autenticación', async () => {
@@ -139,39 +166,79 @@ test('rate limit por IP también protege intentos sin autenticación', async () 
 });
 
 test('token inválido responde 401 sin exponerlo en respuesta o logs', async () => {
-  const sensitiveToken = await signToken({ signingKey: untrustedPrivateKey });
+  const sensitiveValues = {
+    tokenSubject: 'sensitive-user-subject',
+    tokenObjectId: 'sensitive-user-object-id',
+    tokenUsername: 'sensitive.user@example.com',
+    tokenSecret: 'sensitive-client-secret',
+  };
+  const sensitiveToken = await signToken({
+    signingKey: untrustedPrivateKey,
+    ...sensitiveValues,
+  });
   const capturedLogs = [];
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = (...values) => capturedLogs.push(values.join(' '));
-  console.error = (...values) => capturedLogs.push(values.join(' '));
+  const originalWarn = console.warn;
+  console.warn = (...values) => capturedLogs.push(values.join(' '));
+  const requestAuthenticator = createCustomerApiAuthenticator({
+    tenantId,
+    audience,
+    requiredScope,
+    jwks,
+  });
 
   try {
-    await withServer(createSecureApp(), async (baseUrl) => {
+    await withServer(createSecureApp({ requestAuthenticator }), async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/customers/search?type=code&q=C`, {
         headers: { Authorization: `Bearer ${sensitiveToken}` },
       });
-      const body = JSON.stringify(await response.json());
+      const body = await response.json();
       assert.equal(response.status, 401);
-      assert.ok(!body.includes(sensitiveToken));
+      assert.deepEqual(body, {
+        error: {
+          code: 'AUTHENTICATION_REQUIRED',
+          message: 'Se requiere autenticación válida.',
+        },
+      });
+      assert.ok(!JSON.stringify(body).includes(sensitiveToken));
     });
   } finally {
-    console.log = originalLog;
-    console.error = originalError;
+    console.warn = originalWarn;
   }
-  assert.equal(capturedLogs.join(''), '');
+
+  assert.deepEqual(capturedLogs, [
+    '[CustomerApiAuthenticator] JWT_SIGNATURE_REJECTED',
+  ]);
+  const loggedText = capturedLogs.join(' ');
+  for (const sensitiveValue of [
+    sensitiveToken,
+    `Bearer ${sensitiveToken}`,
+    'Authorization',
+    ...Object.values(sensitiveValues),
+  ]) {
+    assert.ok(!loggedText.includes(sensitiveValue));
+  }
 });
 
 test('token válido sin scope responde 403', async () => {
   const token = await signToken({ scope: 'Other.Scope' });
+  const diagnostics = [];
+  const requestAuthenticator = createAuthenticator({
+    diagnosticLogger: (reason) => diagnostics.push(reason),
+  });
 
-  await withServer(createSecureApp(), async (baseUrl) => {
+  await withServer(createSecureApp({ requestAuthenticator }), async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/customers/search?type=name&q=Uno`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(response.status, 403);
-    assert.equal((await response.json()).error.code, 'INSUFFICIENT_SCOPE');
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: 'INSUFFICIENT_SCOPE',
+        message: 'La identidad no tiene el permiso requerido.',
+      },
+    });
   });
+  assert.deepEqual(diagnostics, ['JWT_SCOPE_MISSING']);
 });
 
 test('token válido con scope permite Customer API', async () => {
@@ -191,20 +258,56 @@ test('token válido con scope permite Customer API', async () => {
 
 test('rechaza token expirado, issuer, audience y tenant inválidos', async (context) => {
   const invalidTokens = [
-    await signToken({ expirationTime: Math.floor(Date.now() / 1000) - 60 }),
-    await signToken({ tokenIssuer: 'https://issuer.invalid/v2.0' }),
-    await signToken({ tokenAudience: 'other-api' }),
-    await signToken({ tokenTenant: 'other-tenant' }),
+    {
+      token: await signToken({ expirationTime: Math.floor(Date.now() / 1000) - 60 }),
+      reason: 'JWT_EXPIRED',
+    },
+    {
+      token: await signToken({ tokenIssuer: 'https://issuer.invalid/v2.0' }),
+      reason: 'JWT_ISSUER_REJECTED',
+    },
+    {
+      token: await signToken({ tokenAudience: 'other-api' }),
+      reason: 'JWT_AUDIENCE_REJECTED',
+    },
+    {
+      token: await signToken({ tokenTenant: 'other-tenant' }),
+      reason: 'JWT_TENANT_MISMATCH',
+    },
   ];
 
-  for (const [index, token] of invalidTokens.entries()) {
+  for (const [index, { token, reason }] of invalidTokens.entries()) {
     await context.test(`token inválido ${index + 1}`, async () => {
+      const diagnostics = [];
+      const diagnosticAuthenticator = createAuthenticator({
+        diagnosticLogger: (diagnosticReason) => diagnostics.push(diagnosticReason),
+      });
       await assert.rejects(
-        authenticator.authenticate({ headers: { authorization: `Bearer ${token}` } }),
+        diagnosticAuthenticator.authenticate({
+          headers: { authorization: `Bearer ${token}` },
+        }),
         (error) => error.statusCode === 401 && error.code === 'AUTHENTICATION_REQUIRED',
       );
+      assert.deepEqual(diagnostics, [reason]);
     });
   }
+});
+
+test('token malformado usa diagnóstico genérico sin exponer su contenido', async () => {
+  const malformedToken = 'not-a-complete-jwt';
+  const diagnostics = [];
+  const diagnosticAuthenticator = createAuthenticator({
+    diagnosticLogger: (reason) => diagnostics.push(reason),
+  });
+
+  await assert.rejects(
+    diagnosticAuthenticator.authenticate({
+      headers: { authorization: `Bearer ${malformedToken}` },
+    }),
+    (error) => error.statusCode === 401 && error.code === 'AUTHENTICATION_REQUIRED',
+  );
+  assert.deepEqual(diagnostics, ['JWT_VERIFICATION_REJECTED']);
+  assert.ok(!diagnostics.join(' ').includes(malformedToken));
 });
 
 test('rate limit responde 429 con Retry-After y no afecta /health', async () => {

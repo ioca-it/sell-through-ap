@@ -25,6 +25,30 @@ const requiredText = (value, field) => {
   return value.trim();
 };
 
+const defaultDiagnosticLogger = (reason) => {
+  console.warn(`[CustomerApiAuthenticator] ${reason}`);
+};
+
+const logDiagnostic = (diagnosticLogger, reason) => {
+  try {
+    diagnosticLogger(reason);
+  } catch {
+    // Authentication and authorization behavior must not depend on diagnostics.
+  }
+};
+
+const normalizeVerificationReason = (error) => {
+  if (error?.code === 'ERR_JWT_EXPIRED') return 'JWT_EXPIRED';
+  if (error?.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED') {
+    return 'JWT_SIGNATURE_REJECTED';
+  }
+  if (error?.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED') {
+    if (error.claim === 'aud') return 'JWT_AUDIENCE_REJECTED';
+    if (error.claim === 'iss') return 'JWT_ISSUER_REJECTED';
+  }
+  return 'JWT_VERIFICATION_REJECTED';
+};
+
 const readBearerToken = (authorizationHeader) => {
   if (typeof authorizationHeader !== 'string') {
     throw new CustomerApiAuthenticationError();
@@ -40,6 +64,7 @@ export const createCustomerApiAuthenticator = ({
   requiredScope,
   jwks,
   verifyJwt = jwtVerify,
+  diagnosticLogger = defaultDiagnosticLogger,
 } = {}) => {
   const normalizedTenantId = requiredText(tenantId, 'tenantId');
   const normalizedAudience = requiredText(audience, 'audience');
@@ -52,7 +77,13 @@ export const createCustomerApiAuthenticator = ({
 
   return Object.freeze({
     async authenticate(request) {
-      const token = readBearerToken(request.headers.authorization);
+      let token;
+      try {
+        token = readBearerToken(request.headers.authorization);
+      } catch (error) {
+        logDiagnostic(diagnosticLogger, 'JWT_MISSING_BEARER');
+        throw error;
+      }
       let payload;
       try {
         ({ payload } = await verifyJwt(token, keySet, {
@@ -61,17 +92,20 @@ export const createCustomerApiAuthenticator = ({
           issuer,
           requiredClaims: ['exp', 'tid'],
         }));
-      } catch {
+      } catch (error) {
+        logDiagnostic(diagnosticLogger, normalizeVerificationReason(error));
         throw new CustomerApiAuthenticationError();
       }
 
       if (payload.tid !== normalizedTenantId) {
+        logDiagnostic(diagnosticLogger, 'JWT_TENANT_MISMATCH');
         throw new CustomerApiAuthenticationError();
       }
       const scopes = typeof payload.scp === 'string'
         ? payload.scp.split(/\s+/).filter(Boolean)
         : [];
       if (!scopes.includes(normalizedScope)) {
+        logDiagnostic(diagnosticLogger, 'JWT_SCOPE_MISSING');
         throw new CustomerApiAuthorizationError();
       }
 

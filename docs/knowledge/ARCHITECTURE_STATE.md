@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-PHASE1-007 prepara un arnés temporal y controlado para validar MSAL→Bearer→Customer API→JWT mediante una ruta Customer existente que se detiene antes de Dataverse. El control externo confirma Render disponible y rechazo sin Bearer; la ejecución autenticada real desde Vercel queda pendiente porque este hito no despliega ni dispone de la sesión interactiva del usuario. `VITE_CUSTOMER_SOURCE` permanece en `local`.
+PHASE1-008 incorpora diagnósticos internos seguros al Customer API Authenticator después de que el smoke autenticado real Phase1-007 confirmara MSAL y adquisición de token, pero recibiera `401 / AUTHENTICATION_REQUIRED` desde Render antes de Dataverse. Los rechazos JWT ahora registran únicamente identificadores normalizados por etapa; no exponen token, header Authorization, claims, identidad o secretos y no alteran los contratos públicos `401/403`. `VITE_CUSTOMER_SOURCE` permanece en `local`.
 
 ## Último prompt aprobado
 
-PHASE1-007 — Authenticated API Smoke Test.
+PHASE1-008 — Safe JWT Rejection Diagnostics.
 
 ## Última auditoría aprobada
 
@@ -31,7 +31,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name` y `crbbe_nombrepais`.
-- Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse.
+- Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse, con diagnósticos internos normalizados y seguros por etapa de rechazo.
 - Rate Limiter: límites por IP y `oid/sub`, store in-memory inyectable y respuesta 429/Retry-After.
 - Health endpoint: `/health` anónimo y sin dependencias externas.
 - Configuration Center Foundation: PAR-001, PAR-002 y PAR-003 con schema como fuente única de IDs/keys.
@@ -40,7 +40,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 
 - Extracción futura de las narrativas consultivas restantes de `App.jsx` y Recommendation Engine: pendientes de alcance específico.
 - Extracción futura de Distribution y Pareto: pendiente de prompt independiente.
-- Ejecución autenticada del arnés desde una versión autorizada en Vercel: pendiente de sesión interactiva y deploy fuera de este alcance; el control externo sólo confirmó `/health=200` y rechazo anónimo `401 / AUTHENTICATION_REQUIRED`.
+- Deploy autorizado del backend Phase1-008 en Render y nueva ejecución del arnés autenticado desde Vercel: pendientes para identificar en Application Logs la etapa exacta del `401` real.
 - Acceso real posterior a Dataverse: pendiente de una validación separada; la aceptación del JWT por Render no lo demuestra.
 - Store distribuido de rate limiting: obligatorio antes de múltiples instancias o escala horizontal en Azure.
 - DataverseProvider para Maestro Producto y cualquier otra entidad: no implementados.
@@ -80,7 +80,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Habilitar mediante un deploy autorizado el arnés temporal en Vercel y ejecutar el probe con una sesión MSAL real. El resultado esperado es `400 / INVALID_CUSTOMER_REQUEST`, que confirma JWT sin acceder a Dataverse. `VITE_CUSTOMER_SOURCE` permanece en `local`; desplegar, cambiarlo a `dataverse` o validar Dataverse real requiere autorización expresa.
+Desplegar mediante una acción autorizada el backend Phase1-008 en Render, repetir desde Vercel `?phase1-007-smoke=1` con la sesión MSAL real y consultar Application Logs para obtener exclusivamente el identificador seguro del rechazo. El resultado funcional esperado continúa siendo `400 / INVALID_CUSTOMER_REQUEST`; `VITE_CUSTOMER_SOURCE` permanece en `local` y validar Dataverse real requiere autorización expresa.
 
 ## Decisiones congeladas
 
@@ -94,6 +94,7 @@ Habilitar mediante un deploy autorizado el arnés temporal en Vercel y ejecutar 
 - Render es hosting temporal y no una dependencia arquitectónica; Azure podrá sustituirlo manteniendo handler, variables neutrales y contratos.
 - Tenant, client secret y access token Dataverse existen solo en backend. El token delegado de usuario se limita al Provider frontend; la UI no interpreta JWT, consulta Dataverse ni envía OData.
 - Usuario→Customer API usa JWT delegado `AUTH_*`; API→Dataverse usa `DV_*` y client_credentials. Las credenciales nunca se reutilizan entre fronteras.
+- Los diagnósticos JWT de backend son exclusivamente internos y estáticos: no reciben ni registran tokens, Authorization, payloads completos, identidades, emails o secretos; los contratos HTTP públicos permanecen sin detalle técnico.
 - CORS no es autenticación; toda ruta Customer exige Bearer válido. `/health` es la única ruta funcional anónima.
 - El probe Phase1-007 usa `GET /api/customers/search?type=code` sin `q`: `400 / INVALID_CUSTOMER_REQUEST` confirma que JWT y scope fueron aceptados y que la validación se detuvo antes de Dataverse.
 - Rate limiting in-memory solo es válido para una instancia temporal; Azure horizontal requiere store distribuido.
@@ -122,8 +123,8 @@ Habilitar mediante un deploy autorizado el arnés temporal en Vercel y ejecutar 
 
 ## Cantidad de pruebas
 
-Frontend: 255/255 aprobadas en 24 archivos. Backend: 41/41 aprobadas como validación adicional del contrato existente.
+Frontend: 255/255 aprobadas en 24 archivos. Backend: 42/42 aprobadas.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado y sin modificaciones. `git diff --check` aprobado. Última validación: PHASE1-007, 2026-08-13.
+Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación: PHASE1-008, 2026-08-13.
