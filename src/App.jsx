@@ -16,6 +16,7 @@ import {
   processSellThrough,
 } from './application/sellThroughApplicationService.js';
 import { createCustomerMasterService } from './application/customerMasterService.js';
+import { AuthenticationControls } from './auth/AuthenticationControls.jsx';
 import { getAccessToken } from './auth/customerApiAccessToken.js';
 import { configurationService } from './configuration/configurationService.js';
 import { createCustomerRepository } from './repositories/customerRepository.js';
@@ -1074,12 +1075,15 @@ export default function App({
                 Motor Inv. Seguridad IOCA · Análisis de Fases EOL · Distribución por Tier y Categoría · Informe Ejecutivo Consultivo
               </div>
             </div>
-            <div className="text-right text-xs">
-              <div className="opacity-70">Fecha de cálculo</div>
-              <div className="font-bold text-base" style={{ color: '#d4af37' }}>
-                {primerDiaMes().toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
+            <div className="flex items-end gap-5">
+              <div className="text-right text-xs">
+                <div className="opacity-70">Fecha de cálculo</div>
+                <div className="font-bold text-base" style={{ color: '#d4af37' }}>
+                  {primerDiaMes().toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
+                </div>
+                <div className="opacity-60 mt-1">(primer día del mes en curso)</div>
               </div>
-              <div className="opacity-60 mt-1">(primer día del mes en curso)</div>
+              <AuthenticationControls />
             </div>
           </div>
           <div style={{ background: '#d4af37', height: '3px' }} className="mt-4" />

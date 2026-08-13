@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-El ajuste F4 fija el descuento consumidor en 15% para USA y CHINA desde la fuente única de Domain; cálculo EOL, Tabla de Descuento por Fase y Excel consumen la misma regla efectiva. Local Customer Test Mode permanece habilitado y Dataverse Customer Provider sigue disponible sin avanzar MSAL, Entra, Render, Azure ni Dataverse real.
+PHASE1-006 sustituye exclusivamente `xlsx@0.18.5` de npmjs por SheetJS CE `0.20.3` desde el tarball versionado del CDN oficial. La exportación Excel conserva import, hojas, valores, F4, formatos y estructura; no se agrega lectura productiva de archivos ni se modifican Vite, esbuild, nanoid o reglas Sell Through.
 
 ## Último prompt aprobado
 
-FIX F4 — Descuento 15%.
+PHASE1-006 — SheetJS Security Update.
 
 ## Última auditoría aprobada
 
@@ -23,6 +23,8 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - `sellThroughRepository` y Local Provider: frontera síncrona vigente de fuentes.
 - `customerRepository`, Customer Master Application Service y contrato `Customer`: frontera asíncrona de búsqueda/selección con `{ customerCode, customerName, country, customerType }`.
 - Dataverse Customer Provider frontend: consume exclusivamente la Customer API configurada por `VITE_API_BASE_URL`.
+- MSAL frontend: configuración/cliente desacoplados, procesamiento de redirect, cuenta activa y adquisición silenciosa mediante `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`.
+- Authentication Controls: inicio de sesión, identidad discreta y cierre de sesión sin almacenamiento manual de tokens.
 - Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
@@ -37,8 +39,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 
 - Extracción futura de las narrativas consultivas restantes de `App.jsx` y Recommendation Engine: pendientes de alcance específico.
 - Extracción futura de Distribution y Pareto: pendiente de prompt independiente.
-- Registro Entra de Customer API, scope delegado, integración MSAL frontend y adquisición real de token: pendientes de configuración aprobada.
-- Configuración/despliegue Render/Vercel, permisos Entra/Dataverse y smoke test real: pendientes de ejecución manual.
+- Configuración de variables públicas en Vercel, permisos Entra/Dataverse y smoke test real contra el backend temporal: pendientes de ejecución manual autorizada.
 - Store distribuido de rate limiting: obligatorio antes de múltiples instancias o escala horizontal en Azure.
 - DataverseProvider para Maestro Producto y cualquier otra entidad: no implementados.
 - Mapping/nombre lógico real de `customerType`: pendiente de confirmación; el contrato usa fallback vacío y no selecciona una columna Dataverse nueva.
@@ -63,7 +64,8 @@ Configuración UI
       -> Customer Provider Factory (`VITE_CUSTOMER_SOURCE`)
         -> Local Customer Provider (fallback con fixtures ficticios)
         -> Dataverse Customer Provider frontend
-          -> getAccessToken / Microsoft Entra ID (JWT delegado)
+          -> getAccessToken / MSAL Client (acquireTokenSilent + loginRedirect)
+            -> Microsoft Entra ID (JWT delegado)
             -> Customer API portable / JWT Authenticator / Rate Limiter
               -> Customer Service
                 -> Account Customer Gateway
@@ -76,7 +78,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Validar localmente Customer Master con `VITE_CUSTOMER_SOURCE=local`. Los pendientes de Astrid, Entra, MSAL, Render, Azure y Dataverse real continúan como hitos separados que requieren autorización expresa.
+Configurar variables públicas en Vercel y ejecutar un smoke test autorizado de inicio de sesión y Customer API. `VITE_CUSTOMER_SOURCE` permanece en `local`; cambiarlo a `dataverse`, desplegar o validar Dataverse real requiere autorización expresa.
 
 ## Decisiones congeladas
 
@@ -86,6 +88,7 @@ Validar localmente Customer Master con `VITE_CUSTOMER_SOURCE=local`. Los pendien
 - Repository/Provider son la frontera obligatoria de fuentes; Customer es el único contrato Dataverse normalizado aprobado. `customerType` pertenece al contrato lógico, pero su nombre físico no está confirmado y no se agregó al gateway backend.
 - La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.
 - `VITE_CUSTOMER_SOURCE` selecciona exclusivamente `local` o `dataverse`; `local` es el fallback compatible cuando la variable no está definida.
+- La configuración pública MSAL usa exclusivamente variables `VITE_AUTH_*`; SellThrough-Web no tiene client secret y los access tokens quedan bajo el cache de MSAL en `sessionStorage`, sin almacenamiento manual.
 - Render es hosting temporal y no una dependencia arquitectónica; Azure podrá sustituirlo manteniendo handler, variables neutrales y contratos.
 - Tenant, client secret y access token Dataverse existen solo en backend. El token delegado de usuario se limita al Provider frontend; la UI no interpreta JWT, consulta Dataverse ni envía OData.
 - Usuario→Customer API usa JWT delegado `AUTH_*`; API→Dataverse usa `DV_*` y client_credentials. Las credenciales nunca se reutilizan entre fronteras.
@@ -98,6 +101,7 @@ Validar localmente Customer Master con `VITE_CUSTOMER_SOURCE=local`. Los pendien
 - Compra es Inventario en Tránsito y la reposición final la descuenta de la necesidad vigente.
 - La seguridad usa Inventario Proyectado; Estado EOL fuerza nivel EOL y temporalidad VENCIDO.
 - Pareto A/B/C usa unidades vendidas y cortes acumulados 80%/95%.
+- SheetJS CE queda fijado en `0.20.3` mediante el tarball versionado oficial; `App.jsx` conserva el import `xlsx` y su contrato de exportación.
 - La presentación Pareto usa Vitales/Complementarios y colores A verde, B azul, C rojo sin alterar cortes ni cálculo.
 - Las alertas y tablas de bajo inventario exponen solo ACTIVO; el Inventory Engine no cambia.
 - Producto Nuevo compara `creationDate` con la fecha oficial de procesamiento y exige menos de 90 días; Nuevos no presentes no genera reposición.
@@ -111,12 +115,12 @@ Validar localmente Customer Master con `VITE_CUSTOMER_SOURCE=local`. Los pendien
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Diecinueve archivos de pruebas frontend y siete archivos de pruebas backend.
+- Veintitrés archivos de pruebas frontend y siete archivos de pruebas backend.
 
 ## Cantidad de pruebas
 
-Frontend: 238/238 aprobadas. Backend: no ejecutado en este hito porque `server/` no fue modificado.
+Frontend: 250/250 aprobadas. Backend: no ejecutado en este hito porque `server/` no fue modificado.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1527 módulos transformados. Backend no afectado. Última validación: FIX F4 Descuento 15%, 2026-08-11.
+Frontend aprobado con Vite 5.4.21 y 1674 módulos transformados. `npm audit --omit=dev` reporta 0 vulnerabilidades; el audit completo conserva únicamente hallazgos dev fuera del alcance en Vite/esbuild/nanoid. Backend no afectado. Última validación: PHASE1-006, 2026-08-13.

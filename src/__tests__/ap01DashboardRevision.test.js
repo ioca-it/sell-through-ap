@@ -8,6 +8,8 @@ const stateHarness = vi.hoisted(() => ({
 
 const xlsxHarness = vi.hoisted(() => ({
   sheetsByName: {},
+  workbook: null,
+  filename: '',
 }));
 
 vi.mock('react', async (importOriginal) => {
@@ -43,11 +45,15 @@ vi.mock('xlsx', async (importOriginal) => {
         return actual.utils.book_append_sheet(workbook, sheet, name, ...args);
       },
     },
-    writeFile: vi.fn(),
+    writeFile: vi.fn((workbook, filename) => {
+      xlsxHarness.workbook = workbook;
+      xlsxHarness.filename = filename;
+    }),
   };
 });
 
 import App from '../App.jsx';
+import * as XLSX from 'xlsx';
 import { processSellThrough } from '../application/sellThroughApplicationService.js';
 import { createSellThroughRepository } from '../repositories/sellThroughRepository.js';
 
@@ -248,6 +254,8 @@ describe('AP01 — presentación del Dashboard', () => {
 
   it('exporta F4 USA y CHINA con descuento de 15% en Ref Tabla Fases', () => {
     xlsxHarness.sheetsByName = {};
+    xlsxHarness.workbook = null;
+    xlsxHarness.filename = '';
     const tree = renderDashboard(buildResults());
     const exportButton = findElement(
       tree,
@@ -260,5 +268,104 @@ describe('AP01 — presentación del Dashboard', () => {
       ['SKULLCANDY', 4, 366, 'USA', 0.15, 0.2, 0.8],
       ['SKULLCANDY', 4, 366, 'CHINA', 0.15, 0.2, 0.8],
     ]);
+  });
+
+  it('genera un XLSX que se puede releer preservando hojas, valores y formatos', () => {
+    xlsxHarness.workbook = null;
+    xlsxHarness.filename = '';
+    const resultados = buildResults();
+    const workbookResults = {
+      ...resultados,
+      eolFuturos: [{
+        sku: 'EOL-FUTURO',
+        modelo: 'Modelo futuro',
+        marca: 'SKULLCANDY',
+        fechaStr: '2026-10-01',
+        diasDesc: -61,
+        bucket: '0–90 días',
+        origen: 'USA',
+        costo: 10,
+        invInicial: 4,
+        ventas: 1,
+        invFinal: 3,
+        indiceRotacion: 0.25,
+        valorInv: 30,
+      }],
+      alertas: {
+        ...resultados.alertas,
+        skusConMerma: [{
+          sku: 'MERMA',
+          modelo: 'Modelo con merma',
+          marca: 'SKULLCANDY',
+          estado: 'ACTIVO',
+          invInicial: 10,
+          compra: 0,
+          ventas: 1,
+          invProyectado: 9,
+          invFinal: 5,
+          merma: 4,
+          mermaPct: 4 / 9,
+          costo: 10,
+        }],
+        totalMermaUnid: 4,
+        totalMermaValor: 40,
+        skusSinOrigen: [{
+          sku: 'SIN-ORIGEN',
+          modelo: 'Modelo sin origen',
+          estado: 'ACTIVO',
+          costoUSA: 10,
+          costoCHINA: 8,
+        }],
+      },
+    };
+    const tree = renderDashboard(workbookResults);
+    const exportButton = findElement(
+      tree,
+      (node) => node.type === 'button' && textContent(node).includes('Exportar Excel'),
+    );
+
+    exportButton.props.onClick();
+
+    const serialized = XLSX.write(xlsxHarness.workbook, { bookType: 'xlsx', type: 'array' });
+    const workbook = XLSX.read(serialized, {
+      type: 'array',
+      cellNF: true,
+      cellStyles: true,
+    });
+    const phaseSheet = workbook.Sheets['Ref Tabla Fases'];
+    const phaseRows = XLSX.utils.sheet_to_json(phaseSheet, { header: 1, raw: true });
+    const phase4RowIndexes = phaseRows
+      .map((row, index) => (row[1] === 4 ? index : -1))
+      .filter((index) => index >= 0);
+    const summaryRows = XLSX.utils.sheet_to_json(workbook.Sheets.Resumen, {
+      header: 1,
+      raw: true,
+    });
+
+    expect(xlsxHarness.filename).toBe('IOCA_STI_V1_SC_2026-08-01.xlsx');
+    expect(workbook.SheetNames).toEqual([
+      'Resumen',
+      'EOL Fase Activa',
+      'EOL Por Descontinuarse',
+      'Bajo Inv Seguridad V1',
+      'Merma Operativa',
+      'Activos',
+      'Sin Maestro',
+      'Sin Origen en Inv',
+      'Datos Completos',
+      'Distribución Tier',
+      'Distribución Categoría',
+      'Análisis Pareto ABC',
+      'Ref Bucket EOL',
+      'Ref Tabla Fases',
+    ]);
+    expect(phase4RowIndexes.map((index) => phaseRows[index])).toEqual([
+      ['SKULLCANDY', 4, 366, 'USA', 0.15, 0.2, 0.8],
+      ['SKULLCANDY', 4, 366, 'CHINA', 0.15, 0.2, 0.8],
+    ]);
+    expect(phase4RowIndexes.map((index) => phaseSheet[`E${index + 1}`].z)).toEqual(['0%', '0%']);
+    expect(phaseSheet['!cols'].map(({ wch }) => wch)).toEqual([14, 8, 11, 9, 18, 14, 14]);
+    expect(summaryRows.find((row) => row[0] === 'Fórmula aplicada')?.[1]).toBeTruthy();
+    expect(summaryRows.find((row) => row[0] === 'Total Unidades')?.[1]).toBe(26);
   });
 });

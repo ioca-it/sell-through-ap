@@ -93,7 +93,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-006 — Dataverse
 
-- Estado: transporte real asegurado con JWT delegado; configuración MSAL/Entra, despliegue y smoke test contra Dataverse real pendientes.
+- Estado: transporte frontend asegurado con JWT delegado y MSAL integrado; despliegue/configuración Vercel y smoke test contra Dataverse real pendientes.
 - Alcance aprobado: Maestro Cliente con búsqueda por código/nombre y contrato `{ customerCode, customerName, country, customerType }`.
 - Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`.
 - Selector de Provider: `src/providers/customerProviderFactory.js`, configurado mediante `VITE_CUSTOMER_SOURCE=local|dataverse`; `local` es el fallback cuando la variable no está definida.
@@ -105,14 +105,15 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Mapping confirmado dentro de Account Customer Gateway: `new_codigocliente` → `customerCode`, `name` → `customerName`, `crbbe_nombrepais` → `country`.
 - API: búsquedas específicas por código/nombre y lectura por código; select/filtro/orden/top se construyen solo en backend.
 - Autenticación: OAuth 2.0 client_credentials contra Entra; scope derivado de `DV_BASE_URL` y token cacheado con margen de seguridad.
-- Seguridad: variables, secretos y access token `DV_*` solo backend. El token delegado de usuario se obtiene mediante `getAccessToken` y se limita al header Bearer del Provider frontend; UI, Repository y Service no conocen JWT, nombres lógicos ni OData.
+- Seguridad: variables, secretos y access token `DV_*` solo backend. MSAL usa `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`; `getAccessToken` intenta `acquireTokenSilent` y deriva a `loginRedirect` cuando falta sesión o se requiere interacción. El token delegado se limita al header Bearer del Provider frontend; UI, Repository y Service no conocen JWT, nombres lógicos ni OData.
+- Cache frontend: administrado por MSAL en `sessionStorage`; no existe almacenamiento manual de access tokens ni client secret de SellThrough-Web.
 - CORS: allowlist desde `ALLOWED_ORIGINS`; wildcard rechazado.
 - Autenticación API: Bearer JWT delegado obligatorio en rutas Customer; firma/JWKS, issuer, audience, expiración, tenant y scope validados con configuración `AUTH_*` separada.
 - Rate limiting: por IP antes de Auth y por identidad después de Auth; 429 con `Retry-After`. Store in-memory temporal e inyectable.
 - Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
-- Hosting: Render temporal, Azure objetivo; ninguno está codificado en módulos Customer/Dataverse.
+- Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún endpoint está codificado en módulos Customer/Dataverse.
 
-Las credenciales, URL real, permisos y endpoints públicos de hosting no se versionan. Los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.
+Los secretos, tokens y permisos no se versionan. Los IDs públicos de la SPA, scope delegado y endpoint temporal se documentan como variables frontend; los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.
 
 ## DS-007 — Business Central
 
@@ -132,7 +133,7 @@ CSV, Excel y la impresión del informe se generan desde resultados en memoria. N
 | Inventarios, compras y ventas | Inventario |
 | Semanas estándar y umbral de merma | JSON local vía Local Provider y Repository |
 | Safety stock y lead times | Configuración de sesión vía Local Provider y Repository |
-| Código, nombre, país y tipo del cliente | Fixtures locales o Customer API → Account Customer Gateway → `accounts`, según `VITE_CUSTOMER_SOURCE`; despliegue real pendiente |
+| Código, nombre, país y tipo del cliente | Fixtures locales o Customer API con Bearer MSAL → Account Customer Gateway → `accounts`, según `VITE_CUSTOMER_SOURCE`; smoke test real pendiente |
 | Bucket y fase | JSON local vía Local Provider/Repository + EOL Engine coordinado por `recordAssembler.js` |
 | Fecha base EOL | Reloj del navegador |
 
@@ -156,4 +157,4 @@ Prompt 016 trasladó el contrato a `masterParser.js` e `inventoryParser.js`, sin
 
 Prompt 019 consolidó en `docs/knowledge/BUSINESS_PARAMETERS.md` la procedencia actual de los parámetros y contratos observables: JSON local, estado React, reloj del navegador y literales de App/Application Service/Domain. El catálogo es la fuente oficial para planificar Configuration Center y una migración posterior mediante Repository/Provider.
 
-Este hito no aprueba una fuente remota nueva ni modifica mappings Dataverse. Los fixtures son exclusivamente locales y ficticios; `datos.json` conserva las fuentes del flujo sell-through y la configuración de cliente/análisis sigue siendo estado de sesión.
+PHASE1-005 no activa una fuente remota nueva ni modifica mappings Dataverse. `VITE_CUSTOMER_SOURCE=local` mantiene fixtures exclusivamente locales y ficticios; MSAL queda preparado para una activación posterior autorizada y `datos.json` conserva las fuentes del flujo sell-through.

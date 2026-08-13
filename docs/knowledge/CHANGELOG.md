@@ -1,5 +1,30 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-13 — PHASE1-005
+
+### Agregado
+
+- `@azure/msal-browser` y módulos desacoplados de configuración, cliente y servicio de sesión.
+- Adquisición silenciosa del token delegado SellThrough-API con fallback a `loginRedirect` sin sesión o ante interacción requerida.
+- Procesamiento de redirect, selección de cuenta activa y cierre de sesión mediante redirect al origen actual.
+- Controles discretos en el header para iniciar sesión, mostrar nombre/cuenta y cerrar sesión.
+- Variables públicas `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID`, `VITE_AUTH_API_SCOPE` y `VITE_API_BASE_URL`; sin client secret frontend.
+
+### Pruebas
+
+- Cobertura de configuración MSAL, scope, `acquireTokenSilent`, fallbacks de login, logout y controles UI.
+- Bearer del Provider y Customer local permanecen cubiertos.
+- Suite frontend: 249/249 aprobadas; build Vite aprobado con 1674 módulos transformados.
+
+### Sin cambios
+
+- `VITE_CUSTOMER_SOURCE=local`; no se activa Dataverse, no se modifica backend y no cambian contratos Customer ni reglas de negocio.
+- Sin deploy, commit, push o ramas.
+
+### Pendiente operativo
+
+- Configurar variables públicas en Vercel y ejecutar smoke test real autorizado con Entra, Render y Dataverse antes de cambiar la fuente Customer.
+
 ## 2026-08-11 — Prompt Astrid Confirmed Changes
 
 ### Implementado
