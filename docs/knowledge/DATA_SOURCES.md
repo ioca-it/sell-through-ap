@@ -93,7 +93,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-006 — Dataverse
 
-- Estado: transporte frontend asegurado con JWT delegado y MSAL integrado; despliegue/configuración Vercel y smoke test contra Dataverse real pendientes.
+- Estado: transporte frontend asegurado con JWT delegado y MSAL integrado; Phase1-007 prepara un probe protegido que se detiene antes de Dataverse. Render respondió `/health=200` y rechazó el probe sin Bearer con `401 / AUTHENTICATION_REQUIRED`; la ejecución autenticada real desde Vercel y cualquier smoke posterior contra Dataverse permanecen pendientes.
 - Alcance aprobado: Maestro Cliente con búsqueda por código/nombre y contrato `{ customerCode, customerName, country, customerType }`.
 - Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`.
 - Selector de Provider: `src/providers/customerProviderFactory.js`, configurado mediante `VITE_CUSTOMER_SOURCE=local|dataverse`; `local` es el fallback cuando la variable no está definida.
@@ -111,6 +111,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Autenticación API: Bearer JWT delegado obligatorio en rutas Customer; firma/JWKS, issuer, audience, expiración, tenant y scope validados con configuración `AUTH_*` separada.
 - Rate limiting: por IP antes de Auth y por identidad después de Auth; 429 con `Retry-After`. Store in-memory temporal e inyectable.
 - Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
+- Probe JWT Phase1-007: `GET /api/customers/search?type=code` sin `q`; después de autenticar debe responder `400 / INVALID_CUSTOMER_REQUEST` antes de Customer Gateway. Este resultado valida la frontera usuario→API, no Dataverse.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún endpoint está codificado en módulos Customer/Dataverse.
 
 Los secretos, tokens y permisos no se versionan. Los IDs públicos de la SPA, scope delegado y endpoint temporal se documentan como variables frontend; los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.
@@ -133,7 +134,7 @@ CSV, Excel y la impresión del informe se generan desde resultados en memoria. N
 | Inventarios, compras y ventas | Inventario |
 | Semanas estándar y umbral de merma | JSON local vía Local Provider y Repository |
 | Safety stock y lead times | Configuración de sesión vía Local Provider y Repository |
-| Código, nombre, país y tipo del cliente | Fixtures locales o Customer API con Bearer MSAL → Account Customer Gateway → `accounts`, según `VITE_CUSTOMER_SOURCE`; smoke test real pendiente |
+| Código, nombre, país y tipo del cliente | Fixtures locales o Customer API con Bearer MSAL → Account Customer Gateway → `accounts`, según `VITE_CUSTOMER_SOURCE`; Phase1-007 no cambia la fuente y su probe JWT no consulta Dataverse |
 | Bucket y fase | JSON local vía Local Provider/Repository + EOL Engine coordinado por `recordAssembler.js` |
 | Fecha base EOL | Reloj del navegador |
 
@@ -158,3 +159,8 @@ Prompt 016 trasladó el contrato a `masterParser.js` e `inventoryParser.js`, sin
 Prompt 019 consolidó en `docs/knowledge/BUSINESS_PARAMETERS.md` la procedencia actual de los parámetros y contratos observables: JSON local, estado React, reloj del navegador y literales de App/Application Service/Domain. El catálogo es la fuente oficial para planificar Configuration Center y una migración posterior mediante Repository/Provider.
 
 PHASE1-005 no activa una fuente remota nueva ni modifica mappings Dataverse. `VITE_CUSTOMER_SOURCE=local` mantiene fixtures exclusivamente locales y ficticios; MSAL queda preparado para una activación posterior autorizada y `datos.json` conserva las fuentes del flujo sell-through.
+
+PHASE1-007 tampoco activa una fuente remota. El arnés temporal realiza sólo un
+request protegido explícito cuando el query parameter de control está presente;
+la ruta elegida falla por validación antes del gateway y no constituye una
+lectura Customer ni una validación de Dataverse.

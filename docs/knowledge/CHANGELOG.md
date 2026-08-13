@@ -1,5 +1,28 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-13 — PHASE1-007
+
+### Agregado
+
+- Arnés temporal frontend activado sólo por `?phase1-007-smoke=1`, con estados separados para sesión MSAL, adquisición del access token, validación JWT de Render y acceso Dataverse.
+- Probe sobre `GET /api/customers/search?type=code` sin `q`, diseñado para obtener `400 / INVALID_CUSTOMER_REQUEST` después de JWT y antes de Customer Gateway.
+- Cinco pruebas dedicadas que verifican el Bearer, la sanitización del resultado y la separación de fallos por etapa.
+- Suite frontend: 255/255 aprobadas; build Vite aprobado con 1675 módulos transformados.
+- Suite backend adicional: 41/41 aprobadas; syntax check aprobado sin modificar `server/`.
+
+### Validación externa controlada
+
+- `/health` en Render respondió `200`.
+- La ruta protegida sin Bearer respondió `401 / AUTHENTICATION_REQUIRED`.
+- La ejecución con usuario/token real desde Vercel queda pendiente; no se realizó deploy ni se accedió a Dataverse.
+
+### Sin cambios
+
+- `VITE_CUSTOMER_SOURCE=local`; no se activa el Provider Dataverse.
+- Sin cambios en backend, infraestructura, UI visible, contratos Customer, AP01, reglas, fórmulas, defaults o fuentes sell-through.
+- Sin client secret frontend, persistencia manual o registro de tokens.
+- Sin deploy, commit, push, merge, tag o cambio de rama.
+
 ## 2026-08-13 — PHASE1-005
 
 ### Agregado
