@@ -1,5 +1,20 @@
 # Roadmap aprobado
 
+## Phase1-026 — Correct Dataverse Customer Filters
+
+La metadata productiva confirma `customertypecode` y
+`crbbe_estadodelcliente` como LogicalNames de las reglas empresariales 3 y 4;
+`statecode eq 0` permanece confirmado. Account Customer Gateway aplica el
+filtro definitivo `customertypecode eq 3 and statecode eq 0 and
+crbbe_estadodelcliente eq 4` en búsqueda por código, búsqueda por nombre y
+lectura exacta por código.
+
+Phase1-022 y Phase1-024 se retiran por completo después de cumplir su propósito;
+Phase1-020 permanece disponible para observabilidad segura. El `$select`,
+`new_tipocliente -> customerType`, contratos, autenticación y variables no
+cambian. `VITE_CUSTOMER_SOURCE=local` continúa vigente y cualquier checkpoint o
+despliegue requiere autorización independiente.
+
 ## Phase1-016 — Map Dataverse Customer Type
 
 El contrato Customer de Dataverse incorpora el mapping confirmado

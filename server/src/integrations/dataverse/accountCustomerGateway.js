@@ -1,7 +1,4 @@
 import { quoteODataString } from './odata.js';
-import { createTemporaryAccountCustomerMetadataDiagnostic } from './accountCustomerMetadataDiagnostic.js';
-import { createTemporaryAccountCustomerQueryDiagnostic } from './accountCustomerQueryDiagnostic.js';
-import { isInvalidFieldOrFilterError } from './dataverseClient.js';
 
 const ACCOUNT_SOURCE = Object.freeze({
   entitySet: 'accounts',
@@ -16,9 +13,11 @@ const ACCOUNT_SOURCE = Object.freeze({
 export const CUSTOMER_SEARCH_LIMIT = 20;
 
 const ACCOUNT_CUSTOMER_ELIGIBILITY = Object.freeze([
-  Object.freeze({ field: 'customertype', value: 3 }),
+  // Dataverse LogicalNames are metadata-confirmed;
+  // 3/0/4 are Customer Master business rules.
+  Object.freeze({ field: 'customertypecode', value: 3 }),
   Object.freeze({ field: 'statecode', value: 0 }),
-  Object.freeze({ field: 'crbbe_estadocliente', value: 4 }),
+  Object.freeze({ field: 'crbbe_estadodelcliente', value: 4 }),
 ]);
 
 const ACCOUNT_CUSTOMER_BASE_FILTER = ACCOUNT_CUSTOMER_ELIGIBILITY
@@ -44,81 +43,24 @@ export const mapAccountToCustomer = (account = {}) => Object.freeze({
     : String(account[ACCOUNT_SOURCE.fields.customerType]).trim(),
 });
 
-export const createAccountCustomerGateway = ({
-  dataverseClient,
-  diagnosticLogger,
-} = {}) => {
+export const createAccountCustomerGateway = ({ dataverseClient } = {}) => {
   if (!dataverseClient || typeof dataverseClient.retrieveMultiple !== 'function') {
     throw new Error('AccountCustomerGateway: Dataverse Client inválido.');
   }
-  if (diagnosticLogger !== undefined && typeof diagnosticLogger !== 'function') {
-    throw new Error('AccountCustomerGateway: Diagnostic Logger inválido.');
-  }
 
   const select = Object.freeze(Object.values(ACCOUNT_SOURCE.fields));
-  const queryDiagnostic = typeof dataverseClient.probeRetrieveMultiple === 'function'
-    ? createTemporaryAccountCustomerQueryDiagnostic({
-      dataverseClient,
-      diagnosticLogger,
-    })
-    : null;
-  const metadataDiagnostic = typeof dataverseClient.retrieveEntityAttributeMetadata === 'function'
-    && typeof dataverseClient.retrieveRequiredOptionMetadata === 'function'
-    ? createTemporaryAccountCustomerMetadataDiagnostic({
-      dataverseClient,
-      diagnosticLogger,
-    })
-    : null;
-
-  const retrieveCustomerRows = async (query, diagnosticShape) => {
-    try {
-      return await dataverseClient.retrieveMultiple(query);
-    } catch (error) {
-      if (queryDiagnostic && isInvalidFieldOrFilterError(error)) {
-        try {
-          await queryDiagnostic.run({
-            entitySet: ACCOUNT_SOURCE.entitySet,
-            selectFields: select,
-            eligibility: ACCOUNT_CUSTOMER_ELIGIBILITY,
-            ...diagnosticShape,
-          });
-        } catch {
-          // The temporary diagnosis must never replace the original public failure.
-        }
-      }
-      if (metadataDiagnostic && isInvalidFieldOrFilterError(error)) {
-        try {
-          await metadataDiagnostic.run();
-        } catch {
-          // The temporary metadata lookup must never replace the public failure.
-        }
-      }
-      throw error;
-    }
-  };
 
   const search = async (normalizedField, query) => {
     const sourceField = ACCOUNT_SOURCE.fields[normalizedField];
-    const rows = await retrieveCustomerRows(
-      {
-        entitySet: ACCOUNT_SOURCE.entitySet,
-        select,
-        filter: withCustomerEligibility(
-          `contains(${sourceField},${quoteODataString(query)})`,
-        ),
-        orderBy: `${sourceField} asc`,
-        top: CUSTOMER_SEARCH_LIMIT,
-      },
-      {
-        operation: normalizedField === 'customerCode'
-          ? 'search_by_code'
-          : 'search_by_name',
-        predicateType: 'contains',
-        predicateField: sourceField,
-        orderByField: sourceField,
-        top: CUSTOMER_SEARCH_LIMIT,
-      },
-    );
+    const rows = await dataverseClient.retrieveMultiple({
+      entitySet: ACCOUNT_SOURCE.entitySet,
+      select,
+      filter: withCustomerEligibility(
+        `contains(${sourceField},${quoteODataString(query)})`,
+      ),
+      orderBy: `${sourceField} asc`,
+      top: CUSTOMER_SEARCH_LIMIT,
+    });
     return rows.slice(0, CUSTOMER_SEARCH_LIMIT).map(mapAccountToCustomer);
   };
 
@@ -132,24 +74,15 @@ export const createAccountCustomerGateway = ({
     },
 
     async getByCode(customerCode) {
-      const rows = await retrieveCustomerRows(
-        {
-          entitySet: ACCOUNT_SOURCE.entitySet,
-          select,
-          filter: withCustomerEligibility(
-            `${ACCOUNT_SOURCE.fields.customerCode} eq ${quoteODataString(customerCode)}`,
-          ),
-          orderBy: `${ACCOUNT_SOURCE.fields.customerName} asc`,
-          top: 1,
-        },
-        {
-          operation: 'get_by_code',
-          predicateType: 'equals',
-          predicateField: ACCOUNT_SOURCE.fields.customerCode,
-          orderByField: ACCOUNT_SOURCE.fields.customerName,
-          top: 1,
-        },
-      );
+      const rows = await dataverseClient.retrieveMultiple({
+        entitySet: ACCOUNT_SOURCE.entitySet,
+        select,
+        filter: withCustomerEligibility(
+          `${ACCOUNT_SOURCE.fields.customerCode} eq ${quoteODataString(customerCode)}`,
+        ),
+        orderBy: `${ACCOUNT_SOURCE.fields.customerName} asc`,
+        top: 1,
+      });
       return rows.length === 0 ? null : mapAccountToCustomer(rows[0]);
     },
   });

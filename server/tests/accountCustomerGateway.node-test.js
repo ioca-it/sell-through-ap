@@ -5,11 +5,9 @@ import {
   CUSTOMER_SEARCH_LIMIT,
   mapAccountToCustomer,
 } from '../src/integrations/dataverse/accountCustomerGateway.js';
-import { DataverseRequestError } from '../src/integrations/dataverse/dataverseClient.js';
-import { DATAVERSE_DIAGNOSTIC_IDS } from '../src/integrations/dataverse/dataverseDiagnostics.js';
 import { escapeODataString } from '../src/integrations/dataverse/odata.js';
 
-const CUSTOMER_BASE_FILTER = 'customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4';
+const CUSTOMER_BASE_FILTER = 'customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4';
 
 const rawAccount = {
   new_codigocliente: ' C-001 ',
@@ -126,89 +124,18 @@ test('lee un cliente por código exacto y devuelve null si no existe', async () 
   assert.equal(await missing.gateway.getByCode('NO-EXISTE'), null);
 });
 
-test('activa una sola secuencia backend ante campo/filtro inválido y preserva el error', async () => {
-  const events = [];
-  let probeCount = 0;
-  const originalError = new DataverseRequestError(
-    undefined,
-    DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER,
-  );
-  const gateway = createAccountCustomerGateway({
-    dataverseClient: {
-      retrieveMultiple: async () => { throw originalError; },
-      probeRetrieveMultiple: async () => {
-        probeCount += 1;
-        return true;
-      },
-    },
-    diagnosticLogger: (event) => events.push(event),
-  });
+test('impide reintroducir los nombres lógicos de filtro inválidos', async () => {
+  const { gateway, calls } = createGateway([]);
 
-  await assert.rejects(gateway.searchByCode('sensitive-customer-value'), (error) => (
-    error === originalError
-      && error.code === 'DATAVERSE_REQUEST_FAILED'
-      && error.statusCode === 502
-  ));
-  assert.equal(probeCount, 15);
-  assert.equal(events.length, 15);
+  await gateway.searchByCode('C-001');
+  await gateway.searchByName('Cliente Uno');
+  await gateway.getByCode('C-001');
 
-  await assert.rejects(gateway.searchByCode('another-sensitive-value'));
-  assert.equal(probeCount, 15);
-  assert.equal(events.length, 15);
-  assert.doesNotMatch(
-    JSON.stringify(events),
-    /sensitive-customer-value|another-sensitive-value|\$filter|contains\(/,
-  );
-});
-
-test('activa metadata backend una sola vez sin cambiar filtros ni el error original', async () => {
-  const events = [];
-  const queries = [];
-  let metadataCalls = 0;
-  const originalError = new DataverseRequestError(
-    undefined,
-    DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER,
-  );
-  const gateway = createAccountCustomerGateway({
-    dataverseClient: {
-      retrieveMultiple: async (query) => {
-        queries.push(query);
-        throw originalError;
-      },
-      retrieveEntityAttributeMetadata: async () => {
-        metadataCalls += 1;
-        return [{
-          logicalName: 'customertypecode',
-          schemaName: 'CustomerTypeCode',
-          attributeType: 'Picklist',
-        }];
-      },
-      retrieveRequiredOptionMetadata: async () => ({
-        present: true,
-        label: 'Customer',
-      }),
-    },
-    diagnosticLogger: (event) => events.push(event),
-  });
-
-  await assert.rejects(gateway.searchByCode('first-sensitive-value'), (error) => (
-    error === originalError
-  ));
-  await assert.rejects(gateway.searchByCode('second-sensitive-value'), (error) => (
-    error === originalError
-  ));
-
-  assert.equal(metadataCalls, 1);
-  assert.equal(
-    queries[0].filter,
-    `contains(new_codigocliente,'first-sensitive-value') and ${CUSTOMER_BASE_FILTER}`,
-  );
-  assert.deepEqual(events.map(({ rule, result }) => ({ rule, result })), [
-    { rule: 'customer_classification_eq_3', result: 'CANDIDATE' },
-    { rule: 'customer_status_eq_4', result: 'NO_CANDIDATES' },
-  ]);
-  assert.doesNotMatch(
-    JSON.stringify(events),
-    /first-sensitive-value|second-sensitive-value|contains\(|\$filter|Authorization|Bearer/,
-  );
+  for (const { filter } of calls) {
+    assert.doesNotMatch(filter, /\bcustomertype\s+eq\b/);
+    assert.doesNotMatch(filter, /\bcrbbe_estadocliente\s+eq\b/);
+    assert.match(filter, /\bcustomertypecode eq 3\b/);
+    assert.match(filter, /\bstatecode eq 0\b/);
+    assert.match(filter, /\bcrbbe_estadodelcliente eq 4\b/);
+  }
 });

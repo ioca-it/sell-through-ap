@@ -1,5 +1,39 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-14 — PHASE1-026
+
+### Corregido
+
+- Account Customer Gateway usa los LogicalNames productivos confirmados
+  `customertypecode`, `statecode` y `crbbe_estadodelcliente` con los valores
+  empresariales 3/0/4.
+- Búsqueda por código, búsqueda por nombre y lectura exacta por código combinan
+  su predicado específico mediante AND con el filtro definitivo.
+- `$select` y mapping conservan exclusivamente `new_tipocliente -> customerType`,
+  con fallback `''` para `null` o `undefined`.
+
+### Retirado
+
+- Diagnóstico de probes Phase1-022, sus hooks, estado one-shot y pruebas.
+- Diagnóstico de metadata Phase1-024, sus métodos de Dataverse Client, hooks,
+  estado one-shot y pruebas.
+- No quedan referencias runtime a `PHASE1_022_CUSTOMER_QUERY_PROBE` ni
+  `PHASE1_024_ACCOUNT_ATTRIBUTE_METADATA`.
+
+### Preservado
+
+- Diagnóstico seguro Phase1-020, incluido
+  `DATAVERSE_INVALID_FIELD_OR_FILTER`, sin cambios en el contrato HTTP público.
+- Contrato Customer, MSAL, JWT, Entra, Render, Vercel, variables y
+  `VITE_CUSTOMER_SOURCE=local`.
+
+### Validación
+
+- Backend relevante: 13/13; backend completo: 48/48.
+- Frontend completo: 282/282 en 24 archivos.
+- Backend syntax check y frontend build aprobados; Vite transformó 1675 módulos.
+- Sin consultas adicionales a producción, commit, push o deploy.
+
 ## 2026-08-14 — PHASE1-012
 
 ### Preparado

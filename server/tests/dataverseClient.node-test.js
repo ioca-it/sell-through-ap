@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   createDataverseClient,
   DataverseRequestError,
-  isInvalidFieldOrFilterError,
 } from '../src/integrations/dataverse/dataverseClient.js';
 
 test('centraliza token, headers OData y parámetros internos', async () => {
@@ -77,11 +76,12 @@ test('cancela por timeout y devuelve un error Dataverse normalizado', async () =
   );
 });
 
-test('conserva internamente la categoría inválida sin ampliar el error público', async () => {
+test('emite la categoría inválida sanitizada sin ampliar el error público', async () => {
+  const events = [];
   const client = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',
     tokenProvider: { getToken: async () => 'access-token' },
-    diagnosticLogger: () => {},
+    diagnosticLogger: (event) => events.push(event),
     fetchImpl: async () => ({
       ok: false,
       status: 400,
@@ -96,150 +96,11 @@ test('conserva internamente la categoría inválida sin ampliar el error públic
 
   await assert.rejects(
     client.retrieveMultiple({ entitySet: 'accounts' }),
-    (error) => isInvalidFieldOrFilterError(error)
+    (error) => error instanceof DataverseRequestError
       && error.code === 'DATAVERSE_REQUEST_FAILED'
       && Object.keys(error).every((key) => key !== 'diagnosticId'),
   );
-});
-
-test('los probes temporales devuelven PASS/FAIL sin leer payloads ni emitir diagnósticos', async () => {
-  const events = [];
-  let bodyRead = false;
-  let bodyCancelCount = 0;
-  let requestCount = 0;
-  const client = createDataverseClient({
-    baseUrl: 'https://organization.crm.dynamics.com',
-    tokenProvider: { getToken: async () => 'access-token-sensitive' },
-    diagnosticLogger: (event) => events.push(event),
-    fetchImpl: async () => {
-      requestCount += 1;
-      if (requestCount === 1) {
-        return {
-          ok: false,
-          status: 400,
-          body: { cancel: async () => { bodyCancelCount += 1; } },
-          json: async () => {
-            bodyRead = true;
-            return { error: { message: 'sensitive upstream payload' } };
-          },
-        };
-      }
-      return {
-        ok: true,
-        status: 200,
-        body: { cancel: async () => { bodyCancelCount += 1; } },
-        json: async () => {
-          bodyRead = true;
-          return { value: [{ name: 'Sensitive Customer' }] };
-        },
-      };
-    },
-  });
-
-  assert.equal(await client.probeRetrieveMultiple({ entitySet: 'accounts', top: 1 }), false);
-  assert.equal(await client.probeRetrieveMultiple({ entitySet: 'accounts', top: 1 }), true);
-  assert.equal(bodyRead, false);
-  assert.equal(bodyCancelCount, 2);
-  assert.deepEqual(events, []);
-});
-
-test('consulta metadata Account con select técnico fijo y sin exponer el payload completo', async () => {
-  let request;
-  const client = createDataverseClient({
-    baseUrl: 'https://organization.crm.dynamics.com',
-    tokenProvider: { getToken: async () => 'metadata-access-token' },
-    fetchImpl: async (url, options) => {
-      request = { url, options };
-      return {
-        ok: true,
-        json: async () => ({
-          value: [{
-            LogicalName: 'customertypecode',
-            SchemaName: 'CustomerTypeCode',
-            AttributeType: 'Picklist',
-            DisplayName: { sensitive: 'must-not-leave-client' },
-          }],
-        }),
-      };
-    },
-  });
-
-  assert.deepEqual(await client.retrieveEntityAttributeMetadata({
-    entityLogicalName: 'account',
-  }), [{
-    logicalName: 'customertypecode',
-    schemaName: 'CustomerTypeCode',
-    attributeType: 'Picklist',
-  }]);
-  assert.equal(
-    request.url.pathname,
-    "/api/data/v9.2/EntityDefinitions(LogicalName='account')/Attributes",
-  );
-  assert.equal(
-    request.url.searchParams.get('$select'),
-    'LogicalName,SchemaName,AttributeType',
-  );
-  assert.equal(request.options.headers.Authorization, 'Bearer metadata-access-token');
-});
-
-test('reduce OptionSet al valor requerido y su etiqueta localizada', async () => {
-  let requestUrl;
-  const client = createDataverseClient({
-    baseUrl: 'https://organization.crm.dynamics.com',
-    tokenProvider: { getToken: async () => 'metadata-access-token' },
-    fetchImpl: async (url) => {
-      requestUrl = url;
-      return {
-        ok: true,
-        json: async () => ({
-          LogicalName: 'customertypecode',
-          OptionSet: {
-            Options: [
-              { Value: 2, Label: { UserLocalizedLabel: { Label: 'Consultant' } } },
-              { Value: 3, Label: { UserLocalizedLabel: { Label: 'Customer' } } },
-            ],
-          },
-          unrelatedMetadata: 'must-not-leave-client',
-        }),
-      };
-    },
-  });
-
-  assert.deepEqual(await client.retrieveRequiredOptionMetadata({
-    entityLogicalName: 'account',
-    attributeLogicalName: 'customertypecode',
-    attributeType: 'Picklist',
-    optionValue: 3,
-  }), { present: true, label: 'Customer' });
-  assert.match(
-    requestUrl.pathname,
-    /PicklistAttributeMetadata$/,
-  );
-  assert.equal(requestUrl.searchParams.get('$select'), 'LogicalName');
-  assert.equal(
-    requestUrl.searchParams.get('$expand'),
-    'OptionSet($select=Options),GlobalOptionSet($select=Options)',
-  );
-});
-
-test('rechaza identificadores y tipos arbitrarios en consultas temporales de metadata', async () => {
-  const client = createDataverseClient({
-    baseUrl: 'https://organization.crm.dynamics.com',
-    tokenProvider: { getToken: async () => 'metadata-access-token' },
-    fetchImpl: async () => ({ ok: true, json: async () => ({ value: [] }) }),
-  });
-
-  await assert.rejects(
-    client.retrieveEntityAttributeMetadata({ entityLogicalName: "account')/Secrets" }),
-    /metadata inválido/,
-  );
-  await assert.rejects(
-    client.retrieveRequiredOptionMetadata({
-      entityLogicalName: 'account',
-      attributeLogicalName: 'customertypecode',
-      attributeType: 'String',
-      optionValue: 3,
-    }),
-    /OptionSet de metadata inválida/,
-  );
+  assert.equal(events.length, 1);
+  assert.equal(events[0].diagnosticId, 'DATAVERSE_INVALID_FIELD_OR_FILTER');
+  assert.equal(events[0].upstreamStatus, 400);
 });
