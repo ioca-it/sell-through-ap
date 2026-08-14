@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-PHASE1-012 deja la UI de Configuración preparada para activar el Customer Provider Dataverse después de revisión. Código y nombre usan la cadena Provider→Repository→Application Service, una única entidad seleccionada sincroniza los cuatro campos Customer, y cero resultados, sesión ausente, 401/403/429/5xx, red, timeout, deduplicación y respuestas obsoletas quedan controlados y cubiertos. No se realizó activación ni deploy: `VITE_CUSTOMER_SOURCE=local` permanece sin cambios.
+PHASE1-016 completa el contrato Customer real desde `accounts`: Account Customer Gateway selecciona `new_tipocliente` y lo normaliza exclusivamente como `customerType`, con fallback `''` para `null` o `undefined`. Las búsquedas por código/nombre y la lectura exacta conservan los filtros de elegibilidad Phase1-015, orden, límites y escape OData. No se modificaron UI, autenticación ni despliegue; `VITE_CUSTOMER_SOURCE=local` permanece sin cambios.
 
 ## Último prompt aprobado
 
-PHASE1-012 — Activate Dataverse Customer Provider in UI.
+PHASE1-016 — Map Dataverse Customer Type.
 
 ## Última auditoría aprobada
 
@@ -31,7 +31,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
-- Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name` y `crbbe_nombrepais`.
+- Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais` y `new_tipocliente`; normaliza los cuatro campos Customer y aplica de forma centralizada la elegibilidad `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4` a búsqueda por código/nombre y lectura exacta.
 - Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse, con diagnósticos internos normalizados y seguros por etapa de rechazo.
 - Rate Limiter: límites por IP y `oid/sub`, store in-memory inyectable y respuesta 429/Retry-After.
 - Health endpoint: `/health` anónimo y sin dependencias externas.
@@ -46,7 +46,6 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Render se mantiene como backend transitorio; la migración futura a Azure permanece pendiente.
 - Store distribuido de rate limiting: obligatorio antes de múltiples instancias o escala horizontal en Azure.
 - DataverseProvider para Maestro Producto y cualquier otra entidad: no implementados.
-- Mapping/nombre lógico real de `customerType`: pendiente de confirmación; el contrato usa fallback vacío y no selecciona una columna Dataverse nueva.
 - Redefinición de Sin origen, buckets/fases EOL, reposición para productos nuevos y fórmulas por Tipo de Cliente: no definidas y no implementadas.
 - Configuration Center completo: pendiente migrar parámetros adicionales; el MVP visual y local está habilitado solo para el schema actual.
 
@@ -106,14 +105,15 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Revisar Phase1-012 y, sólo mediante autorización posterior, cambiar `VITE_CUSTOMER_SOURCE=dataverse` en Vercel para validar interactivamente ambos combobox y los estados de cero/error. `customerType` continúa vacío hasta confirmar su mapping; Render permanece transitorio y Azure sigue como destino futuro.
+Revisar Phase1-016 y, sólo mediante autorización posterior, cambiar `VITE_CUSTOMER_SOURCE=dataverse` en Vercel para validar interactivamente ambos combobox, `customerType` y los estados de cero/error con el filtro de elegibilidad vigente. Render permanece transitorio y Azure sigue como destino futuro.
 
 ## Decisiones congeladas
 
 - Preservar comportamiento, fórmulas, defaults, ordenamientos y contratos públicos durante refactorizaciones.
 - `BUSINESS_PARAMETERS.md` es el catálogo oficial del Configuration Center.
 - `CONFIGURATION_SCHEMA` es la fuente única de IDs, keys y metadatos migrados; defaults se declaran una sola vez.
-- Repository/Provider son la frontera obligatoria de fuentes; Customer es el único contrato Dataverse normalizado aprobado. `customerType` pertenece al contrato lógico, pero su nombre físico no está confirmado y no se agregó al gateway backend.
+- Repository/Provider son la frontera obligatoria de fuentes; Customer es el único contrato Dataverse normalizado aprobado. Account Customer Gateway encapsula `new_tipocliente` y lo expone únicamente como `customerType`, con fallback vacío para `null` o `undefined`.
+- Toda consulta Customer a `accounts` agrega en Account Customer Gateway el filtro fijo `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4`; esos campos son criterios de elegibilidad y no amplían el mapping ni el contrato Customer.
 - La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.
 - Las búsquedas Customer de UI invalidan toda selección previa al editar, deduplican el mismo request pendiente y sólo permiten que el identificador de request más reciente publique resultados.
 - Los errores Customer públicos son mensajes estáticos por categoría; detalles originales de MSAL, red o API nunca llegan a la UI.
@@ -152,8 +152,8 @@ Revisar Phase1-012 y, sólo mediante autorización posterior, cambiar `VITE_CUST
 
 ## Cantidad de pruebas
 
-Frontend: 282/282 aprobadas en 24 archivos. Backend: 42/42 aprobadas.
+Frontend: 282/282 aprobadas en 24 archivos. Backend: 43/43 aprobadas.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado en el último hito backend. `git diff --check` aprobado. Última validación frontend: PHASE1-012, 2026-08-14.
+Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-016, 2026-08-14.

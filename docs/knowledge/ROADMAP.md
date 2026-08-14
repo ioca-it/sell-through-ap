@@ -1,5 +1,16 @@
 # Roadmap aprobado
 
+## Phase1-016 — Map Dataverse Customer Type
+
+El contrato Customer de Dataverse incorpora el mapping confirmado
+`new_tipocliente` → `customerType` exclusivamente en Account Customer Gateway.
+Las búsquedas por código/nombre y la lectura exacta seleccionan el nuevo campo,
+normalizan `null` o `undefined` a `''` y preservan los filtros de elegibilidad
+Phase1-015. UI, autenticación y despliegue permanecen sin cambios.
+
+La activación de `VITE_CUSTOMER_SOURCE=dataverse` y la validación interactiva
+real de `customerType` continúan sujetas a revisión y autorización posteriores.
+
 ## Phase1-012 — Activate Dataverse Customer Provider in UI
 
 La UI de Configuración queda preparada para usar Dataverse mediante la cadena

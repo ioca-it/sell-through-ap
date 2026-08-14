@@ -6,10 +6,21 @@ const ACCOUNT_SOURCE = Object.freeze({
     customerCode: 'new_codigocliente',
     customerName: 'name',
     country: 'crbbe_nombrepais',
+    customerType: 'new_tipocliente',
   }),
 });
 
 export const CUSTOMER_SEARCH_LIMIT = 20;
+
+const ACCOUNT_CUSTOMER_BASE_FILTER = [
+  'customertype eq 3',
+  'statecode eq 0',
+  'crbbe_estadocliente eq 4',
+].join(' and ');
+
+const withCustomerEligibility = (filter) => (
+  `${filter} and ${ACCOUNT_CUSTOMER_BASE_FILTER}`
+);
 
 export const mapAccountToCustomer = (account = {}) => Object.freeze({
   customerCode: account[ACCOUNT_SOURCE.fields.customerCode] == null
@@ -21,6 +32,9 @@ export const mapAccountToCustomer = (account = {}) => Object.freeze({
   country: account[ACCOUNT_SOURCE.fields.country] == null
     ? ''
     : String(account[ACCOUNT_SOURCE.fields.country]).trim(),
+  customerType: account[ACCOUNT_SOURCE.fields.customerType] == null
+    ? ''
+    : String(account[ACCOUNT_SOURCE.fields.customerType]).trim(),
 });
 
 export const createAccountCustomerGateway = ({ dataverseClient } = {}) => {
@@ -35,7 +49,9 @@ export const createAccountCustomerGateway = ({ dataverseClient } = {}) => {
     const rows = await dataverseClient.retrieveMultiple({
       entitySet: ACCOUNT_SOURCE.entitySet,
       select,
-      filter: `contains(${sourceField},${quoteODataString(query)})`,
+      filter: withCustomerEligibility(
+        `contains(${sourceField},${quoteODataString(query)})`,
+      ),
       orderBy: `${sourceField} asc`,
       top: CUSTOMER_SEARCH_LIMIT,
     });
@@ -55,7 +71,9 @@ export const createAccountCustomerGateway = ({ dataverseClient } = {}) => {
       const rows = await dataverseClient.retrieveMultiple({
         entitySet: ACCOUNT_SOURCE.entitySet,
         select,
-        filter: `${ACCOUNT_SOURCE.fields.customerCode} eq ${quoteODataString(customerCode)}`,
+        filter: withCustomerEligibility(
+          `${ACCOUNT_SOURCE.fields.customerCode} eq ${quoteODataString(customerCode)}`,
+        ),
         orderBy: `${ACCOUNT_SOURCE.fields.customerName} asc`,
         top: 1,
       });

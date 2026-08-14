@@ -78,11 +78,16 @@ test('rechaza OData y parámetros arbitrarios enviados por frontend', async () =
   });
 
   await withServer(app, async (baseUrl) => {
-    const response = await fetch(
-      `${baseUrl}/api/customers/search?type=code&q=C&%24select=client_secret`,
-    );
-    assert.equal(response.status, 400);
-    assert.equal((await response.json()).error.code, 'INVALID_CUSTOMER_REQUEST');
+    for (const parameter of [
+      '%24select=client_secret',
+      '%24filter=customertype%20eq%20999',
+    ]) {
+      const response = await fetch(
+        `${baseUrl}/api/customers/search?type=code&q=C&${parameter}`,
+      );
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error.code, 'INVALID_CUSTOMER_REQUEST');
+    }
   });
 });
 

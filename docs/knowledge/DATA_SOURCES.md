@@ -93,7 +93,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-006 — Dataverse
 
-- Estado: conectividad real end-to-end validada por Phase1-011 y UI preparada por Phase1-012 para búsquedas por código/nombre, selección única, cero resultados, sesión y errores controlados. La activación en Vercel sigue pendiente de revisión; `VITE_CUSTOMER_SOURCE=local` permanece vigente y el Provider Dataverse no es todavía la fuente efectiva de UI.
+- Estado: conectividad real end-to-end validada por Phase1-011, UI preparada por Phase1-012, consultas de `accounts` restringidas por Phase1-015 a clientes elegibles y mapping `customerType` completado por Phase1-016. La activación en Vercel sigue pendiente de revisión; `VITE_CUSTOMER_SOURCE=local` permanece vigente y el Provider Dataverse no es todavía la fuente efectiva de UI.
 - Alcance aprobado: Maestro Cliente con búsqueda por código/nombre y contrato `{ customerCode, customerName, country, customerType }`.
 - Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`; adjunta Bearer MSAL, aplica timeout de 10 segundos y clasifica de forma sanitizada sesión ausente, 401, 403, 429, 5xx, red y respuesta inválida.
 - Selector de Provider: `src/providers/customerProviderFactory.js`, configurado mediante `VITE_CUSTOMER_SOURCE=local|dataverse`; `local` es el fallback cuando la variable no está definida.
@@ -102,8 +102,8 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Alternativa temporal: `localCustomerProvider.js`, con cinco clientes claramente ficticios desde `customerFixtures.js` e inyección opcional de otros fixtures.
 - Backend: `server/`, portable y sin dependencias de Render/Azure.
 - Entity Set confirmado: `accounts`.
-- Mapping confirmado dentro de Account Customer Gateway: `new_codigocliente` → `customerCode`, `name` → `customerName`, `crbbe_nombrepais` → `country`.
-- API: búsquedas específicas por código/nombre y lectura por código; select/filtro/orden/top se construyen solo en backend.
+- Mapping confirmado dentro de Account Customer Gateway: `new_codigocliente` → `customerCode`, `name` → `customerName`, `crbbe_nombrepais` → `country`, `new_tipocliente` → `customerType`.
+- API: búsquedas específicas por código/nombre y lectura por código; select/filtro/orden/top se construyen solo en backend. Account Customer Gateway agrega siempre `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4` al filtro de búsqueda o lectura exacta, sin exponer esos criterios como parámetros frontend.
 - Autenticación: OAuth 2.0 client_credentials contra Entra; scope derivado de `DV_BASE_URL` y token cacheado con margen de seguridad.
 - Seguridad: variables, secretos y access token `DV_*` solo backend. MSAL usa `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`; `getAccessToken` intenta `acquireTokenSilent` y deriva a `loginRedirect` cuando falta sesión o se requiere interacción. El token delegado se limita al header Bearer del Provider frontend; UI, Repository y Service no conocen JWT, nombres lógicos ni OData.
 - Cache frontend: administrado por MSAL en `sessionStorage`; no existe almacenamiento manual de access tokens ni client secret de SellThrough-Web.
@@ -184,3 +184,16 @@ resultados, sesión ausente, categorías HTTP, red, timeout, deduplicación y
 respuestas obsoletas. La UI sigue consumiendo fixtures porque
 `VITE_CUSTOMER_SOURCE=local`; la validación interactiva real desde ambos
 combobox requiere una activación posterior en Vercel.
+
+PHASE1-015 centraliza en Account Customer Gateway la elegibilidad obligatoria
+de `accounts`: `customertype eq 3`, `statecode eq 0` y
+`crbbe_estadocliente eq 4`. El filtro se combina con `contains` por código o
+nombre y con la igualdad de la lectura exacta. `customertype=3` se usa solo
+como criterio de elegibilidad; no agrega una columna al `$select`, no modifica
+el mapping y no completa el `customerType` lógico.
+
+PHASE1-016 agrega `new_tipocliente` al `$select` común de las tres consultas
+Customer y lo normaliza dentro de Account Customer Gateway como
+`customerType`. Un valor `null` o `undefined` produce `''`; el nombre lógico no
+sale de la capa Dataverse. Los filtros de elegibilidad Phase1-015 permanecen
+sin cambios.
