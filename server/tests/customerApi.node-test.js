@@ -7,6 +7,7 @@ const customer = Object.freeze({
   customerCode: 'C-001',
   customerName: 'Cliente Uno',
   country: 'Guatemala',
+  customerType: 'Distribuidor',
 });
 
 const createService = () => ({
@@ -48,8 +49,14 @@ test('expone búsqueda específica por código y nombre', async () => {
   await withServer(app, async (baseUrl) => {
     const codeResponse = await fetch(`${baseUrl}/api/customers/search?type=code&q=C-`);
     const nameResponse = await fetch(`${baseUrl}/api/customers/search?type=name&q=Uno`);
-    assert.deepEqual((await codeResponse.json()).customers, [customer]);
+    const codeCustomers = (await codeResponse.json()).customers;
+    assert.deepEqual(codeCustomers, [customer]);
     assert.deepEqual((await nameResponse.json()).customers, [customer]);
+    assert.deepEqual(
+      Object.keys(codeCustomers[0]),
+      ['customerCode', 'customerName', 'country', 'customerType'],
+    );
+    assert.doesNotMatch(JSON.stringify(codeCustomers), /new_tipocliente|FormattedValue/);
   });
   assert.deepEqual(calls, [
     { type: 'code', query: 'C-' },

@@ -5,6 +5,26 @@ import {
   inspectDataverseHttpFailure,
 } from './dataverseDiagnostics.js';
 
+export const DATAVERSE_FORMATTED_VALUE_ANNOTATION =
+  'OData.Community.Display.V1.FormattedValue';
+
+const createPreferHeader = (includeAnnotations) => {
+  if (includeAnnotations === undefined) return {};
+  if (!Array.isArray(includeAnnotations)
+    || includeAnnotations.some((annotation) => (
+      typeof annotation !== 'string' || annotation.trim() === ''
+    ))) {
+    throw new Error('DataverseClient: anotaciones inválidas.');
+  }
+  if (includeAnnotations.length === 0) return {};
+
+  return {
+    Prefer: `odata.include-annotations="${includeAnnotations
+      .map((annotation) => annotation.trim())
+      .join(',')}"`,
+  };
+};
+
 export class DataverseRequestError extends Error {
   constructor(message = 'No fue posible consultar Dataverse.') {
     super(message);
@@ -35,7 +55,14 @@ export const createDataverseClient = ({
   }
 
   const dataverseOrigin = new URL(baseUrl).origin;
-  const retrieveMultiple = async ({ entitySet, select, filter, orderBy, top }) => {
+  const retrieveMultiple = async ({
+    entitySet,
+    select,
+    filter,
+    orderBy,
+    top,
+    includeAnnotations,
+  }) => {
     if (typeof entitySet !== 'string' || !/^[A-Za-z0-9_]+$/.test(entitySet)) {
       throw new Error('DataverseClient: Entity Set inválido.');
     }
@@ -61,6 +88,7 @@ export const createDataverseClient = ({
           Authorization: `Bearer ${token}`,
           'OData-MaxVersion': '4.0',
           'OData-Version': '4.0',
+          ...createPreferHeader(includeAnnotations),
         },
         signal: controller.signal,
       });

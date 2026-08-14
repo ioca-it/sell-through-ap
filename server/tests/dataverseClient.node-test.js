@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createDataverseClient,
+  DATAVERSE_FORMATTED_VALUE_ANNOTATION,
   DataverseRequestError,
 } from '../src/integrations/dataverse/dataverseClient.js';
 
@@ -22,13 +23,34 @@ test('centraliza token, headers OData y parámetros internos', async () => {
     filter: "contains(field_one,'value')",
     orderBy: 'field_one asc',
     top: 20,
+    includeAnnotations: [DATAVERSE_FORMATTED_VALUE_ANNOTATION],
   }), [{ id: 1 }]);
 
   assert.equal(request.options.headers.Authorization, 'Bearer access-token');
   assert.equal(request.options.headers['OData-MaxVersion'], '4.0');
   assert.equal(request.options.headers['OData-Version'], '4.0');
+  assert.equal(
+    request.options.headers.Prefer,
+    'odata.include-annotations="OData.Community.Display.V1.FormattedValue"',
+  );
   assert.equal(request.url.searchParams.get('$select'), 'field_one,field_two');
   assert.equal(request.url.searchParams.get('$top'), '20');
+});
+
+test('omite Prefer cuando el consumidor no solicita anotaciones', async () => {
+  let request;
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true, json: async () => ({ value: [] }) };
+    },
+  });
+
+  await client.retrieveMultiple({ entitySet: 'accounts' });
+
+  assert.equal(Object.hasOwn(request.options.headers, 'Prefer'), false);
 });
 
 test('normaliza errores Dataverse sin propagar respuestas técnicas', async () => {

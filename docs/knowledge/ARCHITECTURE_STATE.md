@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-PHASE1-026 queda en estado **PASS**. La metadata productiva confirmó `customertypecode` (`CustomerTypeCode`, Picklist, opción 3 = Cliente), `crbbe_estadodelcliente` (`crbbe_EstadoDelCliente`, Picklist, opción 4 = Cliente) y `statecode eq 0`. Account Customer Gateway aplica definitivamente `customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4` en búsqueda por código, búsqueda por nombre y lectura exacta por código. Se conserva `$select=new_codigocliente,name,crbbe_nombrepais,new_tipocliente` y `new_tipocliente -> customerType`; los diagnósticos temporales Phase1-022/024 fueron retirados completamente y el diagnóstico seguro general Phase1-020 permanece disponible.
+PHASE1-029 queda en estado **PASS**. Account Customer Gateway solicita únicamente la anotación `OData.Community.Display.V1.FormattedValue` y mapea `new_tipocliente@OData.Community.Display.V1.FormattedValue` hacia `customerType`; la etiqueta se convierte a string, se recorta y usa `''` si la anotación no está presente, sin exponer el valor numérico almacenado. Dataverse Client incorpora `Prefer: odata.include-annotations="OData.Community.Display.V1.FormattedValue"` mediante una opción genérica usada por las tres operaciones del gateway, sin consultas de metadata ni Global Choice. Permanecen intactos `$select=new_codigocliente,name,crbbe_nombrepais,new_tipocliente`, búsqueda, lectura exacta y el filtro Phase1-026 `customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4`; Phase1-020 sigue disponible y Phase1-022/024 no se reintroducen.
 
 ## Último prompt aprobado
 
-PHASE1-026 — Correct Dataverse Customer Filters and Remove Temporary Diagnostics.
+PHASE1-029 — Resolve Dataverse Customer Type Global Choice Label.
 
 ## Última auditoría aprobada
 
@@ -33,7 +33,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Diagnóstico seguro Dataverse Phase1-020: clasifica fallos HTTP/OData, respuesta inválida y red en siete identificadores internos; los Application Logs reciben solo identificador, operación, tipo de fallo, status upstream opcional y presencia de metadata estructurada, nunca error/payload/URL/query/credenciales/PII.
 - Diagnósticos temporales Customer Phase1-022/024: retirados del runtime, Dataverse Client y pruebas después de confirmar los nombres productivos; no quedan probes, consultas de metadata ni estado one-shot.
-- Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais` y `new_tipocliente`; normaliza los cuatro campos Customer y aplica los LogicalNames confirmados `customertypecode`, `statecode` y `crbbe_estadodelcliente` con valores empresariales 3/0/4.
+- Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais`, `new_tipocliente` y su propiedad FormattedValue; normaliza los cuatro campos Customer, obtiene `customerType` exclusivamente desde la etiqueta Choice y aplica los LogicalNames confirmados `customertypecode`, `statecode` y `crbbe_estadodelcliente` con valores empresariales 3/0/4.
 - Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse, con diagnósticos internos normalizados y seguros por etapa de rechazo.
 - Rate Limiter: límites por IP y `oid/sub`, store in-memory inyectable y respuesta 429/Retry-After.
 - Health endpoint: `/health` anónimo y sin dependencias externas.
@@ -107,14 +107,14 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Solicitar revisión y autorización independiente para crear el checkpoint Git de Phase1-026. Solo después, mediante un prompt separado, desplegar el backend corregido en Render y ejecutar una validación controlada sin cambiar `VITE_CUSTOMER_SOURCE`, Vercel, autenticación, variables, contrato Customer o mapping.
+Solicitar revisión y autorización independiente para crear el checkpoint Git de Phase1-029. Solo después, mediante un prompt separado, desplegar el backend corregido en Render y ejecutar una validación controlada sin cambiar `VITE_CUSTOMER_SOURCE`, Vercel, autenticación, variables ni contrato Customer.
 
 ## Decisiones congeladas
 
 - Preservar comportamiento, fórmulas, defaults, ordenamientos y contratos públicos durante refactorizaciones.
 - `BUSINESS_PARAMETERS.md` es el catálogo oficial del Configuration Center.
 - `CONFIGURATION_SCHEMA` es la fuente única de IDs, keys y metadatos migrados; defaults se declaran una sola vez.
-- Repository/Provider son la frontera obligatoria de fuentes; Customer es el único contrato Dataverse normalizado aprobado. Account Customer Gateway encapsula `new_tipocliente` y lo expone únicamente como `customerType`, con fallback vacío para `null` o `undefined`.
+- Repository/Provider son la frontera obligatoria de fuentes; Customer es el único contrato Dataverse normalizado aprobado. Account Customer Gateway encapsula `new_tipocliente@OData.Community.Display.V1.FormattedValue` y expone su etiqueta únicamente como `customerType`, con fallback vacío cuando la anotación falta, es `null` o `undefined`; el valor numérico `new_tipocliente` nunca sustituye la etiqueta.
 - Toda consulta Customer a `accounts` usa en Account Customer Gateway el filtro fijo confirmado `customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4`. Las tres reglas siguen siendo obligatorias y no amplían el `$select`, el mapping ni el contrato Customer.
 - La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.
 - Las búsquedas Customer de UI invalidan toda selección previa al editar, deduplican el mismo request pendiente y sólo permiten que el identificador de request más reciente publique resultados.
@@ -156,8 +156,8 @@ Solicitar revisión y autorización independiente para crear el checkpoint Git d
 
 ## Cantidad de pruebas
 
-Frontend: 282/282 aprobadas en 24 archivos. Backend: 48/48 aprobadas.
+Frontend: 282/282 aprobadas en 24 archivos. Backend: 50/50 aprobadas.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-026, 2026-08-14.
+Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-029, 2026-08-14.

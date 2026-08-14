@@ -1,5 +1,20 @@
 # Roadmap aprobado
 
+## Phase1-029 — Resolve Dataverse Customer Type Global Choice Label
+
+Account Customer Gateway obtiene `customerType` desde
+`new_tipocliente@OData.Community.Display.V1.FormattedValue`, convierte la
+etiqueta a string, aplica trimming y usa `''` cuando la anotación falta, es
+`null` o `undefined`. El valor numérico almacenado nunca se publica como
+etiqueta.
+
+Las tres operaciones solicitan
+`OData.Community.Display.V1.FormattedValue` mediante una opción genérica de
+Dataverse Client que compone el header `Prefer`. No se consulta metadata ni el
+Global Choice `new_tipoclienteglobal`; permanecen intactos `$select`, filtros
+Phase1-026, límites, orden, escape OData, contratos, autenticación y
+diagnósticos Phase1-020. No se activa Dataverse en Vercel ni se despliega.
+
 ## Phase1-026 — Correct Dataverse Customer Filters
 
 La metadata productiva confirma `customertypecode` y

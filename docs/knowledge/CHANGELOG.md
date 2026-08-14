@@ -1,5 +1,33 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-14 — PHASE1-029
+
+### Corregido
+
+- `customerType` procede exclusivamente de
+  `new_tipocliente@OData.Community.Display.V1.FormattedValue`, como string
+  trimmed y con fallback `''` cuando la etiqueta no llega.
+- El valor numérico de `new_tipocliente` deja de publicarse como si fuera la
+  etiqueta Choice.
+- Dataverse Client admite anotaciones solicitadas por consumidor y compone el
+  header `Prefer`; Account Customer Gateway lo usa en sus tres operaciones sin
+  consultas de metadata ni lógica HTTP duplicada.
+
+### Preservado
+
+- Filtro Phase1-026 exacto, `$select`, búsqueda por código/nombre, lectura
+  exacta, límites, orden, escape OData, autenticación, JWT, contratos HTTP y
+  diagnóstico sanitizado Phase1-020.
+- Phase1-022 y Phase1-024 continúan retirados; no hubo probes productivos,
+  cambios en Dataverse, variables, Render o Vercel.
+
+### Validación
+
+- Backend relevante: 24/24; backend completo: 50/50.
+- Frontend completo: 282/282 en 24 archivos.
+- Backend syntax check y frontend build aprobados; Vite transformó 1675 módulos.
+- Sin commit, push ni deploy.
+
 ## 2026-08-14 — PHASE1-026
 
 ### Corregido

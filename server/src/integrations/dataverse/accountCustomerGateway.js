@@ -1,4 +1,5 @@
 import { quoteODataString } from './odata.js';
+import { DATAVERSE_FORMATTED_VALUE_ANNOTATION } from './dataverseClient.js';
 
 const ACCOUNT_SOURCE = Object.freeze({
   entitySet: 'accounts',
@@ -9,6 +10,14 @@ const ACCOUNT_SOURCE = Object.freeze({
     customerType: 'new_tipocliente',
   }),
 });
+
+// Dataverse entrega la etiqueta del Choice como una anotación de la propiedad,
+// permitiendo mantener el valor numérico fuera del contrato Customer.
+const CUSTOMER_TYPE_FORMATTED_VALUE_PROPERTY =
+  `${ACCOUNT_SOURCE.fields.customerType}@${DATAVERSE_FORMATTED_VALUE_ANNOTATION}`;
+const ACCOUNT_CUSTOMER_ANNOTATIONS = Object.freeze([
+  DATAVERSE_FORMATTED_VALUE_ANNOTATION,
+]);
 
 export const CUSTOMER_SEARCH_LIMIT = 20;
 
@@ -38,9 +47,9 @@ export const mapAccountToCustomer = (account = {}) => Object.freeze({
   country: account[ACCOUNT_SOURCE.fields.country] == null
     ? ''
     : String(account[ACCOUNT_SOURCE.fields.country]).trim(),
-  customerType: account[ACCOUNT_SOURCE.fields.customerType] == null
+  customerType: account[CUSTOMER_TYPE_FORMATTED_VALUE_PROPERTY] == null
     ? ''
-    : String(account[ACCOUNT_SOURCE.fields.customerType]).trim(),
+    : String(account[CUSTOMER_TYPE_FORMATTED_VALUE_PROPERTY]).trim(),
 });
 
 export const createAccountCustomerGateway = ({ dataverseClient } = {}) => {
@@ -60,6 +69,7 @@ export const createAccountCustomerGateway = ({ dataverseClient } = {}) => {
       ),
       orderBy: `${sourceField} asc`,
       top: CUSTOMER_SEARCH_LIMIT,
+      includeAnnotations: ACCOUNT_CUSTOMER_ANNOTATIONS,
     });
     return rows.slice(0, CUSTOMER_SEARCH_LIMIT).map(mapAccountToCustomer);
   };
@@ -82,6 +92,7 @@ export const createAccountCustomerGateway = ({ dataverseClient } = {}) => {
         ),
         orderBy: `${ACCOUNT_SOURCE.fields.customerName} asc`,
         top: 1,
+        includeAnnotations: ACCOUNT_CUSTOMER_ANNOTATIONS,
       });
       return rows.length === 0 ? null : mapAccountToCustomer(rows[0]);
     },
