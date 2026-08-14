@@ -1,7 +1,9 @@
 import { initializeAuthentication } from './authenticationService.js';
 import { getAccessToken } from './customerApiAccessToken.js';
 
-export const AUTHENTICATED_API_SMOKE_QUERY = 'phase1-007-smoke';
+export const AUTHENTICATED_API_SMOKE_QUERY = 'phase1-010b-smoke';
+
+const CONTROLLED_CUSTOMER_CODE = 'CL0000041';
 
 const configuredApiBaseUrl = () => import.meta.env.VITE_API_BASE_URL;
 
@@ -21,33 +23,43 @@ const createResult = (overrides = {}) => Object.freeze({
   msalAuthentication: 'not_checked',
   accessTokenAcquisition: 'not_attempted',
   renderJwtValidation: 'not_attempted',
-  dataverseAccess: 'not_attempted',
+  dataverseRequest: 'not_attempted',
   httpStatus: null,
-  responseCode: null,
+  customersReturned: null,
+  diagnostic: null,
   ...overrides,
 });
 
-const readResponseCode = async (response) => {
+const readCustomersReturned = async (response) => {
+  if (response.status !== 200) return null;
   try {
     const payload = await response.json();
-    return typeof payload?.error?.code === 'string' ? payload.error.code : null;
+    return Array.isArray(payload?.customers) ? payload.customers.length : null;
   } catch {
     return null;
   }
 };
 
-const classifyJwtValidation = (httpStatus, responseCode) => {
-  if (httpStatus === 400 && responseCode === 'INVALID_CUSTOMER_REQUEST') {
-    return 'accepted';
-  }
-  if (httpStatus === 401 && responseCode === 'AUTHENTICATION_REQUIRED') {
-    return 'rejected';
-  }
-  if (httpStatus === 403 && responseCode === 'INSUFFICIENT_SCOPE') {
-    return 'rejected';
-  }
+const classifyJwtValidation = (httpStatus) => {
+  if (httpStatus === 401 || httpStatus === 403) return 'rejected';
+  if (httpStatus === 200 || httpStatus >= 500) return 'accepted';
   return 'not_confirmed';
 };
+
+const classifyDiagnostic = (httpStatus, customersReturned) => {
+  if (httpStatus === 200) {
+    return customersReturned === null ? 'INVALID_RESPONSE' : null;
+  }
+  if (httpStatus === 401) return 'AUTHENTICATION_REJECTED';
+  if (httpStatus === 403) return 'AUTHORIZATION_REJECTED';
+  if (httpStatus === 429) return 'RATE_LIMITED';
+  if (httpStatus >= 500) return 'DATAVERSE_REQUEST_FAILED';
+  return 'UNEXPECTED_RESPONSE';
+};
+
+const classifyDataverseRequest = (httpStatus) => (
+  httpStatus === 200 || httpStatus >= 500 ? 'attempted' : 'not_attempted'
+);
 
 export const isAuthenticatedApiSmokeTestRequested = (
   search = globalThis.location?.search ?? '',
@@ -59,7 +71,9 @@ export const runAuthenticatedApiSmokeTest = async ({
   acquireAccessToken = getAccessToken,
   fetchImpl = globalThis.fetch,
 } = {}) => {
-  const endpoint = new URL('/api/customers/search?type=code', normalizeApiBaseUrl(apiBaseUrl));
+  const endpoint = new URL('/api/customers/search', normalizeApiBaseUrl(apiBaseUrl));
+  endpoint.searchParams.set('type', 'code');
+  endpoint.searchParams.set('q', CONTROLLED_CUSTOMER_CODE);
   if (typeof initialize !== 'function' || typeof acquireAccessToken !== 'function'
     || typeof fetchImpl !== 'function') {
     throw new Error('AuthenticatedApiSmokeTest: dependencias inválidas.');
@@ -72,6 +86,7 @@ export const runAuthenticatedApiSmokeTest = async ({
     return createResult({
       endpoint: endpoint.href,
       msalAuthentication: 'failed',
+      diagnostic: 'MSAL_AUTHENTICATION_FAILED',
     });
   }
 
@@ -90,6 +105,7 @@ export const runAuthenticatedApiSmokeTest = async ({
       endpoint: endpoint.href,
       msalAuthentication: 'authenticated',
       accessTokenAcquisition: 'failed',
+      diagnostic: 'ACCESS_TOKEN_ACQUISITION_FAILED',
     });
   }
 
@@ -98,6 +114,7 @@ export const runAuthenticatedApiSmokeTest = async ({
       endpoint: endpoint.href,
       msalAuthentication: 'authenticated',
       accessTokenAcquisition: 'not_acquired',
+      diagnostic: 'ACCESS_TOKEN_NOT_ACQUIRED',
     });
   }
 
@@ -116,22 +133,20 @@ export const runAuthenticatedApiSmokeTest = async ({
       msalAuthentication: 'authenticated',
       accessTokenAcquisition: 'acquired',
       renderJwtValidation: 'not_confirmed',
-      dataverseAccess: 'not_requested',
+      dataverseRequest: 'not_confirmed',
+      diagnostic: 'NETWORK_REQUEST_FAILED',
     });
   }
 
-  const responseCode = await readResponseCode(response);
-  const renderJwtValidation = classifyJwtValidation(response.status, responseCode);
-  const dataverseAccess = ['accepted', 'rejected'].includes(renderJwtValidation)
-    ? 'not_requested'
-    : 'not_confirmed';
+  const customersReturned = await readCustomersReturned(response);
   return createResult({
     endpoint: endpoint.href,
     msalAuthentication: 'authenticated',
     accessTokenAcquisition: 'acquired',
-    renderJwtValidation,
-    dataverseAccess,
+    renderJwtValidation: classifyJwtValidation(response.status),
+    dataverseRequest: classifyDataverseRequest(response.status),
     httpStatus: response.status,
-    responseCode,
+    customersReturned,
+    diagnostic: classifyDiagnostic(response.status, customersReturned),
   });
 };

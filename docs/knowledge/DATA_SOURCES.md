@@ -93,7 +93,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-006 — Dataverse
 
-- Estado: transporte frontend asegurado con JWT delegado y MSAL integrado; Phase1-007 prepara un probe protegido que se detiene antes de Dataverse. Render respondió `/health=200` y rechazó el probe sin Bearer con `401 / AUTHENTICATION_REQUIRED`; la ejecución autenticada real desde Vercel y cualquier smoke posterior contra Dataverse permanecen pendientes.
+- Estado: transporte frontend asegurado con JWT delegado y MSAL integrado; la validación JWT contra Render está confirmada y Phase1-010B prepara una búsqueda Customer controlada para comprobar API→Dataverse. Su deploy y ejecución interactiva desde Vercel permanecen pendientes.
 - Alcance aprobado: Maestro Cliente con búsqueda por código/nombre y contrato `{ customerCode, customerName, country, customerType }`.
 - Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`.
 - Selector de Provider: `src/providers/customerProviderFactory.js`, configurado mediante `VITE_CUSTOMER_SOURCE=local|dataverse`; `local` es el fallback cuando la variable no está definida.
@@ -112,6 +112,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Rate limiting: por IP antes de Auth y por identidad después de Auth; 429 con `Retry-After`. Store in-memory temporal e inyectable.
 - Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
 - Probe JWT Phase1-007: `GET /api/customers/search?type=code` sin `q`; después de autenticar debe responder `400 / INVALID_CUSTOMER_REQUEST` antes de Customer Gateway. Este resultado valida la frontera usuario→API, no Dataverse.
+- Smoke Dataverse Phase1-010B: búsqueda protegida por código activada sólo mediante `?phase1-010b-smoke=1`; el resultado expone status y cantidad, nunca el payload Customer. Éxito: `HTTP 200` y al menos un Customer.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún endpoint está codificado en módulos Customer/Dataverse.
 
 Los secretos, tokens y permisos no se versionan. Los IDs públicos de la SPA, scope delegado y endpoint temporal se documentan como variables frontend; los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.
@@ -164,3 +165,8 @@ PHASE1-007 tampoco activa una fuente remota. El arnés temporal realiza sólo un
 request protegido explícito cuando el query parameter de control está presente;
 la ruta elegida falla por validación antes del gateway y no constituye una
 lectura Customer ni una validación de Dataverse.
+
+PHASE1-010B sustituye ese trigger por una búsqueda Customer controlada que sí
+invoca la Customer API y su gateway Dataverse al habilitarse explícitamente. El
+Provider efectivo de la UI permanece `local`; el arnés descarta el payload y
+publica únicamente etapas, status HTTP y cantidad de resultados.

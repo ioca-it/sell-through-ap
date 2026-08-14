@@ -6,13 +6,13 @@ import {
   runAuthenticatedApiSmokeTest,
 } from './auth/authenticatedApiSmokeTest.js';
 
-// Arnés temporal Phase1-007: sólo se ejecuta al abrir la aplicación con
-// ?phase1-007-smoke=1 y publica estados seguros, nunca tokens ni respuestas completas.
+// Arnés temporal Phase1-010B: sólo se ejecuta al abrir la aplicación con
+// ?phase1-010b-smoke=1 y publica estados seguros y conteo, nunca tokens ni clientes.
 if (isAuthenticatedApiSmokeTestRequested()) {
   void runAuthenticatedApiSmokeTest().then((result) => {
-    console.info('Phase1-007 Authenticated API Smoke Test', result);
+    console.info('Phase1-010B Real Dataverse Customer Smoke Test', result);
   }).catch(() => {
-    console.error('Phase1-007 Authenticated API Smoke Test no pudo iniciarse.');
+    console.error('Phase1-010B Real Dataverse Customer Smoke Test no pudo iniciarse.');
   });
 }
 

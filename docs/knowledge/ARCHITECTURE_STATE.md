@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-PHASE1-008 incorpora diagnósticos internos seguros al Customer API Authenticator después de que el smoke autenticado real Phase1-007 confirmara MSAL y adquisición de token, pero recibiera `401 / AUTHENTICATION_REQUIRED` desde Render antes de Dataverse. Los rechazos JWT ahora registran únicamente identificadores normalizados por etapa; no exponen token, header Authorization, claims, identidad o secretos y no alteran los contratos públicos `401/403`. `VITE_CUSTOMER_SOURCE` permanece en `local`.
+PHASE1-010B prepara un smoke Customer real y controlado después de confirmarse la validación JWT contra Render. El arnés reutiliza MSAL y `getAccessToken()`, consulta por código la ruta protegida que alcanza Dataverse y reduce el resultado a etapas sanitizadas, status HTTP y cantidad de Customers; nunca publica el token ni el payload Customer. La ejecución externa continúa pendiente y `VITE_CUSTOMER_SOURCE` permanece en `local`.
 
 ## Último prompt aprobado
 
-PHASE1-008 — Safe JWT Rejection Diagnostics.
+PHASE1-010B — Real Dataverse Customer Smoke Test.
 
 ## Última auditoría aprobada
 
@@ -25,7 +25,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Dataverse Customer Provider frontend: consume exclusivamente la Customer API configurada por `VITE_API_BASE_URL`.
 - MSAL frontend: configuración/cliente desacoplados, procesamiento de redirect, cuenta activa y adquisición silenciosa mediante `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`.
 - Authentication Controls: inicio de sesión, identidad discreta y cierre de sesión sin almacenamiento manual de tokens.
-- Authenticated API Smoke Test: arnés temporal activado sólo por `?phase1-007-smoke=1`; reutiliza `getAccessToken()`, envía el Bearer a una ruta protegida y reporta etapas sanitizadas sin exponer tokens ni consultar Dataverse.
+- Real Dataverse Customer Smoke Test: arnés temporal activado sólo por `?phase1-010b-smoke=1`; reutiliza `getAccessToken()`, envía el Bearer a una búsqueda Customer controlada y reporta autenticación, JWT, intento Dataverse, status y conteo sin exponer token o payload Customer.
 - Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
@@ -40,8 +40,8 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 
 - Extracción futura de las narrativas consultivas restantes de `App.jsx` y Recommendation Engine: pendientes de alcance específico.
 - Extracción futura de Distribution y Pareto: pendiente de prompt independiente.
-- Deploy autorizado del backend Phase1-008 en Render y nueva ejecución del arnés autenticado desde Vercel: pendientes para identificar en Application Logs la etapa exacta del `401` real.
-- Acceso real posterior a Dataverse: pendiente de una validación separada; la aceptación del JWT por Render no lo demuestra.
+- Deploy autorizado del frontend Phase1-010B en Vercel y ejecución interactiva del arnés autenticado: pendientes.
+- Acceso real a Dataverse mediante el request Customer controlado: pendiente de la ejecución externa; la implementación local no declara conectividad ni datos reales exitosos.
 - Store distribuido de rate limiting: obligatorio antes de múltiples instancias o escala horizontal en Azure.
 - DataverseProvider para Maestro Producto y cualquier otra entidad: no implementados.
 - Mapping/nombre lógico real de `customerType`: pendiente de confirmación; el contrato usa fallback vacío y no selecciona una columna Dataverse nueva.
@@ -80,7 +80,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Desplegar mediante una acción autorizada el backend Phase1-008 en Render, repetir desde Vercel `?phase1-007-smoke=1` con la sesión MSAL real y consultar Application Logs para obtener exclusivamente el identificador seguro del rechazo. El resultado funcional esperado continúa siendo `400 / INVALID_CUSTOMER_REQUEST`; `VITE_CUSTOMER_SOURCE` permanece en `local` y validar Dataverse real requiere autorización expresa.
+Desplegar mediante una acción autorizada el frontend Phase1-010B en Vercel, iniciar sesión con MSAL y abrir `https://sell-through-ap.vercel.app/?phase1-010b-smoke=1`. El éxito exige `HTTP 200` y `customersReturned >= 1` en el resultado sanitizado; `VITE_CUSTOMER_SOURCE` debe permanecer en `local`.
 
 ## Decisiones congeladas
 
@@ -97,6 +97,7 @@ Desplegar mediante una acción autorizada el backend Phase1-008 en Render, repet
 - Los diagnósticos JWT de backend son exclusivamente internos y estáticos: no reciben ni registran tokens, Authorization, payloads completos, identidades, emails o secretos; los contratos HTTP públicos permanecen sin detalle técnico.
 - CORS no es autenticación; toda ruta Customer exige Bearer válido. `/health` es la única ruta funcional anónima.
 - El probe Phase1-007 usa `GET /api/customers/search?type=code` sin `q`: `400 / INVALID_CUSTOMER_REQUEST` confirma que JWT y scope fueron aceptados y que la validación se detuvo antes de Dataverse.
+- El smoke Phase1-010B usa una búsqueda Customer controlada con `type=code`, alcanza el flujo API→Dataverse sólo mediante su trigger temporal y conserva únicamente `customers.length`; no activa el Provider Dataverse de la UI.
 - Rate limiting in-memory solo es válido para una instancia temporal; Azure horizontal requiere store distribuido.
 - El procesamiento vigente es síncrono y local.
 - Portfolio Analysis clona estructuras externas y congela únicamente objetos de su propia salida; las referencias originales del llamador nunca se congelan.
@@ -123,8 +124,8 @@ Desplegar mediante una acción autorizada el backend Phase1-008 en Render, repet
 
 ## Cantidad de pruebas
 
-Frontend: 255/255 aprobadas en 24 archivos. Backend: 42/42 aprobadas.
+Frontend: 258/258 aprobadas en 24 archivos. Backend: 42/42 aprobadas.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación: PHASE1-008, 2026-08-13.
+Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado en el último hito backend. `git diff --check` aprobado. Última validación frontend: PHASE1-010B, 2026-08-14.
