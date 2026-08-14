@@ -5,6 +5,8 @@ import {
   CUSTOMER_SEARCH_LIMIT,
   mapAccountToCustomer,
 } from '../src/integrations/dataverse/accountCustomerGateway.js';
+import { DataverseRequestError } from '../src/integrations/dataverse/dataverseClient.js';
+import { DATAVERSE_DIAGNOSTIC_IDS } from '../src/integrations/dataverse/dataverseDiagnostics.js';
 import { escapeODataString } from '../src/integrations/dataverse/odata.js';
 
 const CUSTOMER_BASE_FILTER = 'customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4';
@@ -122,4 +124,39 @@ test('lee un cliente por código exacto y devuelve null si no existe', async () 
 
   const missing = createGateway([]);
   assert.equal(await missing.gateway.getByCode('NO-EXISTE'), null);
+});
+
+test('activa una sola secuencia backend ante campo/filtro inválido y preserva el error', async () => {
+  const events = [];
+  let probeCount = 0;
+  const originalError = new DataverseRequestError(
+    undefined,
+    DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER,
+  );
+  const gateway = createAccountCustomerGateway({
+    dataverseClient: {
+      retrieveMultiple: async () => { throw originalError; },
+      probeRetrieveMultiple: async () => {
+        probeCount += 1;
+        return true;
+      },
+    },
+    diagnosticLogger: (event) => events.push(event),
+  });
+
+  await assert.rejects(gateway.searchByCode('sensitive-customer-value'), (error) => (
+    error === originalError
+      && error.code === 'DATAVERSE_REQUEST_FAILED'
+      && error.statusCode === 502
+  ));
+  assert.equal(probeCount, 15);
+  assert.equal(events.length, 15);
+
+  await assert.rejects(gateway.searchByCode('another-sensitive-value'));
+  assert.equal(probeCount, 15);
+  assert.equal(events.length, 15);
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /sensitive-customer-value|another-sensitive-value|\$filter|contains\(/,
+  );
 });

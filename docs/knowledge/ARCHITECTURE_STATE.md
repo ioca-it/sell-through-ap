@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-PHASE1-020 agrega diagnóstico temporal y seguro en la frontera HTTP Dataverse para investigar el 502 Customer sin cambiar la consulta ni el contrato público. Dataverse Client clasifica status HTTP y metadata OData como `DATAVERSE_BAD_REQUEST`, `DATAVERSE_INVALID_FIELD_OR_FILTER`, `DATAVERSE_UNAUTHORIZED`, `DATAVERSE_FORBIDDEN`, `DATAVERSE_RATE_LIMITED`, `DATAVERSE_UPSTREAM_ERROR` o `DATAVERSE_NETWORK_ERROR`; Render recibe únicamente metadata derivada y allowlisted. Account Customer Gateway conserva íntegros el filtro Phase1-015 y el `$select`/mapping Phase1-016. No se modificaron UI, autenticación, configuración ni despliegue; `VITE_CUSTOMER_SOURCE=local` permanece sin cambios.
+PHASE1-022 agrega un diagnóstico backend temporal, de ejecución única por proceso, para aislar el campo o expresión Customer que produce `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`. La causa aún no está aislada porque no se ejecutaron probes contra producción: el mecanismo prueba Entity Set, campos de select/filtro, comparaciones numéricas, predicado string, orden, top y composición, y registra sólo nombre lógico/categoría con PASS/FAIL. No lee payloads de probes ni cambia la consulta normal, el error HTTP público, los tres filtros Phase1-015, el mapping Phase1-016, UI, autenticación, variables o despliegue; `VITE_CUSTOMER_SOURCE=local` permanece sin cambios.
 
 ## Último prompt aprobado
 
-PHASE1-020 — Diagnose Dataverse Customer 502 Safely.
+PHASE1-022 — Isolate Dataverse Invalid Customer Field or Filter.
 
 ## Última auditoría aprobada
 
@@ -32,6 +32,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Diagnóstico temporal Dataverse: clasifica fallos HTTP/OData, respuesta inválida y red en siete identificadores internos; los Application Logs reciben solo identificador, operación, tipo de fallo, status upstream opcional y presencia de metadata estructurada, nunca error/payload/URL/query/credenciales/PII.
+- Diagnóstico temporal de consulta Customer Phase1-022: tras el 400 específico ejecuta una sola secuencia backend por proceso y registra únicamente `component`, identificador fijo, secuencia, categoría, elemento lógico y PASS/FAIL. Los probes no leen bodies, no reciben valores Customer y no cambian el 502 sanitizado; debe retirarse al aislar la causa.
 - Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais` y `new_tipocliente`; normaliza los cuatro campos Customer y aplica de forma centralizada la elegibilidad `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4` a búsqueda por código/nombre y lectura exacta.
 - Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse, con diagnósticos internos normalizados y seguros por etapa de rechazo.
 - Rate Limiter: límites por IP y `oid/sub`, store in-memory inyectable y respuesta 429/Retry-After.
@@ -106,7 +107,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Tras autorización independiente para versionar y desplegar Phase1-020 solo en Render, ejecutar exactamente una vez el arnés existente en `https://sell-through-ap.vercel.app/?phase1-010b-smoke=1` con sesión MSAL y correlacionar el único 502 con el `diagnosticId` JSON de Render Application Logs. No cambiar `VITE_CUSTOMER_SOURCE`, Vercel, autenticación, filtros ni mapping durante esa reproducción.
+Tras autorización independiente para versionar y desplegar únicamente el backend Phase1-022 en Render, ejecutar exactamente una vez el arnés existente `?phase1-010b-smoke=1` con sesión MSAL. En Application Logs, revisar sólo los eventos `PHASE1_022_CUSTOMER_QUERY_PROBE` y tomar el primer elemento/categoría FAIL como evidencia para un prompt de corrección basado en metadata confirmada. No cambiar `VITE_CUSTOMER_SOURCE`, Vercel, autenticación, filtros ni mapping durante la reproducción.
 
 ## Decisiones congeladas
 
@@ -119,6 +120,7 @@ Tras autorización independiente para versionar y desplegar Phase1-020 solo en R
 - Las búsquedas Customer de UI invalidan toda selección previa al editar, deduplican el mismo request pendiente y sólo permiten que el identificador de request más reciente publique resultados.
 - Los errores Customer públicos son mensajes estáticos por categoría; detalles originales de MSAL, red o API nunca llegan a la UI.
 - Los diagnósticos Dataverse Phase1-020 son internos y temporales: solo registran campos allowlisted derivados. No registran tokens, headers Authorization, secretos, JWT, cookies, payloads Dataverse, PII Customer, customerCode, URLs/query strings, mensajes upstream ni stack traces.
+- Los probes Phase1-022 son backend-only, se disparan únicamente después de `DATAVERSE_INVALID_FIELD_OR_FILTER` y como máximo una vez por proceso. Registran sólo nombre lógico/categoría y PASS/FAIL, no leen cuerpos de respuesta y deben eliminarse después de identificar el elemento; no autorizan retirar filtros ni inventar nombres o tipos.
 - `VITE_CUSTOMER_SOURCE` selecciona exclusivamente `local` o `dataverse`; `local` es el fallback compatible cuando la variable no está definida.
 - La configuración pública MSAL usa exclusivamente variables `VITE_AUTH_*`; SellThrough-Web no tiene client secret y los access tokens quedan bajo el cache de MSAL en `sessionStorage`, sin almacenamiento manual.
 - Render es hosting temporal y no una dependencia arquitectónica; Azure podrá sustituirlo manteniendo handler, variables neutrales y contratos.
@@ -150,12 +152,12 @@ Tras autorización independiente para versionar y desplegar Phase1-020 solo en R
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Veinticuatro archivos de pruebas frontend y ocho archivos de pruebas backend.
+- Veinticuatro archivos de pruebas frontend y nueve archivos de pruebas backend.
 
 ## Cantidad de pruebas
 
-Frontend: 282/282 aprobadas en 24 archivos. Backend: 46/46 aprobadas.
+Frontend: 282/282 aprobadas en 24 archivos. Backend: 52/52 aprobadas.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-020, 2026-08-14.
+Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-022, 2026-08-14.
