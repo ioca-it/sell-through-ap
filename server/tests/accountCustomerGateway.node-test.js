@@ -160,3 +160,55 @@ test('activa una sola secuencia backend ante campo/filtro inválido y preserva e
     /sensitive-customer-value|another-sensitive-value|\$filter|contains\(/,
   );
 });
+
+test('activa metadata backend una sola vez sin cambiar filtros ni el error original', async () => {
+  const events = [];
+  const queries = [];
+  let metadataCalls = 0;
+  const originalError = new DataverseRequestError(
+    undefined,
+    DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER,
+  );
+  const gateway = createAccountCustomerGateway({
+    dataverseClient: {
+      retrieveMultiple: async (query) => {
+        queries.push(query);
+        throw originalError;
+      },
+      retrieveEntityAttributeMetadata: async () => {
+        metadataCalls += 1;
+        return [{
+          logicalName: 'customertypecode',
+          schemaName: 'CustomerTypeCode',
+          attributeType: 'Picklist',
+        }];
+      },
+      retrieveRequiredOptionMetadata: async () => ({
+        present: true,
+        label: 'Customer',
+      }),
+    },
+    diagnosticLogger: (event) => events.push(event),
+  });
+
+  await assert.rejects(gateway.searchByCode('first-sensitive-value'), (error) => (
+    error === originalError
+  ));
+  await assert.rejects(gateway.searchByCode('second-sensitive-value'), (error) => (
+    error === originalError
+  ));
+
+  assert.equal(metadataCalls, 1);
+  assert.equal(
+    queries[0].filter,
+    `contains(new_codigocliente,'first-sensitive-value') and ${CUSTOMER_BASE_FILTER}`,
+  );
+  assert.deepEqual(events.map(({ rule, result }) => ({ rule, result })), [
+    { rule: 'customer_classification_eq_3', result: 'CANDIDATE' },
+    { rule: 'customer_status_eq_4', result: 'NO_CANDIDATES' },
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /first-sensitive-value|second-sensitive-value|contains\(|\$filter|Authorization|Bearer/,
+  );
+});

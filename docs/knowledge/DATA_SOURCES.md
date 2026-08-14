@@ -93,7 +93,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-006 — Dataverse
 
-- Estado: conectividad real end-to-end validada por Phase1-011, UI preparada por Phase1-012, consultas de `accounts` restringidas por Phase1-015 a clientes elegibles y mapping `customerType` completado por Phase1-016. La activación en Vercel sigue pendiente de revisión; `VITE_CUSTOMER_SOURCE=local` permanece vigente y el Provider Dataverse no es todavía la fuente efectiva de UI.
+- Estado: conectividad real end-to-end validada por Phase1-011, UI preparada por Phase1-012 y mapping `customerType` completado por Phase1-016. Phase1-022 demostró en producción que los nombres de filtro `customertype` y `crbbe_estadocliente` son inválidos; Phase1-024 requiere metadata del entorno antes de corregirlos. La activación en Vercel sigue pendiente de revisión; `VITE_CUSTOMER_SOURCE=local` permanece vigente y el Provider Dataverse no es todavía la fuente efectiva de UI.
 - Alcance aprobado: Maestro Cliente con búsqueda por código/nombre y contrato `{ customerCode, customerName, country, customerType }`.
 - Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`; adjunta Bearer MSAL, aplica timeout de 10 segundos y clasifica de forma sanitizada sesión ausente, 401, 403, 429, 5xx, red y respuesta inválida.
 - Selector de Provider: `src/providers/customerProviderFactory.js`, configurado mediante `VITE_CUSTOMER_SOURCE=local|dataverse`; `local` es el fallback cuando la variable no está definida.
@@ -103,7 +103,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Backend: `server/`, portable y sin dependencias de Render/Azure.
 - Entity Set confirmado: `accounts`.
 - Mapping confirmado dentro de Account Customer Gateway: `new_codigocliente` → `customerCode`, `name` → `customerName`, `crbbe_nombrepais` → `country`, `new_tipocliente` → `customerType`.
-- API: búsquedas específicas por código/nombre y lectura por código; select/filtro/orden/top se construyen solo en backend. Account Customer Gateway agrega siempre `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4` al filtro de búsqueda o lectura exacta, sin exponer esos criterios como parámetros frontend.
+- API: búsquedas específicas por código/nombre y lectura por código; select/filtro/orden/top se construyen solo en backend. Account Customer Gateway conserva provisionalmente `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4`: las tres reglas siguen siendo obligatorias, `statecode eq 0` está confirmado y los otros dos nombres esperan metadata productiva. Ningún criterio se expone como parámetro frontend.
 - Autenticación: OAuth 2.0 client_credentials contra Entra; scope derivado de `DV_BASE_URL` y token cacheado con margen de seguridad.
 - Seguridad: variables, secretos y access token `DV_*` solo backend. MSAL usa `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`; `getAccessToken` intenta `acquireTokenSilent` y deriva a `loginRedirect` cuando falta sesión o se requiere interacción. El token delegado se limita al header Bearer del Provider frontend; UI, Repository y Service no conocen JWT, nombres lógicos ni OData.
 - Cache frontend: administrado por MSAL en `sessionStorage`; no existe almacenamiento manual de access tokens ni client secret de SellThrough-Web.
@@ -113,6 +113,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
 - Probe JWT Phase1-007: `GET /api/customers/search?type=code` sin `q`; después de autenticar debe responder `400 / INVALID_CUSTOMER_REQUEST` antes de Customer Gateway. Este resultado valida la frontera usuario→API, no Dataverse.
 - Smoke Dataverse Phase1-010B/011: búsqueda protegida `GET /api/customers/search?type=code&q=CL0000041`, activada sólo mediante `?phase1-010b-smoke=1`; resultado real `HTTP 200`, JWT aceptado, request Dataverse intentado, exactamente un Customer y diagnóstico nulo. Se conserva sólo la cantidad, nunca el payload Customer, y el arnés permanece disponible temporalmente.
+- Diagnóstico Phase1-024: después de `DATAVERSE_INVALID_FIELD_OR_FILTER` y una sola vez por proceso, el backend consulta metadata de atributos `account` limitada a `LogicalName`, `SchemaName` y `AttributeType`; para candidatos Choice/State/Status/Boolean conserva solo la presencia y etiqueta de la opción objetivo 3/4. No existe endpoint público, no se leen filas Customer y no se registran payloads completos, credenciales, URLs, queries o PII.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún endpoint está codificado en módulos Customer/Dataverse.
 
 Los secretos, tokens y permisos no se versionan. Los IDs públicos de la SPA, scope delegado y endpoint temporal se documentan como variables frontend; los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.
@@ -197,3 +198,11 @@ Customer y lo normaliza dentro de Account Customer Gateway como
 `customerType`. Un valor `null` o `undefined` produce `''`; el nombre lógico no
 sale de la capa Dataverse. Los filtros de elegibilidad Phase1-015 permanecen
 sin cambios.
+
+PHASE1-024 incorpora la evidencia productiva de Phase1-022: `customertype` y
+`crbbe_estadocliente` fallan como campos seleccionables, mientras `statecode` y
+`new_tipocliente` pasan. El repositorio no contiene reemplazos ni tipos
+confirmados; por ello la consulta productiva no se corrige por conjetura. El
+diagnóstico temporal backend descubre candidatos desde metadata técnica de
+`account` y reduce OptionSet solo al valor requerido 3/4. `statecode eq 0` y
+`new_tipocliente -> customerType` conservan sus responsabilidades separadas.

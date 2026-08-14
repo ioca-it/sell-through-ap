@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-PHASE1-022 agrega un diagnóstico backend temporal, de ejecución única por proceso, para aislar el campo o expresión Customer que produce `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`. La causa aún no está aislada porque no se ejecutaron probes contra producción: el mecanismo prueba Entity Set, campos de select/filtro, comparaciones numéricas, predicado string, orden, top y composición, y registra sólo nombre lógico/categoría con PASS/FAIL. No lee payloads de probes ni cambia la consulta normal, el error HTTP público, los tres filtros Phase1-015, el mapping Phase1-016, UI, autenticación, variables o despliegue; `VITE_CUSTOMER_SOURCE=local` permanece sin cambios.
+PHASE1-024 queda en estado **REQUIERE METADATA DATAVERSE**. La ejecución productiva de Phase1-022 demostró que `customertype` y `crbbe_estadocliente` no son nombres seleccionables sobre `accounts`; `statecode`, `new_tipocliente` y los demás componentes pasaron. El repositorio no contiene reemplazos o tipos confirmados, por lo que no se corrigió el filtro por conjetura. Se conserva Phase1-022 y se agrega un diagnóstico backend temporal, una vez por proceso tras el 400 específico, que consulta exclusivamente `LogicalName`, `SchemaName`, `AttributeType` y la opción objetivo 3/4 para candidatos técnicos de `account`. No expone ruta frontend, filas Customer, payloads completos, credenciales ni PII; `statecode eq 0`, `new_tipocliente -> customerType`, contratos, autenticación, variables y despliegue permanecen intactos.
 
 ## Último prompt aprobado
 
-PHASE1-022 — Isolate Dataverse Invalid Customer Field or Filter.
+PHASE1-024 — Resolve Dataverse Customer Filter Logical Names.
 
 ## Última auditoría aprobada
 
@@ -33,7 +33,8 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Diagnóstico temporal Dataverse: clasifica fallos HTTP/OData, respuesta inválida y red en siete identificadores internos; los Application Logs reciben solo identificador, operación, tipo de fallo, status upstream opcional y presencia de metadata estructurada, nunca error/payload/URL/query/credenciales/PII.
 - Diagnóstico temporal de consulta Customer Phase1-022: tras el 400 específico ejecuta una sola secuencia backend por proceso y registra únicamente `component`, identificador fijo, secuencia, categoría, elemento lógico y PASS/FAIL. Los probes no leen bodies, no reciben valores Customer y no cambian el 502 sanitizado; debe retirarse al aislar la causa.
-- Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais` y `new_tipocliente`; normaliza los cuatro campos Customer y aplica de forma centralizada la elegibilidad `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4` a búsqueda por código/nombre y lectura exacta.
+- Diagnóstico temporal de metadata Customer Phase1-024: conserva Phase1-022 y, una vez por proceso tras el mismo 400, reduce metadata de atributos `account` a candidatos técnicos para las reglas 3/4. Emite solo regla, `LogicalName`, `SchemaName`, `AttributeType`, opción objetivo/presencia/etiqueta y resultado; excluye `new_tipocliente` y `statecode` de reglas empresariales distintas y no expone payloads completos ni una ruta HTTP.
+- Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais` y `new_tipocliente`; normaliza los cuatro campos Customer. Conserva provisionalmente la elegibilidad `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4`, aunque Phase1-022 ya demostró inválidos los dos nombres extremos y Phase1-024 prohíbe sustituirlos sin metadata productiva.
 - Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse, con diagnósticos internos normalizados y seguros por etapa de rechazo.
 - Rate Limiter: límites por IP y `oid/sub`, store in-memory inyectable y respuesta 429/Retry-After.
 - Health endpoint: `/health` anónimo y sin dependencias externas.
@@ -45,6 +46,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Extracción futura de Distribution y Pareto: pendiente de prompt independiente.
 - Revisión y activación en Vercel de `VITE_CUSTOMER_SOURCE=dataverse`: pendientes; la fuente efectiva continúa en `local`.
 - Validación interactiva real de búsqueda por código/nombre y estados de cero/error desde los combobox después de activar la fuente: pendiente.
+- Resolver en producción `LogicalName`, `SchemaName`, `AttributeType` y opción 3/4 de los dos criterios Customer mediante Phase1-024; corregir después el filtro y retirar Phase1-022/024 en un prompt independiente.
 - Render se mantiene como backend transitorio; la migración futura a Azure permanece pendiente.
 - Store distribuido de rate limiting: obligatorio antes de múltiples instancias o escala horizontal en Azure.
 - DataverseProvider para Maestro Producto y cualquier otra entidad: no implementados.
@@ -107,7 +109,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Tras autorización independiente para versionar y desplegar únicamente el backend Phase1-022 en Render, ejecutar exactamente una vez el arnés existente `?phase1-010b-smoke=1` con sesión MSAL. En Application Logs, revisar sólo los eventos `PHASE1_022_CUSTOMER_QUERY_PROBE` y tomar el primer elemento/categoría FAIL como evidencia para un prompt de corrección basado en metadata confirmada. No cambiar `VITE_CUSTOMER_SOURCE`, Vercel, autenticación, filtros ni mapping durante la reproducción.
+Tras autorización independiente para versionar y desplegar únicamente el backend Phase1-024 en Render, ejecutar exactamente una vez el arnés existente `?phase1-010b-smoke=1` con sesión MSAL. Conservar exclusivamente los eventos `PHASE1_024_ACCOUNT_ATTRIBUTE_METADATA` y usarlos para confirmar un atributo/tipo/opción por cada regla. No corregir el gateway ni retirar Phase1-022 hasta tener ambos resultados; no cambiar `VITE_CUSTOMER_SOURCE`, Vercel, autenticación, variables, filtros o mapping durante la reproducción.
 
 ## Decisiones congeladas
 
@@ -115,12 +117,13 @@ Tras autorización independiente para versionar y desplegar únicamente el backe
 - `BUSINESS_PARAMETERS.md` es el catálogo oficial del Configuration Center.
 - `CONFIGURATION_SCHEMA` es la fuente única de IDs, keys y metadatos migrados; defaults se declaran una sola vez.
 - Repository/Provider son la frontera obligatoria de fuentes; Customer es el único contrato Dataverse normalizado aprobado. Account Customer Gateway encapsula `new_tipocliente` y lo expone únicamente como `customerType`, con fallback vacío para `null` o `undefined`.
-- Toda consulta Customer a `accounts` agrega en Account Customer Gateway el filtro fijo `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4`; esos campos son criterios de elegibilidad y no amplían el mapping ni el contrato Customer.
+- Toda consulta Customer a `accounts` conserva provisionalmente en Account Customer Gateway el filtro fijo `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4`; Phase1-022 demostró que los nombres `customertype` y `crbbe_estadocliente` son inválidos y deben sustituirse solo con metadata confirmada. Las tres reglas siguen siendo obligatorias y no amplían el mapping ni el contrato Customer.
 - La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.
 - Las búsquedas Customer de UI invalidan toda selección previa al editar, deduplican el mismo request pendiente y sólo permiten que el identificador de request más reciente publique resultados.
 - Los errores Customer públicos son mensajes estáticos por categoría; detalles originales de MSAL, red o API nunca llegan a la UI.
 - Los diagnósticos Dataverse Phase1-020 son internos y temporales: solo registran campos allowlisted derivados. No registran tokens, headers Authorization, secretos, JWT, cookies, payloads Dataverse, PII Customer, customerCode, URLs/query strings, mensajes upstream ni stack traces.
 - Los probes Phase1-022 son backend-only, se disparan únicamente después de `DATAVERSE_INVALID_FIELD_OR_FILTER` y como máximo una vez por proceso. Registran sólo nombre lógico/categoría y PASS/FAIL, no leen cuerpos de respuesta y deben eliminarse después de identificar el elemento; no autorizan retirar filtros ni inventar nombres o tipos.
+- La metadata Phase1-024 es backend-only, temporal y de ejecución única por proceso después del mismo error. Lee solo los identificadores/tipos de atributos `account` y, para candidatos Choice/State/Status/Boolean, reduce el OptionSet al valor objetivo 3/4. No registra payloads completos, tokens, errores, URLs, queries, clientes o PII; no convierte candidatos en nombres definitivos sin evidencia productiva.
 - `VITE_CUSTOMER_SOURCE` selecciona exclusivamente `local` o `dataverse`; `local` es el fallback compatible cuando la variable no está definida.
 - La configuración pública MSAL usa exclusivamente variables `VITE_AUTH_*`; SellThrough-Web no tiene client secret y los access tokens quedan bajo el cache de MSAL en `sessionStorage`, sin almacenamiento manual.
 - Render es hosting temporal y no una dependencia arquitectónica; Azure podrá sustituirlo manteniendo handler, variables neutrales y contratos.
@@ -156,8 +159,8 @@ Tras autorización independiente para versionar y desplegar únicamente el backe
 
 ## Cantidad de pruebas
 
-Frontend: 282/282 aprobadas en 24 archivos. Backend: 52/52 aprobadas.
+Frontend: 282/282 aprobadas en 24 archivos. Backend: 59/59 aprobadas.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-022, 2026-08-14.
+Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-024, 2026-08-14.

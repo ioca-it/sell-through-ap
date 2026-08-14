@@ -142,3 +142,104 @@ test('los probes temporales devuelven PASS/FAIL sin leer payloads ni emitir diag
   assert.equal(bodyCancelCount, 2);
   assert.deepEqual(events, []);
 });
+
+test('consulta metadata Account con select técnico fijo y sin exponer el payload completo', async () => {
+  let request;
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'metadata-access-token' },
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return {
+        ok: true,
+        json: async () => ({
+          value: [{
+            LogicalName: 'customertypecode',
+            SchemaName: 'CustomerTypeCode',
+            AttributeType: 'Picklist',
+            DisplayName: { sensitive: 'must-not-leave-client' },
+          }],
+        }),
+      };
+    },
+  });
+
+  assert.deepEqual(await client.retrieveEntityAttributeMetadata({
+    entityLogicalName: 'account',
+  }), [{
+    logicalName: 'customertypecode',
+    schemaName: 'CustomerTypeCode',
+    attributeType: 'Picklist',
+  }]);
+  assert.equal(
+    request.url.pathname,
+    "/api/data/v9.2/EntityDefinitions(LogicalName='account')/Attributes",
+  );
+  assert.equal(
+    request.url.searchParams.get('$select'),
+    'LogicalName,SchemaName,AttributeType',
+  );
+  assert.equal(request.options.headers.Authorization, 'Bearer metadata-access-token');
+});
+
+test('reduce OptionSet al valor requerido y su etiqueta localizada', async () => {
+  let requestUrl;
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'metadata-access-token' },
+    fetchImpl: async (url) => {
+      requestUrl = url;
+      return {
+        ok: true,
+        json: async () => ({
+          LogicalName: 'customertypecode',
+          OptionSet: {
+            Options: [
+              { Value: 2, Label: { UserLocalizedLabel: { Label: 'Consultant' } } },
+              { Value: 3, Label: { UserLocalizedLabel: { Label: 'Customer' } } },
+            ],
+          },
+          unrelatedMetadata: 'must-not-leave-client',
+        }),
+      };
+    },
+  });
+
+  assert.deepEqual(await client.retrieveRequiredOptionMetadata({
+    entityLogicalName: 'account',
+    attributeLogicalName: 'customertypecode',
+    attributeType: 'Picklist',
+    optionValue: 3,
+  }), { present: true, label: 'Customer' });
+  assert.match(
+    requestUrl.pathname,
+    /PicklistAttributeMetadata$/,
+  );
+  assert.equal(requestUrl.searchParams.get('$select'), 'LogicalName');
+  assert.equal(
+    requestUrl.searchParams.get('$expand'),
+    'OptionSet($select=Options),GlobalOptionSet($select=Options)',
+  );
+});
+
+test('rechaza identificadores y tipos arbitrarios en consultas temporales de metadata', async () => {
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'metadata-access-token' },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ value: [] }) }),
+  });
+
+  await assert.rejects(
+    client.retrieveEntityAttributeMetadata({ entityLogicalName: "account')/Secrets" }),
+    /metadata inválido/,
+  );
+  await assert.rejects(
+    client.retrieveRequiredOptionMetadata({
+      entityLogicalName: 'account',
+      attributeLogicalName: 'customertypecode',
+      attributeType: 'String',
+      optionValue: 3,
+    }),
+    /OptionSet de metadata inválida/,
+  );
+});

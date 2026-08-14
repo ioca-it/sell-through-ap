@@ -1,4 +1,5 @@
 import { quoteODataString } from './odata.js';
+import { createTemporaryAccountCustomerMetadataDiagnostic } from './accountCustomerMetadataDiagnostic.js';
 import { createTemporaryAccountCustomerQueryDiagnostic } from './accountCustomerQueryDiagnostic.js';
 import { isInvalidFieldOrFilterError } from './dataverseClient.js';
 
@@ -61,6 +62,13 @@ export const createAccountCustomerGateway = ({
       diagnosticLogger,
     })
     : null;
+  const metadataDiagnostic = typeof dataverseClient.retrieveEntityAttributeMetadata === 'function'
+    && typeof dataverseClient.retrieveRequiredOptionMetadata === 'function'
+    ? createTemporaryAccountCustomerMetadataDiagnostic({
+      dataverseClient,
+      diagnosticLogger,
+    })
+    : null;
 
   const retrieveCustomerRows = async (query, diagnosticShape) => {
     try {
@@ -76,6 +84,13 @@ export const createAccountCustomerGateway = ({
           });
         } catch {
           // The temporary diagnosis must never replace the original public failure.
+        }
+      }
+      if (metadataDiagnostic && isInvalidFieldOrFilterError(error)) {
+        try {
+          await metadataDiagnostic.run();
+        } catch {
+          // The temporary metadata lookup must never replace the public failure.
         }
       }
       throw error;
