@@ -2,11 +2,11 @@
 
 ## Fase actual
 
-PHASE1-016 completa el contrato Customer real desde `accounts`: Account Customer Gateway selecciona `new_tipocliente` y lo normaliza exclusivamente como `customerType`, con fallback `''` para `null` o `undefined`. Las búsquedas por código/nombre y la lectura exacta conservan los filtros de elegibilidad Phase1-015, orden, límites y escape OData. No se modificaron UI, autenticación ni despliegue; `VITE_CUSTOMER_SOURCE=local` permanece sin cambios.
+PHASE1-020 agrega diagnóstico temporal y seguro en la frontera HTTP Dataverse para investigar el 502 Customer sin cambiar la consulta ni el contrato público. Dataverse Client clasifica status HTTP y metadata OData como `DATAVERSE_BAD_REQUEST`, `DATAVERSE_INVALID_FIELD_OR_FILTER`, `DATAVERSE_UNAUTHORIZED`, `DATAVERSE_FORBIDDEN`, `DATAVERSE_RATE_LIMITED`, `DATAVERSE_UPSTREAM_ERROR` o `DATAVERSE_NETWORK_ERROR`; Render recibe únicamente metadata derivada y allowlisted. Account Customer Gateway conserva íntegros el filtro Phase1-015 y el `$select`/mapping Phase1-016. No se modificaron UI, autenticación, configuración ni despliegue; `VITE_CUSTOMER_SOURCE=local` permanece sin cambios.
 
 ## Último prompt aprobado
 
-PHASE1-016 — Map Dataverse Customer Type.
+PHASE1-020 — Diagnose Dataverse Customer 502 Safely.
 
 ## Última auditoría aprobada
 
@@ -31,6 +31,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
+- Diagnóstico temporal Dataverse: clasifica fallos HTTP/OData, respuesta inválida y red en siete identificadores internos; los Application Logs reciben solo identificador, operación, tipo de fallo, status upstream opcional y presencia de metadata estructurada, nunca error/payload/URL/query/credenciales/PII.
 - Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais` y `new_tipocliente`; normaliza los cuatro campos Customer y aplica de forma centralizada la elegibilidad `customertype eq 3 and statecode eq 0 and crbbe_estadocliente eq 4` a búsqueda por código/nombre y lectura exacta.
 - Customer API Authenticator: frontera reusable JWT/JWKS con `jose`, separada del OAuth API→Dataverse, con diagnósticos internos normalizados y seguros por etapa de rechazo.
 - Rate Limiter: límites por IP y `oid/sub`, store in-memory inyectable y respuesta 429/Retry-After.
@@ -105,7 +106,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Revisar Phase1-016 y, sólo mediante autorización posterior, cambiar `VITE_CUSTOMER_SOURCE=dataverse` en Vercel para validar interactivamente ambos combobox, `customerType` y los estados de cero/error con el filtro de elegibilidad vigente. Render permanece transitorio y Azure sigue como destino futuro.
+Tras autorización independiente para versionar y desplegar Phase1-020 solo en Render, ejecutar exactamente una vez el arnés existente en `https://sell-through-ap.vercel.app/?phase1-010b-smoke=1` con sesión MSAL y correlacionar el único 502 con el `diagnosticId` JSON de Render Application Logs. No cambiar `VITE_CUSTOMER_SOURCE`, Vercel, autenticación, filtros ni mapping durante esa reproducción.
 
 ## Decisiones congeladas
 
@@ -117,6 +118,7 @@ Revisar Phase1-016 y, sólo mediante autorización posterior, cambiar `VITE_CUST
 - La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.
 - Las búsquedas Customer de UI invalidan toda selección previa al editar, deduplican el mismo request pendiente y sólo permiten que el identificador de request más reciente publique resultados.
 - Los errores Customer públicos son mensajes estáticos por categoría; detalles originales de MSAL, red o API nunca llegan a la UI.
+- Los diagnósticos Dataverse Phase1-020 son internos y temporales: solo registran campos allowlisted derivados. No registran tokens, headers Authorization, secretos, JWT, cookies, payloads Dataverse, PII Customer, customerCode, URLs/query strings, mensajes upstream ni stack traces.
 - `VITE_CUSTOMER_SOURCE` selecciona exclusivamente `local` o `dataverse`; `local` es el fallback compatible cuando la variable no está definida.
 - La configuración pública MSAL usa exclusivamente variables `VITE_AUTH_*`; SellThrough-Web no tiene client secret y los access tokens quedan bajo el cache de MSAL en `sessionStorage`, sin almacenamiento manual.
 - Render es hosting temporal y no una dependencia arquitectónica; Azure podrá sustituirlo manteniendo handler, variables neutrales y contratos.
@@ -148,12 +150,12 @@ Revisar Phase1-016 y, sólo mediante autorización posterior, cambiar `VITE_CUST
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Veinticuatro archivos de pruebas frontend y siete archivos de pruebas backend.
+- Veinticuatro archivos de pruebas frontend y ocho archivos de pruebas backend.
 
 ## Cantidad de pruebas
 
-Frontend: 282/282 aprobadas en 24 archivos. Backend: 43/43 aprobadas.
+Frontend: 282/282 aprobadas en 24 archivos. Backend: 46/46 aprobadas.
 
 ## Estado del build
 
-Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-016, 2026-08-14.
+Frontend aprobado con Vite 5.4.21 y 1675 módulos transformados. Backend syntax check aprobado. `git diff --check` aprobado. Última validación completa: PHASE1-020, 2026-08-14.

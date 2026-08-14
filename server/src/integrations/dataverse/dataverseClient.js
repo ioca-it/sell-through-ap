@@ -1,3 +1,10 @@
+import {
+  createDataverseInvalidResponseDiagnostic,
+  createDataverseNetworkDiagnostic,
+  emitDataverseDiagnostic,
+  inspectDataverseHttpFailure,
+} from './dataverseDiagnostics.js';
+
 export class DataverseRequestError extends Error {
   constructor(message = 'No fue posible consultar Dataverse.') {
     super(message);
@@ -12,6 +19,7 @@ export const createDataverseClient = ({
   tokenProvider,
   fetchImpl = globalThis.fetch,
   timeoutMs = 10000,
+  diagnosticLogger,
 } = {}) => {
   if (typeof baseUrl !== 'string' || baseUrl.trim() === '') {
     throw new Error('DataverseClient: falta "baseUrl".');
@@ -21,6 +29,9 @@ export const createDataverseClient = ({
   }
   if (typeof fetchImpl !== 'function') {
     throw new Error('DataverseClient: fetch no está disponible.');
+  }
+  if (diagnosticLogger !== undefined && typeof diagnosticLogger !== 'function') {
+    throw new Error('DataverseClient: Diagnostic Logger inválido.');
   }
 
   const dataverseOrigin = new URL(baseUrl).origin;
@@ -41,8 +52,10 @@ export const createDataverseClient = ({
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      let dataverseRequestStarted = false;
       try {
         const token = await tokenProvider.getToken();
+        dataverseRequestStarted = true;
         const response = await fetchImpl(url, {
           method: 'GET',
           headers: {
@@ -53,13 +66,37 @@ export const createDataverseClient = ({
           },
           signal: controller.signal,
         });
-        if (!response.ok) throw new DataverseRequestError();
+        if (!response.ok) {
+          emitDataverseDiagnostic(
+            await inspectDataverseHttpFailure(response),
+            diagnosticLogger,
+          );
+          throw new DataverseRequestError();
+        }
 
-        const payload = await response.json();
-        if (!Array.isArray(payload?.value)) throw new DataverseRequestError();
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          emitDataverseDiagnostic(
+            createDataverseInvalidResponseDiagnostic(response.status),
+            diagnosticLogger,
+          );
+          throw new DataverseRequestError();
+        }
+        if (!Array.isArray(payload?.value)) {
+          emitDataverseDiagnostic(
+            createDataverseInvalidResponseDiagnostic(response.status),
+            diagnosticLogger,
+          );
+          throw new DataverseRequestError();
+        }
         return payload.value;
       } catch (error) {
         if (error instanceof DataverseRequestError) throw error;
+        if (dataverseRequestStarted) {
+          emitDataverseDiagnostic(createDataverseNetworkDiagnostic(), diagnosticLogger);
+        }
         if (error?.statusCode === 502) throw error;
         throw new DataverseRequestError();
       } finally {

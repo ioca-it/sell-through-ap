@@ -149,8 +149,15 @@ test('errores internos no exponen secretos, tokens ni mensajes técnicos', async
 
   await withServer(app, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/customers/search?type=code&q=C`);
-    const body = JSON.stringify(await response.json());
+    const payload = await response.json();
+    const body = JSON.stringify(payload);
     assert.equal(response.status, 502);
+    assert.deepEqual(payload, {
+      error: {
+        code: 'DATAVERSE_REQUEST_FAILED',
+        message: 'No fue posible procesar la solicitud.',
+      },
+    });
     assert.doesNotMatch(body, /secret|token-value|DV_CLIENT_SECRET/);
   });
 });
