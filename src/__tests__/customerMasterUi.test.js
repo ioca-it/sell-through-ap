@@ -92,6 +92,14 @@ const selectFirstResult = async (controls, searchValue) => {
   return renderApp();
 };
 
+const createDeferred = () => {
+  let resolve;
+  const promise = new Promise((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+};
+
 beforeEach(() => {
   stateHarness.values = [];
   customerMasterService.searchByCode.mockClear();
@@ -145,6 +153,115 @@ describe('Maestro Cliente en Configuración', () => {
       tree = renderApp();
       expect(textContent(tree)).toContain('No se encontraron clientes.');
     });
+  });
+
+  it('limpia la selección anterior ante cero resultados y permite seguir buscando', async () => {
+    let tree = await selectFirstResult('customer-code-options', 'UI-');
+    customerMasterService.searchByName.mockResolvedValueOnce([]);
+
+    findInput(tree, 'customer-name-options').props.onChange({
+      target: { value: 'Ausente' },
+    });
+
+    await vi.waitFor(() => {
+      tree = renderApp();
+      expect(textContent(tree)).toContain('No se encontraron clientes.');
+    });
+    expect(findInput(tree, 'customer-code-options').props.value).toBe('');
+    expect(findInput(tree, 'customer-name-options').props.value).toBe('Ausente');
+    expect(findElement(tree, (node) => (
+      node.type === 'input' && node.props['aria-label'] === 'Tipo de cliente'
+    )).props.value).toBe('');
+
+    findInput(tree, 'customer-name-options').props.onChange({
+      target: { value: 'Cliente' },
+    });
+    await vi.waitFor(() => {
+      tree = renderApp();
+      expect(findElement(tree, (node) => node.props?.role === 'option')).not.toBeNull();
+    });
+  });
+
+  it('mantiene customerType vacío cuando la selección no tiene mapping real', async () => {
+    customerMasterService.searchByCode.mockResolvedValueOnce([{
+      ...customer,
+      customerType: '',
+    }]);
+
+    const tree = await selectFirstResult('customer-code-options', 'UI-');
+
+    expect(findElement(tree, (node) => (
+      node.type === 'input' && node.props['aria-label'] === 'Tipo de cliente'
+    )).props.value).toBe('');
+  });
+
+  it('no consulta el servicio con un término vacío', () => {
+    const tree = renderApp();
+
+    findInput(tree, 'customer-code-options').props.onChange({ target: { value: '   ' } });
+
+    expect(customerMasterService.searchByCode).not.toHaveBeenCalled();
+  });
+
+  it('no duplica una solicitud idéntica mientras continúa pendiente', () => {
+    customerMasterService.searchByCode.mockImplementation(() => new Promise(() => {}));
+    let tree = renderApp();
+
+    findInput(tree, 'customer-code-options').props.onChange({ target: { value: 'UI' } });
+    tree = renderApp();
+    findInput(tree, 'customer-code-options').props.onChange({ target: { value: 'UI' } });
+
+    expect(customerMasterService.searchByCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignora una respuesta obsoleta incluso si otra búsqueda ya terminó', async () => {
+    const oldRequest = createDeferred();
+    const currentRequest = createDeferred();
+    const obsoleteCustomer = {
+      customerCode: 'OLD-001',
+      customerName: 'Cliente Obsoleto',
+      country: 'Guatemala',
+      customerType: '',
+    };
+    customerMasterService.searchByCode
+      .mockImplementationOnce(() => oldRequest.promise)
+      .mockImplementationOnce(() => currentRequest.promise);
+    let tree = renderApp();
+
+    findInput(tree, 'customer-code-options').props.onChange({ target: { value: 'OLD' } });
+    tree = renderApp();
+    findInput(tree, 'customer-code-options').props.onChange({ target: { value: 'UI' } });
+    currentRequest.resolve([customer]);
+
+    await vi.waitFor(() => {
+      tree = renderApp();
+      expect(textContent(tree)).toContain('Cliente UI');
+    });
+    oldRequest.resolve([obsoleteCustomer]);
+    await Promise.resolve();
+    tree = renderApp();
+
+    expect(textContent(tree)).toContain('Cliente UI');
+    expect(textContent(tree)).not.toContain('Cliente Obsoleto');
+  });
+
+  it('orienta a iniciar sesión sin intentar mostrar detalles sensibles', async () => {
+    customerMasterService.searchByCode.mockRejectedValueOnce(Object.assign(
+      new Error('JWT y URL interna sensibles'),
+      { code: 'CUSTOMER_SESSION_REQUIRED' },
+    ));
+    let tree = renderApp();
+
+    findInput(tree, 'customer-code-options').props.onChange({ target: { value: 'UI' } });
+
+    await vi.waitFor(() => {
+      tree = renderApp();
+      expect(textContent(tree)).toContain(
+        'Inicia sesión para consultar el Maestro Cliente.',
+      );
+    });
+    expect(textContent(tree)).not.toContain('JWT');
+    expect(textContent(tree)).not.toContain('URL interna');
   });
 
   it('oculta mensajes técnicos cuando la API falla', async () => {

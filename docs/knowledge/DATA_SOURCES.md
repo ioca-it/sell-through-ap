@@ -93,9 +93,9 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-006 — Dataverse
 
-- Estado: transporte frontend asegurado con JWT delegado y MSAL integrado; la validación JWT contra Render está confirmada y Phase1-010B prepara una búsqueda Customer controlada para comprobar API→Dataverse. Su deploy y ejecución interactiva desde Vercel permanecen pendientes.
+- Estado: conectividad real end-to-end validada por Phase1-011 y UI preparada por Phase1-012 para búsquedas por código/nombre, selección única, cero resultados, sesión y errores controlados. La activación en Vercel sigue pendiente de revisión; `VITE_CUSTOMER_SOURCE=local` permanece vigente y el Provider Dataverse no es todavía la fuente efectiva de UI.
 - Alcance aprobado: Maestro Cliente con búsqueda por código/nombre y contrato `{ customerCode, customerName, country, customerType }`.
-- Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`.
+- Frontend Provider: `src/providers/dataverse/dataverseCustomerProvider.js`, consumidor exclusivo de Customer API mediante `VITE_API_BASE_URL`; adjunta Bearer MSAL, aplica timeout de 10 segundos y clasifica de forma sanitizada sesión ausente, 401, 403, 429, 5xx, red y respuesta inválida.
 - Selector de Provider: `src/providers/customerProviderFactory.js`, configurado mediante `VITE_CUSTOMER_SOURCE=local|dataverse`; `local` es el fallback cuando la variable no está definida.
 - Repository: `src/repositories/customerRepository.js`.
 - Consumidor: Customer Master Application Service; la UI no recibe nombres físicos Dataverse.
@@ -112,7 +112,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Rate limiting: por IP antes de Auth y por identidad después de Auth; 429 con `Retry-After`. Store in-memory temporal e inyectable.
 - Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
 - Probe JWT Phase1-007: `GET /api/customers/search?type=code` sin `q`; después de autenticar debe responder `400 / INVALID_CUSTOMER_REQUEST` antes de Customer Gateway. Este resultado valida la frontera usuario→API, no Dataverse.
-- Smoke Dataverse Phase1-010B: búsqueda protegida por código activada sólo mediante `?phase1-010b-smoke=1`; el resultado expone status y cantidad, nunca el payload Customer. Éxito: `HTTP 200` y al menos un Customer.
+- Smoke Dataverse Phase1-010B/011: búsqueda protegida `GET /api/customers/search?type=code&q=CL0000041`, activada sólo mediante `?phase1-010b-smoke=1`; resultado real `HTTP 200`, JWT aceptado, request Dataverse intentado, exactamente un Customer y diagnóstico nulo. Se conserva sólo la cantidad, nunca el payload Customer, y el arnés permanece disponible temporalmente.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún endpoint está codificado en módulos Customer/Dataverse.
 
 Los secretos, tokens y permisos no se versionan. Los IDs públicos de la SPA, scope delegado y endpoint temporal se documentan como variables frontend; los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.
@@ -135,7 +135,7 @@ CSV, Excel y la impresión del informe se generan desde resultados en memoria. N
 | Inventarios, compras y ventas | Inventario |
 | Semanas estándar y umbral de merma | JSON local vía Local Provider y Repository |
 | Safety stock y lead times | Configuración de sesión vía Local Provider y Repository |
-| Código, nombre, país y tipo del cliente | Fixtures locales o Customer API con Bearer MSAL → Account Customer Gateway → `accounts`, según `VITE_CUSTOMER_SOURCE`; Phase1-007 no cambia la fuente y su probe JWT no consulta Dataverse |
+| Código, nombre, país y tipo del cliente | Fixtures locales o Customer API con Bearer MSAL → Account Customer Gateway → `accounts`, según `VITE_CUSTOMER_SOURCE`; Phase1-012 prepara ambos combobox y conserva `VITE_CUSTOMER_SOURCE=local` hasta revisión |
 | Bucket y fase | JSON local vía Local Provider/Repository + EOL Engine coordinado por `recordAssembler.js` |
 | Fecha base EOL | Reloj del navegador |
 
@@ -170,3 +170,17 @@ PHASE1-010B sustituye ese trigger por una búsqueda Customer controlada que sí
 invoca la Customer API y su gateway Dataverse al habilitarse explícitamente. El
 Provider efectivo de la UI permanece `local`; el arnés descarta el payload y
 publica únicamente etapas, status HTTP y cantidad de resultados.
+
+PHASE1-011 cierra esa ejecución como PASS. `CL0000041` devolvió exactamente una
+coincidencia mediante la arquitectura validada, sin almacenar payload real,
+JWT, headers `Authorization`, secretos ni claims sensibles. Permanecen
+pendientes la activación del Provider Dataverse en UI, `customerType` real, la
+búsqueda por nombre y los casos de error/cero resultados. Render sigue como
+backend transitorio y Azure como migración futura.
+
+PHASE1-012 cubre en frontend las búsquedas por código y nombre mediante la misma
+Customer API, una única selección Customer, fallback `customerType: ''`, cero
+resultados, sesión ausente, categorías HTTP, red, timeout, deduplicación y
+respuestas obsoletas. La UI sigue consumiendo fixtures porque
+`VITE_CUSTOMER_SOURCE=local`; la validación interactiva real desde ambos
+combobox requiere una activación posterior en Vercel.

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Package, AlertCircle, CheckCircle2, FileText, Download, Trash2, PlayCircle, Database, AlertTriangle, TrendingDown, DollarSign, Calendar, Calculator, FileSpreadsheet, Settings, Upload, BarChart3, ChevronRight, ClipboardList } from 'lucide-react';
 import { createSellThroughRepository } from './repositories/sellThroughRepository.js';
@@ -15,7 +15,10 @@ import {
   getPhaseDiscountTable,
   processSellThrough,
 } from './application/sellThroughApplicationService.js';
-import { createCustomerMasterService } from './application/customerMasterService.js';
+import {
+  createCustomerMasterService,
+  getCustomerSearchErrorMessage,
+} from './application/customerMasterService.js';
 import { AuthenticationControls } from './auth/AuthenticationControls.jsx';
 import { getAccessToken } from './auth/customerApiAccessToken.js';
 import { configurationService } from './configuration/configurationService.js';
@@ -366,6 +369,7 @@ export default function App({
     leadTimeUSA: 4,
     leadTimeCHINA: 12,
   });
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerSearchState, setCustomerSearchState] = useState({
     mode: null,
     query: '',
@@ -373,6 +377,8 @@ export default function App({
     results: [],
     message: '',
   });
+  // No participa del render: el id invalida A→B→A y pendingKey deduplica el request activo.
+  const [customerSearchRequest] = useState({ id: 0, pendingKey: null });
   
   const updateConfig = (campo, valor) => {
     setConfig(prev => ({ ...prev, [campo]: valor }));
@@ -381,9 +387,17 @@ export default function App({
   const searchCustomers = async (mode, query) => {
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
+      customerSearchRequest.id += 1;
+      customerSearchRequest.pendingKey = null;
       setCustomerSearchState({ mode, query: '', status: 'idle', results: [], message: '' });
       return;
     }
+
+    const requestKey = `${mode}:${normalizedQuery}`;
+    if (customerSearchRequest.pendingKey === requestKey) return;
+    const requestId = customerSearchRequest.id + 1;
+    customerSearchRequest.id = requestId;
+    customerSearchRequest.pendingKey = requestKey;
 
     setCustomerSearchState({
       mode,
@@ -396,37 +410,36 @@ export default function App({
       const results = mode === 'code'
         ? await customerMasterService.searchByCode(normalizedQuery)
         : await customerMasterService.searchByName(normalizedQuery);
-      setCustomerSearchState((currentSearch) => (
-        currentSearch.mode === mode && currentSearch.query === normalizedQuery
-          ? {
-            mode,
-            query: normalizedQuery,
-            status: 'ready',
-            results,
-            message: results.length === 0 ? 'No se encontraron clientes.' : '',
-          }
-          : currentSearch
-      ));
-    } catch {
-      setCustomerSearchState((currentSearch) => (
-        currentSearch.mode === mode && currentSearch.query === normalizedQuery
-          ? {
-            mode,
-            query: normalizedQuery,
-            status: 'error',
-            results: [],
-            message: 'No fue posible consultar clientes. Intenta nuevamente.',
-          }
-          : currentSearch
-      ));
+      if (customerSearchRequest.id !== requestId) return;
+      setCustomerSearchState({
+        mode,
+        query: normalizedQuery,
+        status: 'ready',
+        results,
+        message: results.length === 0 ? 'No se encontraron clientes.' : '',
+      });
+    } catch (searchError) {
+      if (customerSearchRequest.id !== requestId) return;
+      setCustomerSearchState({
+        mode,
+        query: normalizedQuery,
+        status: 'error',
+        results: [],
+        message: getCustomerSearchErrorMessage(searchError),
+      });
+    } finally {
+      if (customerSearchRequest.id === requestId) {
+        customerSearchRequest.pendingKey = null;
+      }
     }
   };
 
   const updateCustomerSearch = (mode, value) => {
+    setSelectedCustomer(null);
     setConfig((previousConfig) => ({
       ...previousConfig,
-      codigoCliente: mode === 'code' ? value : '',
-      nombreCliente: mode === 'name' ? value : '',
+      codigoCliente: '',
+      nombreCliente: '',
       pais: '',
       customerType: '',
     }));
@@ -434,6 +447,10 @@ export default function App({
   };
 
   const selectCustomer = (customer) => {
+    // Una única entidad seleccionada sincroniza ambos combobox y los cuatro campos.
+    customerSearchRequest.id += 1;
+    customerSearchRequest.pendingKey = null;
+    setSelectedCustomer(customer);
     setConfig((previousConfig) => (
       customerMasterService.selectCustomer(previousConfig, customer)
     ));
@@ -444,6 +461,14 @@ export default function App({
       results: [],
       message: '',
     });
+  };
+
+  const customerInputValue = (mode) => {
+    if (customerSearchState.mode === mode) return customerSearchState.query;
+    if (!selectedCustomer) return '';
+    return mode === 'code'
+      ? selectedCustomer.customerCode
+      : selectedCustomer.customerName;
   };
 
   const renderCustomerOptions = (mode) => {
@@ -1211,7 +1236,7 @@ export default function App({
                 <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>
                   Código del cliente <span className="text-red-700">*</span>
                 </label>
-                <input type="search" value={config.codigoCliente}
+                <input type="search" value={customerInputValue('code')}
                   role="combobox"
                   aria-autocomplete="list"
                   aria-expanded={customerSearchState.mode === 'code' && customerSearchState.results.length > 0}
@@ -1227,7 +1252,7 @@ export default function App({
                 <label className="block text-xs font-bold mb-1.5" style={{ color: '#0a2540' }}>
                   Nombre del cliente <span className="text-red-700">*</span>
                 </label>
-                <input type="search" value={config.nombreCliente}
+                <input type="search" value={customerInputValue('name')}
                   role="combobox"
                   aria-autocomplete="list"
                   aria-expanded={customerSearchState.mode === 'name' && customerSearchState.results.length > 0}

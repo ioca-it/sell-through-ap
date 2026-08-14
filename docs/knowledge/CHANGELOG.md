@@ -1,5 +1,50 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-14 — PHASE1-012
+
+### Preparado
+
+- Búsquedas Customer por código y nombre conservan Provider → Repository → Application Service → UI y el mismo backend autenticado.
+- Una única entidad Customer seleccionada sincroniza código, nombre, país y tipo; editar cualquier combobox invalida la selección anterior.
+- Identificador monotónico protege respuestas asíncronas A→B→A y la misma solicitud pendiente no se duplica.
+- Cero resultados mantiene la búsqueda disponible y no conserva datos anteriores.
+- Provider clasifica sesión ausente, 401, 403, 429, 5xx, red, timeout y respuesta inválida; Application Service publica sólo mensajes claros y sanitizados.
+- `customerType` conserva fallback vacío sin inventar mapping Dataverse.
+
+### Pruebas
+
+- 24 pruebas nuevas sobre Provider, factory, Application Service y UI.
+- Suite frontend: 282/282 aprobadas en 24 archivos.
+- Build Vite 5.4.21 aprobado con 1675 módulos transformados.
+
+### Sin cambios
+
+- `VITE_CUSTOMER_SOURCE=local`; no se activa Dataverse en UI.
+- Sin cambios en backend, autenticación, Render, Entra, Dataverse, Maestro Producto, Inventario Cliente, fórmulas o Dashboard.
+- Los harness Phase1-007/Phase1-010B permanecen sin cambios.
+- Sin commit, push ni deploy.
+
+## 2026-08-14 — PHASE1-011
+
+### Cierre
+
+- Phase1-010B queda formalmente en **PASS — Real Dataverse connectivity validated end-to-end.**
+- La búsqueda controlada `GET /api/customers/search?type=code&q=CL0000041` devolvió `HTTP 200` y exactamente una coincidencia, con JWT aceptado, request Dataverse intentado y diagnóstico nulo.
+- Se valida la arquitectura Vercel → MSAL / Microsoft Entra ID → delegated access token → Render Customer API → JWT validation → backend `client_credentials` → Dataverse → `accounts`.
+
+### Seguridad y alcance
+
+- No se almacena payload real del cliente, JWT, headers `Authorization`, secretos ni claims sensibles.
+- `VITE_CUSTOMER_SOURCE=local` permanece vigente; el Customer Provider Dataverse no se activa en UI y el smoke-test harness no se elimina.
+- Sin cambios en lógica funcional, backend, autenticación o Dataverse; sin commit, push ni deploy.
+
+### Pendiente
+
+- Activar Customer Provider Dataverse en UI.
+- Completar `customerType` real.
+- Validar búsqueda por nombre y manejo de errores/cero resultados.
+- Mantener Render como backend transitorio y migrar posteriormente a Azure.
+
 ## 2026-08-13 — PHASE1-007
 
 ### Agregado

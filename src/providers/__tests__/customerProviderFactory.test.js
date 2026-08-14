@@ -11,12 +11,18 @@ describe('customerProviderFactory', () => {
     ]);
   });
 
+  it('mantiene LocalCustomerProvider como fallback cuando la fuente está vacía', async () => {
+    const provider = createCustomerProvider({ source: '' });
+
+    await expect(provider.searchCustomersByCode('LOCAL-001')).resolves.toHaveLength(1);
+  });
+
   it('selecciona DataverseCustomerProvider cuando la fuente es dataverse', async () => {
     const customer = {
       customerCode: 'DV-001',
       customerName: 'Cliente Dataverse',
       country: 'Guatemala',
-      customerType: 'Enterprise',
+      customerType: '',
     };
     const fetchImpl = vi.fn(async () => ({
       ok: true,

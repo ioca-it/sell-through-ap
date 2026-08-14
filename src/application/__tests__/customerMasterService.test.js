@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   applyCustomerSelection,
   createCustomerMasterService,
+  getCustomerSearchErrorMessage,
 } from '../customerMasterService.js';
 
 const customer = {
@@ -37,6 +38,14 @@ describe('customerMasterService', () => {
     });
   });
 
+  it('mantiene customerType vacío cuando el campo real aún no está disponible', () => {
+    expect(applyCustomerSelection({}, {
+      customerCode: 'C-002',
+      customerName: 'Cliente Dos',
+      country: 'Guatemala',
+    })).toMatchObject({ customerType: '' });
+  });
+
   it('conserva el resto de la configuración para no alterar el flujo actual', () => {
     const config = {
       fechaCorte: '2026-08-10',
@@ -65,5 +74,26 @@ describe('customerMasterService', () => {
     await expect(service.searchByName('Uno')).resolves.toEqual([customer]);
     expect(repository.searchByCode).toHaveBeenCalledWith('C-');
     expect(repository.searchByName).toHaveBeenCalledWith('Uno');
+  });
+
+  it.each([
+    ['CUSTOMER_SESSION_REQUIRED', 'Inicia sesión para consultar el Maestro Cliente.'],
+    ['CUSTOMER_AUTHENTICATION_REQUIRED', 'Tu sesión no es válida. Inicia sesión nuevamente.'],
+    ['CUSTOMER_AUTHORIZATION_DENIED', 'Tu cuenta no tiene permisos para consultar el Maestro Cliente.'],
+    ['CUSTOMER_RATE_LIMITED', 'Hay demasiadas consultas. Espera un momento e intenta nuevamente.'],
+    ['CUSTOMER_SERVICE_UNAVAILABLE', 'El Maestro Cliente no está disponible temporalmente. Intenta nuevamente.'],
+    ['CUSTOMER_NETWORK_ERROR', 'No fue posible conectar con el Maestro Cliente. Revisa tu conexión e intenta nuevamente.'],
+    ['CUSTOMER_REQUEST_TIMEOUT', 'La consulta tardó demasiado. Intenta nuevamente.'],
+  ])('traduce %s a un mensaje seguro para UI', (code, expectedMessage) => {
+    expect(getCustomerSearchErrorMessage({
+      code,
+      message: 'token, URL y stack sensibles',
+    })).toBe(expectedMessage);
+  });
+
+  it('oculta detalles de errores desconocidos', () => {
+    expect(getCustomerSearchErrorMessage(
+      new Error('token, URL y stack sensibles'),
+    )).toBe('No fue posible consultar clientes. Intenta nuevamente.');
   });
 });

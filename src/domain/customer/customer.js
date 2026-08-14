@@ -9,6 +9,7 @@ export const normalizeCustomer = (customer = {}) => Object.freeze({
   customerCode: normalizeText(customer.customerCode),
   customerName: normalizeText(customer.customerName),
   country: normalizeText(customer.country),
+  // El mapping físico aún no existe; la ausencia se conserva como fallback vacío.
   customerType: normalizeText(customer.customerType),
 });
 

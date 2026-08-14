@@ -1,5 +1,34 @@
 # Roadmap aprobado
 
+## Phase1-012 — Activate Dataverse Customer Provider in UI
+
+La UI de Configuración queda preparada para usar Dataverse mediante la cadena
+Dataverse → Render Customer API → DataverseCustomerProvider →
+CustomerRepository → Customer Application Service → UI. Código y nombre,
+selección única, sincronización de cuatro campos, cero resultados, sesión
+ausente, errores sanitizados, timeout, deduplicación y respuestas obsoletas
+quedan implementados y cubiertos.
+
+No se activa todavía la fuente: `VITE_CUSTOMER_SOURCE=local` permanece vigente.
+El siguiente paso requiere revisar este hito, autorizar el cambio en Vercel y
+validar interactivamente ambos combobox. `customerType` conserva fallback vacío
+hasta confirmar su columna lógica; Render continúa transitorio y Azure futuro.
+
+## Phase1-011 — Close Real Dataverse Smoke Test
+
+Phase1-010B queda cerrado como **PASS — Real Dataverse connectivity validated
+end-to-end.** La ejecución real validó Vercel → MSAL / Microsoft Entra ID →
+delegated access token → Render Customer API → JWT validation → backend
+`client_credentials` → Dataverse → `accounts`. La búsqueda controlada de
+`CL0000041` devolvió exactamente una coincidencia sin almacenar el payload real
+del cliente, JWT, headers `Authorization`, secretos ni claims sensibles.
+
+`VITE_CUSTOMER_SOURCE=local` permanece vigente y el arnés temporal no se
+elimina. Los pendientes reales son activar el Customer Provider Dataverse en
+UI, completar `customerType` real, validar búsqueda por nombre y validar manejo
+de errores/cero resultados. Render se mantiene como backend transitorio y Azure
+como destino futuro.
+
 ## Hito Astrid 2026-08-11 — Cambios confirmados de Dashboard
 
 Implementado sin ampliar fuentes ni infraestructura:

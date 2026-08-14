@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CUSTOMER_API_ERROR_CODES,
   createDataverseCustomerProvider,
   CustomerApiError,
 } from '../dataverseCustomerProvider.js';
@@ -12,9 +13,14 @@ const customer = {
   customerType: '',
 };
 
-const createProvider = ({ payload = { customers: [customer] }, ok = true } = {}) => {
+const createProvider = ({
+  payload = { customers: [customer] },
+  ok = true,
+  status = ok ? 200 : 500,
+} = {}) => {
   const fetchImpl = vi.fn(async () => ({
     ok,
+    status,
     json: async () => payload,
   }));
   const getAccessToken = vi.fn(async () => 'delegated-access-token');
@@ -45,6 +51,7 @@ describe('dataverseCustomerProvider vía backend API', () => {
         Accept: 'application/json',
         Authorization: 'Bearer delegated-access-token',
       },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -67,6 +74,29 @@ describe('dataverseCustomerProvider vía backend API', () => {
     await expect(provider.searchCustomersByCode('C')).resolves.toEqual([customer]);
   });
 
+  it('mantiene customerType vacío cuando la API no entrega el campo real', async () => {
+    const { provider } = createProvider({
+      payload: { customers: [{
+        customerCode: 'C-002',
+        customerName: 'Cliente Dos',
+        country: 'Guatemala',
+      }] },
+    });
+
+    await expect(provider.searchCustomersByCode('C-002')).resolves.toEqual([{
+      customerCode: 'C-002',
+      customerName: 'Cliente Dos',
+      country: 'Guatemala',
+      customerType: '',
+    }]);
+  });
+
+  it('devuelve un arreglo vacío controlado cuando no hay coincidencias', async () => {
+    const { provider } = createProvider({ payload: { customers: [] } });
+
+    await expect(provider.searchCustomersByName('Ausente')).resolves.toEqual([]);
+  });
+
   it('no consulta la API con término vacío', async () => {
     const { provider, fetchImpl, getAccessToken } = createProvider();
 
@@ -75,15 +105,67 @@ describe('dataverseCustomerProvider vía backend API', () => {
     expect(getAccessToken).not.toHaveBeenCalled();
   });
 
-  it('normaliza errores HTTP sin mostrar detalles técnicos', async () => {
-    const { provider } = createProvider({ ok: false });
+  it.each([
+    [401, CUSTOMER_API_ERROR_CODES.AUTHENTICATION_REQUIRED],
+    [403, CUSTOMER_API_ERROR_CODES.AUTHORIZATION_DENIED],
+    [429, CUSTOMER_API_ERROR_CODES.RATE_LIMITED],
+    [503, CUSTOMER_API_ERROR_CODES.SERVICE_UNAVAILABLE],
+  ])('normaliza HTTP %s sin mostrar detalles técnicos', async (status, code) => {
+    const { provider } = createProvider({ ok: false, status });
 
     await expect(provider.searchCustomersByCode('C')).rejects.toEqual(
       expect.objectContaining({
         name: 'CustomerApiError',
+        code,
         message: 'No fue posible consultar el Maestro Cliente.',
       }),
     );
+  });
+
+  it('normaliza errores de red sin exponer el error original', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('URL interna y stack sensible');
+    });
+    const provider = createDataverseCustomerProvider({
+      apiBaseUrl,
+      fetchImpl,
+      getAccessToken: async () => 'delegated-access-token',
+    });
+
+    await expect(provider.searchCustomersByCode('C')).rejects.toEqual(
+      expect.objectContaining({ code: CUSTOMER_API_ERROR_CODES.NETWORK_ERROR }),
+    );
+  });
+
+  it('clasifica timeout sin exponer detalles del transporte', async () => {
+    const fetchImpl = vi.fn(async () => {
+      const error = new Error('timeout técnico');
+      error.name = 'AbortError';
+      throw error;
+    });
+    const provider = createDataverseCustomerProvider({
+      apiBaseUrl,
+      fetchImpl,
+      getAccessToken: async () => 'delegated-access-token',
+    });
+
+    await expect(provider.searchCustomersByName('Cliente')).rejects.toEqual(
+      expect.objectContaining({ code: CUSTOMER_API_ERROR_CODES.REQUEST_TIMEOUT }),
+    );
+  });
+
+  it('no consulta la API y orienta la capa superior cuando no hay sesión', async () => {
+    const fetchImpl = vi.fn();
+    const provider = createDataverseCustomerProvider({
+      apiBaseUrl,
+      fetchImpl,
+      getAccessToken: async () => null,
+    });
+
+    await expect(provider.searchCustomersByCode('C')).rejects.toEqual(
+      expect.objectContaining({ code: CUSTOMER_API_ERROR_CODES.SESSION_REQUIRED }),
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('rechaza respuestas con forma inválida', async () => {
@@ -127,8 +209,10 @@ describe('dataverseCustomerProvider vía backend API', () => {
       },
     });
 
-    await expect(provider.searchCustomersByCode('C')).rejects.toBeInstanceOf(
-      CustomerApiError,
+    await expect(provider.searchCustomersByCode('C')).rejects.toEqual(
+      expect.objectContaining({
+        code: CUSTOMER_API_ERROR_CODES.AUTHENTICATION_UNAVAILABLE,
+      }),
     );
     expect(fetchImpl).not.toHaveBeenCalled();
   });
