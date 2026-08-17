@@ -168,6 +168,9 @@ test('activa metadata únicamente después del FAIL individual de producturl', a
     probeRetrieveMultiple: async (query) => !(
       query.select?.length === 1 && query.select[0] === 'producturl'
     ),
+    retrieveEntityDefinitionByEntitySetName: async () => ({
+      LogicalName: 'resolved_productpricelevel',
+    }),
     retrieveEntityAttributeMetadataCandidates: async () => {
       metadataCalls += 1;
       return [{
@@ -211,11 +214,23 @@ test('activa metadata únicamente después del FAIL individual de producturl', a
   assert.deepEqual(events[metadataIndex + 1], {
     component: 'ProductPriceLevelMetadataDiagnostic',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ENTITY_DEFINITION',
+    result: 'PASS',
+  });
+  assert.deepEqual(events[metadataIndex + 2], {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ATTRIBUTES',
+    result: 'PASS',
+  });
+  assert.deepEqual(events[metadataIndex + 3], {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
     stage: 'CANDIDATES',
     result: 'FOUND',
     candidateCount: 1,
   });
-  assert.deepEqual(events[metadataIndex + 2], {
+  assert.deepEqual(events[metadataIndex + 4], {
     component: 'ProductPriceLevelMetadataDiagnostic',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
     logicalName: 'crbbe_producturl',
@@ -396,7 +411,7 @@ test('se ejecuta después del 400 específico, conserva 502 y no repite probes',
     timeline.filter(({ diagnosticId }) => (
       diagnosticId === 'PHASE1_048_PRODUCT_URL_METADATA'
     )).length,
-    3,
+    5,
   );
   assert.equal(
     requestUrls.filter(({ pathname }) => (

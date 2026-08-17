@@ -1,8 +1,3 @@
-import {
-  DATAVERSE_METADATA_FAILURE_STAGES,
-  getDataverseMetadataFailureStage,
-} from './dataverseClient.js';
-
 const COMPONENT = 'ProductPriceLevelMetadataDiagnostic';
 const DIAGNOSTIC_ID = 'PHASE1_048_PRODUCT_URL_METADATA';
 const ENTITY_SET = 'productpricelevels';
@@ -74,27 +69,44 @@ export const runProductPriceLevelMetadataDiagnosticOnce = async ({
   executedInProcess = true;
   emitLifecycle('TRIGGER', 'REACHED', diagnosticLogger);
 
-  if (typeof dataverseClient?.retrieveEntityAttributeMetadataCandidates !== 'function') {
+  if (typeof dataverseClient?.retrieveEntityDefinitionByEntitySetName !== 'function'
+    || typeof dataverseClient?.retrieveEntityAttributeMetadataCandidates !== 'function') {
     emitLifecycle('ENTITY_DEFINITION', 'FAIL', diagnosticLogger);
     return true;
   }
 
+  let entityDefinition;
+  try {
+    entityDefinition = await dataverseClient.retrieveEntityDefinitionByEntitySetName({
+      entitySetName: ENTITY_SET,
+    });
+  } catch {
+    emitLifecycle('ENTITY_DEFINITION', 'FAIL', diagnosticLogger);
+    return true;
+  }
+  const entityLogicalName = entityDefinition?.LogicalName;
+  if (typeof entityLogicalName !== 'string'
+    || !/^[a-z0-9_]+$/.test(entityLogicalName)) {
+    emitLifecycle('ENTITY_DEFINITION', 'FAIL', diagnosticLogger);
+    return true;
+  }
+  emitLifecycle('ENTITY_DEFINITION', 'PASS', diagnosticLogger);
+
   let attributes;
   try {
     attributes = await dataverseClient.retrieveEntityAttributeMetadataCandidates({
-      entitySetName: ENTITY_SET,
+      entityLogicalName,
       nameConcepts: NAME_CONCEPTS,
     });
-  } catch (error) {
-    const stage = getDataverseMetadataFailureStage(error)
-      ?? DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION;
-    emitLifecycle(stage, 'FAIL', diagnosticLogger);
+  } catch {
+    emitLifecycle('ATTRIBUTES', 'FAIL', diagnosticLogger);
     return true;
   }
   if (!Array.isArray(attributes)) {
     emitLifecycle('ATTRIBUTES', 'FAIL', diagnosticLogger);
     return true;
   }
+  emitLifecycle('ATTRIBUTES', 'PASS', diagnosticLogger);
 
   const candidateEvents = attributes
     .map((attribute) => createMetadataEvent(attribute))

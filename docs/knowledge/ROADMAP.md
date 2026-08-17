@@ -1,5 +1,28 @@
 # Roadmap aprobado
 
+## Phase1-052 — Fix Product Metadata Entity Resolution
+
+Maestro Producto queda **PRODUCT METADATA ENTITY RESOLUTION FIXED / NOT
+DEPLOYED / NOT EXECUTED / NOT ACTIVATED**. La evidencia productiva proporcionada
+confirmó `TRIGGER/REACHED` y `ENTITY_DEFINITION/FAIL`. La consulta temporal
+anterior combinaba el filtro válido por `EntitySetName=productpricelevels` con
+`$top=2`; Dataverse no pagina ni limita la colección de metadata y ese parámetro
+impedía resolver la EntityDefinition antes de llegar a `Attributes`.
+
+Phase1-052 conserva `$select=LogicalName,EntitySetName` y el `$filter` exacto,
+retira exclusivamente `$top`, revalida en memoria una única coincidencia exacta
+y toma el LogicalName de esa respuesta para navegar a `Attributes`, sin
+hardcodearlo. La telemetría emite ahora PASS o FAIL para `ENTITY_DEFINITION` y
+`ATTRIBUTES` antes de `CANDIDATES/FOUND|NONE`; candidatos y fallos mantienen el
+allowlist vigente. La guardia once-per-process continúa establecida antes del
+primer `await`.
+
+No cambia el Product Gateway definitivo: `productpricelevels`, `producturl`,
+mappings, filtros y contrato `productUrl` permanecen intactos. Tampoco cambian
+Customer Master, frontend, variables o infraestructura. El siguiente paso
+requiere autorización separada para checkpoint/deploy backend y una única
+ejecución del smoke Phase1-042 después de reiniciar el proceso.
+
 ## Phase1-050 — Fix Product URL Metadata Diagnostic Trigger
 
 Maestro Producto queda **METADATA TRIGGER OBSERVABILITY FIXED / NOT DEPLOYED /

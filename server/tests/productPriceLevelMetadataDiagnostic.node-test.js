@@ -32,9 +32,13 @@ test('registra únicamente metadata allowlist y nunca datos Product o autenticac
 
   assert.equal(await runProductPriceLevelMetadataDiagnosticOnce({
     dataverseClient: {
+      retrieveEntityDefinitionByEntitySetName: async (query) => {
+        assert.deepEqual(query, { entitySetName: 'productpricelevels' });
+        return { LogicalName: 'resolved_productpricelevel' };
+      },
       retrieveEntityAttributeMetadataCandidates: async (query) => {
         assert.deepEqual(query, {
-          entitySetName: 'productpricelevels',
+          entityLogicalName: 'resolved_productpricelevel',
           nameConcepts: ['url', 'product', 'producto'],
         });
         return attributes;
@@ -48,6 +52,16 @@ test('registra únicamente metadata allowlist y nunca datos Product o autenticac
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
     stage: 'TRIGGER',
     result: 'REACHED',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ENTITY_DEFINITION',
+    result: 'PASS',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ATTRIBUTES',
+    result: 'PASS',
   }, {
     component: 'ProductPriceLevelMetadataDiagnostic',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
@@ -71,7 +85,7 @@ test('registra únicamente metadata allowlist y nunca datos Product o autenticac
     isValidForRead: false,
     result: 'NOT_CANDIDATE',
   }]);
-  events.slice(2).forEach((event) => {
+  events.slice(4).forEach((event) => {
     assert.deepEqual(Object.keys(event), [
       'component',
       'diagnosticId',
@@ -90,16 +104,21 @@ test('registra únicamente metadata allowlist y nunca datos Product o autenticac
 });
 
 test('protege concurrentemente la consulta de metadata once-per-process', async () => {
-  let calls = 0;
+  let entityDefinitionCalls = 0;
+  let attributeCalls = 0;
   const events = [];
   let resolveMetadata;
   const metadataPending = new Promise((resolve) => {
     resolveMetadata = resolve;
   });
   const dataverseClient = {
-    retrieveEntityAttributeMetadataCandidates: async () => {
-      calls += 1;
+    retrieveEntityDefinitionByEntitySetName: async () => {
+      entityDefinitionCalls += 1;
       return metadataPending;
+    },
+    retrieveEntityAttributeMetadataCandidates: async () => {
+      attributeCalls += 1;
+      return [];
     },
   };
 
@@ -113,15 +132,19 @@ test('protege concurrentemente la consulta de metadata once-per-process', async 
     diagnosticLogger,
   });
   assert.equal(await second, false);
-  assert.equal(calls, 1);
-  resolveMetadata([]);
+  assert.equal(entityDefinitionCalls, 1);
+  assert.equal(attributeCalls, 0);
+  resolveMetadata({ LogicalName: 'resolved_productpricelevel' });
   assert.equal(await first, true);
   assert.equal(
     await runProductPriceLevelMetadataDiagnosticOnce({ dataverseClient }),
     false,
   );
-  assert.equal(calls, 1);
+  assert.equal(entityDefinitionCalls, 1);
+  assert.equal(attributeCalls, 1);
   assert.equal(events.filter(({ stage }) => stage === 'TRIGGER').length, 1);
+  assert.equal(events.filter(({ stage }) => stage === 'ENTITY_DEFINITION').length, 1);
+  assert.equal(events.filter(({ stage }) => stage === 'ATTRIBUTES').length, 1);
   assert.equal(events.filter(({ stage }) => stage === 'CANDIDATES').length, 1);
 });
 
@@ -129,6 +152,9 @@ test('omite filas con nombres de metadata inseguros sin registrar su contenido',
   const events = [];
   await runProductPriceLevelMetadataDiagnosticOnce({
     dataverseClient: {
+      retrieveEntityDefinitionByEntitySetName: async () => ({
+        LogicalName: 'resolved_productpricelevel',
+      }),
       retrieveEntityAttributeMetadataCandidates: async () => [{
         LogicalName: 'crbbe_producturl\nAuthorization: Bearer TOKEN',
         SchemaName: 'crbbe_ProductUrl',
@@ -143,6 +169,16 @@ test('omite filas con nombres de metadata inseguros sin registrar su contenido',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
     stage: 'TRIGGER',
     result: 'REACHED',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ENTITY_DEFINITION',
+    result: 'PASS',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ATTRIBUTES',
+    result: 'PASS',
   }, {
     component: 'ProductPriceLevelMetadataDiagnostic',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
@@ -223,6 +259,11 @@ test('registra trigger y fallo sanitizado al consultar Attributes', async () => 
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
     stage: 'TRIGGER',
     result: 'REACHED',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ENTITY_DEFINITION',
+    result: 'PASS',
   }, {
     component: 'ProductPriceLevelMetadataDiagnostic',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',

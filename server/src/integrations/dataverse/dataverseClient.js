@@ -10,12 +10,6 @@ export const DATAVERSE_FORMATTED_VALUE_ANNOTATION =
   'OData.Community.Display.V1.FormattedValue';
 
 const DATAVERSE_HTTP_FAILURE = Symbol('dataverseHttpFailure');
-const DATAVERSE_METADATA_FAILURE = Symbol('dataverseMetadataFailure');
-
-export const DATAVERSE_METADATA_FAILURE_STAGES = Object.freeze({
-  ENTITY_DEFINITION: 'ENTITY_DEFINITION',
-  ATTRIBUTES: 'ATTRIBUTES',
-});
 
 const attachHttpFailure = (error, diagnostic) => {
   Object.defineProperty(error, DATAVERSE_HTTP_FAILURE, {
@@ -33,18 +27,6 @@ export const isDataverseInvalidFieldOrFilterError = (error) => {
   return failure?.diagnosticId === DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER
     && failure?.upstreamStatus === 400;
 };
-
-const attachMetadataFailure = (error, stage) => {
-  Object.defineProperty(error, DATAVERSE_METADATA_FAILURE, {
-    value: stage,
-    enumerable: false,
-  });
-  return error;
-};
-
-export const getDataverseMetadataFailureStage = (error) => (
-  error?.[DATAVERSE_METADATA_FAILURE] ?? null
-);
 
 const createPreferHeader = (includeAnnotations) => {
   if (includeAnnotations === undefined) return {};
@@ -233,20 +215,12 @@ export const createDataverseClient = ({
     }
   };
 
-  const retrieveEntityAttributeMetadataCandidates = async ({
+  const retrieveEntityDefinitionByEntitySetName = async ({
     entitySetName,
-    nameConcepts,
   } = {}) => {
     if (typeof entitySetName !== 'string'
       || !/^[A-Za-z0-9_]+$/.test(entitySetName)) {
       throw new Error('DataverseClient: Entity Set de metadata inválido.');
-    }
-    if (!Array.isArray(nameConcepts)
-      || nameConcepts.length === 0
-      || nameConcepts.some((concept) => (
-        typeof concept !== 'string' || !/^[a-z0-9_]+$/.test(concept)
-      ))) {
-      throw new Error('DataverseClient: conceptos de metadata inválidos.');
     }
 
     const entityDefinitionsUrl = new URL(
@@ -258,32 +232,40 @@ export const createDataverseClient = ({
       '$filter',
       `EntitySetName eq '${entitySetName}'`,
     );
-    entityDefinitionsUrl.searchParams.set('$top', '2');
 
-    let entityDefinitions;
-    try {
-      entityDefinitions = await retrieveMetadataCollection(entityDefinitionsUrl);
-    } catch (error) {
-      throw attachMetadataFailure(
-        error,
-        DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION,
-      );
+    const entityDefinitions = await retrieveMetadataCollection(entityDefinitionsUrl);
+    const exactMatches = entityDefinitions.filter((entityDefinition) => (
+      entityDefinition?.EntitySetName === entitySetName
+    ));
+    if (exactMatches.length !== 1) {
+      throw new DataverseRequestError();
     }
-    if (entityDefinitions.length !== 1) {
-      throw attachMetadataFailure(
-        new DataverseRequestError(),
-        DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION,
-      );
-    }
-    const [entityDefinition] = entityDefinitions;
+    const [entityDefinition] = exactMatches;
     const entityLogicalName = entityDefinition?.LogicalName;
-    if (entityDefinition?.EntitySetName !== entitySetName
-      || typeof entityLogicalName !== 'string'
+    if (typeof entityLogicalName !== 'string'
       || !/^[a-z0-9_]+$/.test(entityLogicalName)) {
-      throw attachMetadataFailure(
-        new DataverseRequestError(),
-        DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION,
-      );
+      throw new DataverseRequestError();
+    }
+    return Object.freeze({
+      EntitySetName: entitySetName,
+      LogicalName: entityLogicalName,
+    });
+  };
+
+  const retrieveEntityAttributeMetadataCandidates = async ({
+    entityLogicalName,
+    nameConcepts,
+  } = {}) => {
+    if (typeof entityLogicalName !== 'string'
+      || !/^[a-z0-9_]+$/.test(entityLogicalName)) {
+      throw new Error('DataverseClient: LogicalName de metadata inválido.');
+    }
+    if (!Array.isArray(nameConcepts)
+      || nameConcepts.length === 0
+      || nameConcepts.some((concept) => (
+        typeof concept !== 'string' || !/^[a-z0-9_]+$/.test(concept)
+      ))) {
+      throw new Error('DataverseClient: conceptos de metadata inválidos.');
     }
 
     const attributesUrl = new URL(
@@ -301,15 +283,7 @@ export const createDataverseClient = ({
         .join(' or '),
     );
 
-    let attributes;
-    try {
-      attributes = await retrieveMetadataCollection(attributesUrl);
-    } catch (error) {
-      throw attachMetadataFailure(
-        error,
-        DATAVERSE_METADATA_FAILURE_STAGES.ATTRIBUTES,
-      );
-    }
+    const attributes = await retrieveMetadataCollection(attributesUrl);
     return Object.freeze(attributes.map((attribute) => Object.freeze({
       LogicalName: attribute?.LogicalName,
       SchemaName: attribute?.SchemaName,
@@ -369,6 +343,9 @@ export const createDataverseClient = ({
   return Object.freeze({
     probeRetrieveMultiple(query) {
       return probeRetrieveMultiple(query);
+    },
+    retrieveEntityDefinitionByEntitySetName(query) {
+      return retrieveEntityDefinitionByEntitySetName(query);
     },
     retrieveEntityAttributeMetadataCandidates(query) {
       return retrieveEntityAttributeMetadataCandidates(query);

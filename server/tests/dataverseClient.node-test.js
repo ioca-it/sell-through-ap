@@ -3,9 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createDataverseClient,
   DATAVERSE_FORMATTED_VALUE_ANNOTATION,
-  DATAVERSE_METADATA_FAILURE_STAGES,
   DataverseRequestError,
-  getDataverseMetadataFailureStage,
 } from '../src/integrations/dataverse/dataverseClient.js';
 
 test('centraliza token, headers OData y parámetros internos', async () => {
@@ -205,7 +203,7 @@ test('probeRetrieveMultiple observa solo status y descarta el body sin emitir pa
   assert.deepEqual(events, []);
 });
 
-test('consulta metadata por EntitySet exacto y limita atributos a conceptos técnicos', async () => {
+test('resuelve EntityDefinition por EntitySet exacto sin $top y consulta sus Attributes', async () => {
   const requests = [];
   const client = createDataverseClient({
     baseUrl: 'https://org.crm.dynamics.com',
@@ -217,7 +215,7 @@ test('consulta metadata por EntitySet exacto y limita atributos a conceptos téc
           ok: true,
           json: async () => ({
             value: [{
-              LogicalName: 'productpricelevel',
+              LogicalName: 'crbbe_resolvedproductpricelevel',
               EntitySetName: 'productpricelevels',
               DisplayName: 'NO-REGISTRAR',
             }],
@@ -239,8 +237,16 @@ test('consulta metadata por EntitySet exacto y limita atributos a conceptos téc
     },
   });
 
-  assert.deepEqual(await client.retrieveEntityAttributeMetadataCandidates({
+  const entityDefinition = await client.retrieveEntityDefinitionByEntitySetName({
     entitySetName: 'productpricelevels',
+  });
+  assert.deepEqual(entityDefinition, {
+    EntitySetName: 'productpricelevels',
+    LogicalName: 'crbbe_resolvedproductpricelevel',
+  });
+
+  assert.deepEqual(await client.retrieveEntityAttributeMetadataCandidates({
+    entityLogicalName: entityDefinition.LogicalName,
     nameConcepts: ['url', 'product', 'producto'],
   }), [{
     LogicalName: 'crbbe_producturl',
@@ -259,10 +265,10 @@ test('consulta metadata por EntitySet exacto y limita atributos a conceptos téc
     requests[0].url.searchParams.get('$filter'),
     "EntitySetName eq 'productpricelevels'",
   );
-  assert.equal(requests[0].url.searchParams.get('$top'), '2');
+  assert.equal(requests[0].url.searchParams.has('$top'), false);
   assert.equal(
     requests[1].url.pathname,
-    "/api/data/v9.2/EntityDefinitions(LogicalName='productpricelevel')/Attributes",
+    "/api/data/v9.2/EntityDefinitions(LogicalName='crbbe_resolvedproductpricelevel')/Attributes",
   );
   assert.equal(
     requests[1].url.searchParams.get('$select'),
@@ -280,7 +286,7 @@ test('consulta metadata por EntitySet exacto y limita atributos a conceptos téc
   });
 });
 
-test('metadata rechaza EntitySet y conceptos arbitrarios antes de hacer requests', async () => {
+test('metadata rechaza EntitySet, LogicalName y conceptos arbitrarios antes de hacer requests', async () => {
   let requests = 0;
   const client = createDataverseClient({
     baseUrl: 'https://org.crm.dynamics.com',
@@ -292,23 +298,29 @@ test('metadata rechaza EntitySet y conceptos arbitrarios antes de hacer requests
   });
 
   await assert.rejects(
-    client.retrieveEntityAttributeMetadataCandidates({
+    client.retrieveEntityDefinitionByEntitySetName({
       entitySetName: "productpricelevels?$select=secret",
-      nameConcepts: ['url'],
     }),
     /Entity Set de metadata inválido/,
   );
   await assert.rejects(
     client.retrieveEntityAttributeMetadataCandidates({
-      entitySetName: 'productpricelevels',
+      entityLogicalName: 'productpricelevel',
       nameConcepts: ["url') or contains(SchemaName,'secret"],
     }),
     /conceptos de metadata inválidos/,
   );
+  await assert.rejects(
+    client.retrieveEntityAttributeMetadataCandidates({
+      entityLogicalName: "productpricelevel')/Attributes?$select=secret",
+      nameConcepts: ['url'],
+    }),
+    /LogicalName de metadata inválido/,
+  );
   assert.equal(requests, 0);
 });
 
-test('clasifica internamente la etapa de fallo de metadata sin exponer upstream', async () => {
+test('normaliza fallos de ambas consultas de metadata sin exponer upstream', async () => {
   const createFailingClient = (failAttributes) => {
     let requests = 0;
     return createDataverseClient({
@@ -336,18 +348,22 @@ test('clasifica internamente la etapa de fallo de metadata sin exponer upstream'
     });
   };
 
-  for (const [failAttributes, expectedStage] of [
-    [false, DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION],
-    [true, DATAVERSE_METADATA_FAILURE_STAGES.ATTRIBUTES],
-  ]) {
-    await assert.rejects(
-      createFailingClient(failAttributes).retrieveEntityAttributeMetadataCandidates({
+  for (const failAttributes of [false, true]) {
+    const client = createFailingClient(failAttributes);
+    const operation = async () => {
+      const entityDefinition = await client.retrieveEntityDefinitionByEntitySetName({
         entitySetName: 'productpricelevels',
+      });
+      return client.retrieveEntityAttributeMetadataCandidates({
+        entityLogicalName: entityDefinition.LogicalName,
         nameConcepts: ['url'],
-      }),
+      });
+    };
+    await assert.rejects(
+      operation(),
       (error) => error instanceof DataverseRequestError
-        && getDataverseMetadataFailureStage(error) === expectedStage
-        && Object.keys(error).includes('dataverseMetadataFailure') === false,
+        && error.code === 'DATAVERSE_REQUEST_FAILED'
+        && Object.keys(error).every((key) => key !== 'upstreamResponse'),
     );
   }
 });

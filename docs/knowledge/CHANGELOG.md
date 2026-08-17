@@ -1,5 +1,31 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-052
+
+### Corregido
+
+- La resolución temporal de Product EntityDefinition elimina `$top=2` de la
+  colección `EntityDefinitions` y conserva el patrón soportado con
+  `$select=LogicalName,EntitySetName` más el filtro exacto por
+  `EntitySetName=productpricelevels`.
+- La respuesta se filtra de nuevo en memoria, exige una única coincidencia
+  exacta y el LogicalName validado que devuelve metadata es el único utilizado
+  para navegar a `Attributes`; no se hardcodea el nombre lógico de la tabla.
+- La observabilidad añade `ENTITY_DEFINITION/PASS` y `ATTRIBUTES/PASS` antes de
+  `CANDIDATES/FOUND|NONE`, y conserva los `FAIL` sanitizados por etapa.
+
+### Seguridad y alcance
+
+- Los candidatos mantienen únicamente `LogicalName`, `SchemaName`,
+  `AttributeType`, `IsValidForRead` y resultado técnico; no se registran datos
+  Product, URLs almacenadas, payloads, mensajes OData, credenciales ni stacks.
+- La guardia once-per-process continúa antes del primer `await` y las pruebas
+  cubren concurrencia, resolución dinámica, fallos de ambas etapas y regresión
+  Product/Customer.
+- Product Gateway no fue modificado: `productpricelevels`, `producturl`,
+  mapping, filtros, FormattedValue, precios nullable, conflictos y contrato
+  Product permanecen iguales. No hubo smoke productivo, deploy, commit o push.
+
 ## 2026-08-17 — PHASE1-050
 
 ### Corregido
