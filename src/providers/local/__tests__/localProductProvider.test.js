@@ -20,6 +20,7 @@ describe('LocalProductProvider', () => {
         brand: 'SKULLCANDY',
         category: 'AUDIO',
         status: 'EOL',
+        fechaStr: '2027-06-30',
         priceUSA: 25,
         priceChina: 18,
         imageUrl: '',

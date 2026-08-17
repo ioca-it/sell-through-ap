@@ -104,7 +104,7 @@ const buildResults = () => {
       'SKU\tMODELO\tESTADO\tFECHA EOL\tcreationDate\tUSA',
       'REPONER\tModelo recomendado\tACTIVO\t-\t2026-01-01\t10',
       'SIN-REPOSICION\tModelo cubierto\tACTIVO\t-\t2026-01-01\t10',
-      'EOL-SIN-REPOSICION\tModelo EOL\tEOL\t2025-01-01\t2025-01-01\t10',
+      'EOL-SIN-REPOSICION\tModelo EOL\tEOL\t1/1/2025\t2025-01-01\t10',
       'NUEVO-AUSENTE\tModelo nuevo\tACTIVO\t-\t2026-07-01\t10',
     ].join('\n'),
     rawInventario: [
@@ -341,6 +341,10 @@ describe('AP01 — presentación del Dashboard', () => {
       header: 1,
       raw: true,
     });
+    const activeEolRows = XLSX.utils.sheet_to_json(workbook.Sheets['EOL Fase Activa'], {
+      header: 1,
+      raw: true,
+    });
 
     expect(xlsxHarness.filename).toBe('IOCA_STI_V1_SC_2026-08-01.xlsx');
     expect(workbook.SheetNames).toEqual([
@@ -367,5 +371,7 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(phaseSheet['!cols'].map(({ wch }) => wch)).toEqual([14, 8, 11, 9, 18, 14, 14]);
     expect(summaryRows.find((row) => row[0] === 'Fórmula aplicada')?.[1]).toBeTruthy();
     expect(summaryRows.find((row) => row[0] === 'Total Unidades')?.[1]).toBe(26);
+    expect(activeEolRows.find((row) => row[0] === 'EOL-SIN-REPOSICION')?.[3])
+      .toBe('2025-01-01');
   });
 });

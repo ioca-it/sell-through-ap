@@ -1,6 +1,8 @@
 // Contrato Product normalizado. Ningún nombre físico de una fuente pertenece
 // a este módulo; fechas y precios se adaptan al contrato histórico del motor.
 
+import { normalizeFechaStr } from '../../utils/dateUtils.js';
+
 const normalizeText = (value) => (
   value === null || value === undefined ? '' : String(value).trim()
 );
@@ -42,20 +44,26 @@ export const sumPriceValues = (values) => {
   return total;
 };
 
-export const normalizeProduct = (product = {}) => Object.freeze({
-  sku: normalizeText(product.sku),
-  productName: normalizeText(product.productName),
-  brand: normalizeText(product.brand),
-  category: normalizeText(product.category),
-  discontinuationDate: normalizeDate(product.discontinuationDate),
-  creationDate: normalizeDate(product.creationDate),
-  level: normalizeText(product.level),
-  status: normalizeText(product.status),
-  imageUrl: normalizeText(product.imageUrl),
-  productUrl: normalizeText(product.productUrl),
-  priceUSA: normalizePrice(product.priceUSA),
-  priceChina: normalizePrice(product.priceChina),
-});
+export const normalizeProduct = (product = {}) => {
+  const fechaStrSource = Object.prototype.hasOwnProperty.call(product, 'fechaStr')
+    ? product.fechaStr
+    : product.discontinuationDate;
+  return Object.freeze({
+    sku: normalizeText(product.sku),
+    productName: normalizeText(product.productName),
+    brand: normalizeText(product.brand),
+    category: normalizeText(product.category),
+    discontinuationDate: normalizeDate(product.discontinuationDate),
+    fechaStr: normalizeFechaStr(fechaStrSource),
+    creationDate: normalizeDate(product.creationDate),
+    level: normalizeText(product.level),
+    status: normalizeText(product.status),
+    imageUrl: normalizeText(product.imageUrl),
+    productUrl: normalizeText(product.productUrl),
+    priceUSA: normalizePrice(product.priceUSA),
+    priceChina: normalizePrice(product.priceChina),
+  });
+};
 
 export const isProduct = (product) => (
   product !== null
@@ -67,6 +75,7 @@ export const isProduct = (product) => (
   && typeof product.brand === 'string'
   && typeof product.category === 'string'
   && (product.discontinuationDate === null || product.discontinuationDate instanceof Date)
+  && typeof product.fechaStr === 'string'
   && (product.creationDate === null || product.creationDate instanceof Date)
   && typeof product.level === 'string'
   && typeof product.status === 'string'
@@ -74,12 +83,6 @@ export const isProduct = (product) => (
   && typeof product.productUrl === 'string'
   && (product.priceUSA === null || isAvailablePrice(product.priceUSA))
   && (product.priceChina === null || isAvailablePrice(product.priceChina))
-);
-
-const toIsoDate = (value) => (
-  value instanceof Date && !Number.isNaN(value.getTime())
-    ? value.toISOString().slice(0, 10)
-    : ''
 );
 
 // Adapta Product al contrato legado consumido por Record Assembler sin cambiar
@@ -94,7 +97,7 @@ export const productToMasterRecord = (product) => {
     categoria: normalized.category.toUpperCase() || '—',
     estado: rawStatus === 'EOL' || rawStatus === 'DESCONTINUADO' ? 'EOL' : 'ACTIVO',
     fecha: normalized.discontinuationDate,
-    fechaStr: toIsoDate(normalized.discontinuationDate),
+    fechaStr: normalized.fechaStr,
     creationDate: normalized.creationDate,
     level: normalized.level,
     imageUrl: normalized.imageUrl,
@@ -110,6 +113,7 @@ export const masterRecordToProduct = (masterRecord) => normalizeProduct({
   brand: masterRecord.marca,
   category: masterRecord.categoria === '—' ? '' : masterRecord.categoria,
   discontinuationDate: masterRecord.fecha,
+  fechaStr: masterRecord.fechaStr,
   creationDate: masterRecord.creationDate,
   level: masterRecord.level,
   status: masterRecord.estado,

@@ -6,7 +6,7 @@
 // Preparación Dataverse: desacopla el formato de entrada sin asumir entidades.
 // =============================================================================
 
-import { parseFecha } from '../../utils/dateUtils.js';
+import { normalizeFechaStr, parseFecha } from '../../utils/dateUtils.js';
 import { normalizeHeader } from '../../utils/headerUtils.js';
 
 // Conserva la prioridad vigente: todos los aliases exactos antes de los parciales.
@@ -79,7 +79,7 @@ export const parseMaster = (rawMaster) => {
       categoria: rawCategory || '—',
       estado,
       fecha,
-      fechaStr: fechaStr === '-' ? '' : fechaStr,
+      fechaStr: normalizeFechaStr(fechaStr),
       creationDate: parseFecha(creationDateStr),
       costoUSA: columns.usa >= 0 ? parseCosto(values[columns.usa]) : null,
       costoCHINA: columns.china >= 0 ? parseCosto(values[columns.china]) : null,

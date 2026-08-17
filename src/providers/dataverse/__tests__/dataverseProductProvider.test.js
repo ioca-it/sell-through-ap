@@ -39,6 +39,7 @@ describe('DataverseProductProvider vía backend portable', () => {
     expect(products).toEqual([{
       ...apiProduct,
       discontinuationDate: new Date(apiProduct.discontinuationDate),
+      fechaStr: '2027-06-30',
       creationDate: new Date(apiProduct.creationDate),
     }]);
 

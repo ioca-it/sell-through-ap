@@ -1,6 +1,11 @@
 // Caracteriza los contratos temporales actuales, incluida su semántica de fecha local.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseFecha, diasEntre, primerDiaMes } from '../dateUtils.js';
+import {
+  parseFecha,
+  normalizeFechaStr,
+  diasEntre,
+  primerDiaMes,
+} from '../dateUtils.js';
 
 const expectLocalDate = (actual, year, monthIndex, day) => {
   expect(actual).toBeInstanceOf(Date);
@@ -36,6 +41,31 @@ describe('parseFecha', () => {
 
   it('conserva la normalización de días fuera de rango realizada por Date', () => {
     expectLocalDate(parseFecha('31/02/2026'), 2026, 2, 3);
+  });
+});
+
+describe('normalizeFechaStr', () => {
+  it.each([
+    ['ISO completa', '2027-06-30T00:00:00.000Z', '2027-06-30'],
+    ['fecha con hora y offset', '2027-06-30T23:30:00-05:00', '2027-06-30'],
+    ['fecha local con barras', '5/8/2026', '2026-08-05'],
+    ['fecha local con guiones', '05-08-2026', '2026-08-05'],
+    ['fecha canónica sin padding', '2026-8-5', '2026-08-05'],
+  ])('normaliza %s sin desplazar el día', (_case, value, expected) => {
+    expect(normalizeFechaStr(value)).toBe(expected);
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['string vacío', ''],
+    ['guion local vacío', '-'],
+    ['texto inválido', 'fecha inválida'],
+    ['día inexistente', '31/02/2026'],
+    ['hora inválida', '2026-08-05T25:00:00Z'],
+    ['Date inválida', new Date('invalid')],
+  ])('devuelve string vacío para %s', (_case, value) => {
+    expect(normalizeFechaStr(value)).toBe('');
   });
 });
 

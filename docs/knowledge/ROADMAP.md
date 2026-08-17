@@ -1,5 +1,19 @@
 # Roadmap aprobado
 
+## Phase1-040 — Normalize fechaStr Across Data Sources
+
+Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** con una única regla de
+presentación de `fechaStr`: fecha válida local, ISO o ISO con hora produce
+`YYYY-MM-DD`; ausencia o invalidez produce `""`. `normalizeFechaStr` se
+reutiliza en Master Parser, Product normalizer y Record Assembler, y preserva
+el día fuente de strings con hora sin shift de timezone.
+
+Providers local/Dataverse, Repository, Application Service, records,
+presentación y exportaciones conservan el mismo formato. `creationDate`,
+`discontinuationDate`, EOL, Producto Nuevo `<90 días`, filtros Product,
+Customer Master y precios nullable no cambian. Product Dataverse continúa sin
+activarse.
+
 ## Phase1-038 — Preserve Missing Product Prices as Null
 
 Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** con semántica explícita
@@ -247,8 +261,9 @@ Prompt 024 crea un Business Service de presentación que consume exclusivamente 
 
 ### Siguiente hito técnico
 
-Resolver por separado `fechaStr`, y después revisar y autorizar cualquier
-activación productiva de Maestro Producto. En paralelo, la
+Revisar y autorizar por separado cualquier activación productiva y validación
+real de Maestro Producto, preservando la normalización canónica de `fechaStr`.
+En paralelo, la
 migración del backend portable de Render a Azure continúa pendiente, sin definir
 por anticipado el servicio Azure ni alterar contratos o fronteras. Executive
 Report y Recommendation Engine permanecen como líneas funcionales

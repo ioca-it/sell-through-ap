@@ -17,6 +17,55 @@ export const parseFecha = (s) => {
   return null;
 };
 
+const isLeapYear = (year) => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+const daysInMonth = (year, month) => {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+};
+
+const toCanonicalDate = (year, month, day) => {
+  if (!Number.isInteger(year) || year < 1 || year > 9999
+    || !Number.isInteger(month) || month < 1 || month > 12
+    || !Number.isInteger(day) || day < 1 || day > daysInMonth(year, month)) {
+    return '';
+  }
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
+// Normaliza únicamente la representación de fechaStr. Los strings con hora se
+// validan sin convertirlos a Date para conservar su día calendario original.
+export const normalizeFechaStr = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    return toCanonicalDate(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
+  }
+  if (typeof value !== 'string') return '';
+
+  const clean = value.trim();
+  if (!clean || clean === '-') return '';
+
+  const isoMatch = clean.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):?(\d{2}))?)?$/,
+  );
+  if (isoMatch) {
+    const [, year, month, day, hour, minute, second, offsetHour, offsetMinute] = isoMatch;
+    if (hour !== undefined && (
+      Number(hour) > 23
+      || Number(minute) > 59
+      || (second !== undefined && Number(second) > 59)
+      || (offsetHour !== undefined && Number(offsetHour) > 23)
+      || (offsetMinute !== undefined && Number(offsetMinute) > 59)
+    )) return '';
+    return toCanonicalDate(Number(year), Number(month), Number(day));
+  }
+
+  const localMatch = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!localMatch) return '';
+  return toCanonicalDate(Number(localMatch[3]), Number(localMatch[2]), Number(localMatch[1]));
+};
+
 // Calcula la diferencia entera en días requerida por la clasificación EOL.
 export const diasEntre = (a, b) => {
   if (!a || !b) return null;

@@ -27,6 +27,7 @@ import {
   clasificarTemporalmente,
 } from '../eol/eolEngine.js';
 import { multiplyPrice } from '../product/product.js';
+import { normalizeFechaStr } from '../../utils/dateUtils.js';
 
 // Construye el contrato vigente con o sin coincidencia en el Maestro.
 export const assembleRecord = ({
@@ -88,7 +89,7 @@ export const assembleRecord = ({
       sku, tienda, codigo, ean13, modelo: nombreInv || '(sin info)',
       marca: 'SIN MAESTRO', estado: 'SIN MAESTRO', tier,
       categoria: 'SIN CATEGORIA',
-      fechaStr: '—', diasDesc: null, diasRestantes: null,
+      fechaStr: '', diasDesc: null, diasRestantes: null,
       clasificacionTemporal: 'SIN MAESTRO', bucket: null, fase: null,
       origen: origenInv || '—', sinOrigenInv: !origenInv,
       costo: 0, costoUSA: 0, costoCHINA: 0,
@@ -218,7 +219,7 @@ export const assembleRecord = ({
     estado: masterRecord.estado,
     tier: nivel,
     categoria: masterRecord.categoria || '—',
-    fechaStr: masterRecord.fechaStr || '—',
+    fechaStr: normalizeFechaStr(masterRecord.fechaStr),
     diasDesc,
     diasRestantes,
     clasificacionTemporal,

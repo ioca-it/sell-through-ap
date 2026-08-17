@@ -305,11 +305,21 @@ describe('parser del Maestro y precedencia del cruce', () => {
       modelo: 'Crusher',
       categoria: 'HEADPHONES',
       estado: 'EOL',
-      fechaStr: '2026-1-15',
+      fechaStr: '2026-01-15',
       costoUSA: 45.5,
       costoCHINA: 38.25,
     });
     expect(record.diasDesc).toBe(198);
+  });
+
+  it('vacía fechaStr inválida sin cambiar el parseo histórico de fecha', () => {
+    const maestro = 'SKU\tESTADO\tFECHA\nMASTER-INVALID\tEOL\t31/02/2026';
+    const inventario = 'SKU\tINV FINAL\nMASTER-INVALID\t1';
+
+    const [record] = executeSuccessful(maestro, inventario).recs;
+
+    expect(record.fechaStr).toBe('');
+    expect(record.diasDesc).toBe(151);
   });
 
   it('convierte DESCONTINUADO en EOL', () => {
@@ -348,7 +358,7 @@ describe('parser del Maestro y precedencia del cruce', () => {
       marca: '',
       categoria: '—',
       estado: 'ACTIVO',
-      fechaStr: '—',
+      fechaStr: '',
       costo: null,
       costoUSA: null,
       costoCHINA: null,
@@ -532,7 +542,7 @@ describe('registros SIN MAESTRO y contratos finales', () => {
       estado: 'SIN MAESTRO',
       tier: 'BEST',
       categoria: 'SIN CATEGORIA',
-      fechaStr: '—',
+      fechaStr: '',
       diasDesc: null,
       bucket: null,
       fase: null,

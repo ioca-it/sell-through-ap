@@ -44,8 +44,12 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - Phase1-038 establece `0 = precio real` y `null = precio no disponible` en
   gateway, contrato Product, parser/adaptación y consumidores financieros. Los
   importes derivados y totales que dependen de un precio no disponible conservan
-  `null`; no se sustituyen por cero. La diferencia de formato `fechaStr` entre
-  fuentes permanece pendiente separada y no fue modificada.
+  `null`; no se sustituyen por cero.
+- `fechaStr` usa una única normalización en ambas fuentes: toda fecha válida en
+  formato local vigente, ISO o ISO con hora se representa como `YYYY-MM-DD`;
+  ausencia, string vacío o fecha inválida se representa como `""`. La
+  normalización conserva el día calendario escrito sin shift de timezone y no
+  modifica `discontinuationDate`, `creationDate`, EOL o Producto Nuevo.
 
 ### BR-004 — Inventario del Cliente
 

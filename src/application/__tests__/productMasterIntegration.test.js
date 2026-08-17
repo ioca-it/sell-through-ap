@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { processSellThrough } from '../sellThroughApplicationService.js';
 import { createSellThroughRepository } from '../../repositories/sellThroughRepository.js';
+import { normalizeProduct } from '../../domain/product/product.js';
 import { primerDiaMes } from '../../utils/dateUtils.js';
 
 const config = {
@@ -44,6 +45,7 @@ describe('Product normalizado en el pipeline existente', () => {
       modelo: 'Producto Dataverse',
       marca: 'MARCA',
       categoria: 'AUDIO',
+      fechaStr: '2027-06-30',
       costoUSA: 25,
       costoCHINA: 18,
       costo: 18,
@@ -51,6 +53,29 @@ describe('Product normalizado en el pipeline existente', () => {
       productUrl: 'https://products.invalid/sku-001',
       level: 'BETTER',
     });
+  });
+
+  it('produce el mismo fechaStr canónico por ruta local y Dataverse sin shift', () => {
+    const inventory = 'SKU\tINV FINAL\nSKU-001\t1';
+    const localRepository = createSellThroughRepository({
+      rawMaestro: 'SKU\tFECHA EOL\nSKU-001\t30/06/2027',
+      rawInventario: inventory,
+      config,
+    });
+    const dataverseRepository = createSellThroughRepository({
+      rawInventario: inventory,
+      config,
+    });
+
+    const localRecord = processSellThrough(localRepository).resultados.recs[0];
+    const dataverseRecord = processSellThrough(dataverseRepository, {
+      products: [normalizeProduct(product({
+        discontinuationDate: '2027-06-30T23:30:00-05:00',
+      }))],
+    }).resultados.recs[0];
+
+    expect(localRecord.fechaStr).toBe('2027-06-30');
+    expect(dataverseRecord.fechaStr).toBe(localRecord.fechaStr);
   });
 
   it('preserva Producto Nuevo estricto <90 días con creationDate Dataverse', () => {

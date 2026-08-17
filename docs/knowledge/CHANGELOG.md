@@ -1,5 +1,31 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-040
+
+### Normalizado
+
+- `fechaStr` usa una única función compartida en ruta local, Product
+  Dataverse, parser/adaptación y Record Assembler.
+- Fechas válidas locales, ISO e ISO con hora producen `YYYY-MM-DD`; ausencia,
+  string vacío e invalidez producen `""` sin crear fechas ficticias.
+- Los strings con hora conservan el día calendario fuente sin shift de
+  timezone.
+
+### Contrato y consumidores
+
+- Providers local/Dataverse y Repository preservan el mismo `fechaStr`
+  canónico en el Product frontend.
+- CSV, Excel y presentación consumen el valor canónico del record; la prueba
+  de Excel verifica que el formato se preserve.
+- `creationDate`, `discontinuationDate`, Producto Nuevo `<90 días`, EOL,
+  Customer Master y precios nullable conservan su semántica.
+
+### Alcance
+
+- Product Dataverse continúa **NOT ACTIVATED**; no se modifican backend,
+  filtros Product, Vercel, Render, Entra o Dataverse y no hay commit, push o
+  deploy.
+
 ## 2026-08-17 — PHASE1-038
 
 ### Corregido

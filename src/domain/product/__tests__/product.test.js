@@ -33,6 +33,7 @@ describe('contrato Product normalizado', () => {
       brand: 'Skullcandy',
       category: 'Audífonos',
       discontinuationDate: new Date('2027-06-30T00:00:00.000Z'),
+      fechaStr: '2027-06-30',
       creationDate: new Date('2026-08-01T00:00:00.000Z'),
       level: 'Better',
       status: 'Activo',
@@ -48,6 +49,7 @@ describe('contrato Product normalizado', () => {
   it('usa null para fechas inválidas y precios ausentes', () => {
     expect(normalizeProduct({ sku: 'SKU-1', creationDate: 'bad' })).toMatchObject({
       discontinuationDate: null,
+      fechaStr: '',
       creationDate: null,
       priceUSA: null,
       priceChina: null,
@@ -97,6 +99,16 @@ describe('contrato Product normalizado', () => {
       priceUSA: null,
       priceChina: undefined,
     })).toMatchObject({ costoUSA: null, costoCHINA: null });
+  });
+
+  it('preserva el día fuente de fechaStr cuando la fecha incluye hora y offset', () => {
+    const normalized = normalizeProduct({
+      sku: 'SKU-1',
+      discontinuationDate: '2027-06-30T23:30:00-05:00',
+    });
+
+    expect(normalized.fechaStr).toBe('2027-06-30');
+    expect(productToMasterRecord(normalized).fechaStr).toBe('2027-06-30');
   });
 
   it('rechaza SKU vacío al indexar el Maestro', () => {
