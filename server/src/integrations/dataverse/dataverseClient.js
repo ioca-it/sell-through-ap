@@ -10,6 +10,12 @@ export const DATAVERSE_FORMATTED_VALUE_ANNOTATION =
   'OData.Community.Display.V1.FormattedValue';
 
 const DATAVERSE_HTTP_FAILURE = Symbol('dataverseHttpFailure');
+const DATAVERSE_METADATA_FAILURE = Symbol('dataverseMetadataFailure');
+
+export const DATAVERSE_METADATA_FAILURE_STAGES = Object.freeze({
+  ENTITY_DEFINITION: 'ENTITY_DEFINITION',
+  ATTRIBUTES: 'ATTRIBUTES',
+});
 
 const attachHttpFailure = (error, diagnostic) => {
   Object.defineProperty(error, DATAVERSE_HTTP_FAILURE, {
@@ -27,6 +33,18 @@ export const isDataverseInvalidFieldOrFilterError = (error) => {
   return failure?.diagnosticId === DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER
     && failure?.upstreamStatus === 400;
 };
+
+const attachMetadataFailure = (error, stage) => {
+  Object.defineProperty(error, DATAVERSE_METADATA_FAILURE, {
+    value: stage,
+    enumerable: false,
+  });
+  return error;
+};
+
+export const getDataverseMetadataFailureStage = (error) => (
+  error?.[DATAVERSE_METADATA_FAILURE] ?? null
+);
 
 const createPreferHeader = (includeAnnotations) => {
   if (includeAnnotations === undefined) return {};
@@ -242,14 +260,30 @@ export const createDataverseClient = ({
     );
     entityDefinitionsUrl.searchParams.set('$top', '2');
 
-    const entityDefinitions = await retrieveMetadataCollection(entityDefinitionsUrl);
-    if (entityDefinitions.length !== 1) throw new DataverseRequestError();
+    let entityDefinitions;
+    try {
+      entityDefinitions = await retrieveMetadataCollection(entityDefinitionsUrl);
+    } catch (error) {
+      throw attachMetadataFailure(
+        error,
+        DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION,
+      );
+    }
+    if (entityDefinitions.length !== 1) {
+      throw attachMetadataFailure(
+        new DataverseRequestError(),
+        DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION,
+      );
+    }
     const [entityDefinition] = entityDefinitions;
     const entityLogicalName = entityDefinition?.LogicalName;
     if (entityDefinition?.EntitySetName !== entitySetName
       || typeof entityLogicalName !== 'string'
       || !/^[a-z0-9_]+$/.test(entityLogicalName)) {
-      throw new DataverseRequestError();
+      throw attachMetadataFailure(
+        new DataverseRequestError(),
+        DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION,
+      );
     }
 
     const attributesUrl = new URL(
@@ -267,7 +301,15 @@ export const createDataverseClient = ({
         .join(' or '),
     );
 
-    const attributes = await retrieveMetadataCollection(attributesUrl);
+    let attributes;
+    try {
+      attributes = await retrieveMetadataCollection(attributesUrl);
+    } catch (error) {
+      throw attachMetadataFailure(
+        error,
+        DATAVERSE_METADATA_FAILURE_STAGES.ATTRIBUTES,
+      );
+    }
     return Object.freeze(attributes.map((attribute) => Object.freeze({
       LogicalName: attribute?.LogicalName,
       SchemaName: attribute?.SchemaName,

@@ -1,5 +1,29 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-050
+
+### Corregido
+
+- Phase1-048 emite `TRIGGER/REACHED` inmediatamente después del evento
+  Phase1-046 `select_field=producturl / FAIL`, antes de continuar los probes.
+- Los fallos internos quedan clasificados como `ENTITY_DEFINITION/FAIL` o
+  `ATTRIBUTES/FAIL`; una consulta completada emite
+  `CANDIDATES/FOUND|NONE` con conteo técnico y conserva los eventos allowlisted
+  por atributo.
+- Dataverse Client marca la etapa de fallo mediante metadata privada no
+  enumerable; no propaga mensajes, payloads, queries ni stack traces.
+
+### Seguridad y alcance
+
+- La guardia once-per-process continúa asignándose antes del primer `await` y
+  las pruebas cubren concurrencia, continuación de Phase1-046 y fallos de ambas
+  consultas de metadata.
+- Product Gateway no fue modificado: `productpricelevels`, `producturl`,
+  mapping, filtros, FormattedValue, precios nullable, conflictos y contrato
+  Product permanecen iguales. Customer Master continúa sin regresión.
+- No hubo consulta productiva, deploy, commit o push; el diagnóstico sigue
+  siendo temporal y requiere revisión/autorización separada antes de desplegar.
+
 ## 2026-08-17 — PHASE1-048
 
 ### Implementado

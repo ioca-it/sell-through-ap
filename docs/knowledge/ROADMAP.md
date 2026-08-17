@@ -1,5 +1,28 @@
 # Roadmap aprobado
 
+## Phase1-050 — Fix Product URL Metadata Diagnostic Trigger
+
+Maestro Producto queda **METADATA TRIGGER OBSERVABILITY FIXED / NOT DEPLOYED /
+NOT EXECUTED / NOT ACTIVATED**. La ejecución productiva proporcionada confirmó
+`select_field=producturl / FAIL`, pero ningún evento
+`PHASE1_048_PRODUCT_URL_METADATA`. El diagnóstico anterior no registraba su
+entrada y absorbía sin evento cualquier fallo de `EntityDefinitions` o
+`Attributes`, por lo que el resultado cero no permitía distinguir un hook no
+alcanzado de un fallo interno.
+
+El enlace sigue inmediatamente después del `FAIL` individual y antes de los
+probes posteriores. Phase1-048 emite ahora `TRIGGER/REACHED`, clasifica de forma
+sanitizada `ENTITY_DEFINITION/FAIL` y `ATTRIBUTES/FAIL`, o registra
+`CANDIDATES/FOUND|NONE` y los candidatos allowlisted. La guardia se establece
+antes del primer `await`, preservando una sola ejecución por proceso incluso
+con concurrencia.
+
+No cambia el Product Gateway definitivo: `productpricelevels`, `producturl`,
+mappings, filtros y contrato `productUrl` permanecen intactos. Tampoco cambia
+Customer Master, frontend, variables o infraestructura. El siguiente paso,
+después de revisión, requiere autorización separada para checkpoint/deploy
+backend y una única ejecución del smoke Phase1-042 tras reiniciar el proceso.
+
 ## Phase1-048 — Resolve Dataverse Product URL Logical Name
 
 Maestro Producto queda **METADATA DIAGNOSTIC IMPLEMENTED / NOT DEPLOYED / NOT

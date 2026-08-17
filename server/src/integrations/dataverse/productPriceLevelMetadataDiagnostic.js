@@ -1,3 +1,8 @@
+import {
+  DATAVERSE_METADATA_FAILURE_STAGES,
+  getDataverseMetadataFailureStage,
+} from './dataverseClient.js';
+
 const COMPONENT = 'ProductPriceLevelMetadataDiagnostic';
 const DIAGNOSTIC_ID = 'PHASE1_048_PRODUCT_URL_METADATA';
 const ENTITY_SET = 'productpricelevels';
@@ -6,6 +11,24 @@ const NAME_CONCEPTS = Object.freeze(['url', 'product', 'producto']);
 let executedInProcess = false;
 
 const defaultLogger = (event) => console.warn(JSON.stringify(event));
+
+const emitEvent = (event, diagnosticLogger) => {
+  try {
+    diagnosticLogger(Object.freeze(event));
+  } catch {
+    // La telemetría temporal nunca modifica el fallo público Product original.
+  }
+};
+
+const emitLifecycle = (stage, result, diagnosticLogger, candidateCount) => {
+  emitEvent({
+    component: COMPONENT,
+    diagnosticId: DIAGNOSTIC_ID,
+    stage,
+    result,
+    ...(Number.isInteger(candidateCount) ? { candidateCount } : {}),
+  }, diagnosticLogger);
+};
 
 const safeMetadataName = (value) => {
   if (typeof value !== 'string') return null;
@@ -47,27 +70,42 @@ export const runProductPriceLevelMetadataDiagnosticOnce = async ({
   dataverseClient,
   diagnosticLogger = defaultLogger,
 } = {}) => {
-  if (executedInProcess
-    || typeof dataverseClient?.retrieveEntityAttributeMetadataCandidates !== 'function') {
-    return false;
-  }
+  if (executedInProcess) return false;
   executedInProcess = true;
+  emitLifecycle('TRIGGER', 'REACHED', diagnosticLogger);
 
-  const attributes = await dataverseClient.retrieveEntityAttributeMetadataCandidates({
-    entitySetName: ENTITY_SET,
-    nameConcepts: NAME_CONCEPTS,
-  });
-  if (!Array.isArray(attributes)) return true;
+  if (typeof dataverseClient?.retrieveEntityAttributeMetadataCandidates !== 'function') {
+    emitLifecycle('ENTITY_DEFINITION', 'FAIL', diagnosticLogger);
+    return true;
+  }
 
-  attributes.forEach((attribute) => {
-    const event = createMetadataEvent(attribute);
-    if (!event) return;
-    try {
-      diagnosticLogger(event);
-    } catch {
-      // La metadata temporal nunca modifica el fallo público Product original.
-    }
-  });
+  let attributes;
+  try {
+    attributes = await dataverseClient.retrieveEntityAttributeMetadataCandidates({
+      entitySetName: ENTITY_SET,
+      nameConcepts: NAME_CONCEPTS,
+    });
+  } catch (error) {
+    const stage = getDataverseMetadataFailureStage(error)
+      ?? DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION;
+    emitLifecycle(stage, 'FAIL', diagnosticLogger);
+    return true;
+  }
+  if (!Array.isArray(attributes)) {
+    emitLifecycle('ATTRIBUTES', 'FAIL', diagnosticLogger);
+    return true;
+  }
+
+  const candidateEvents = attributes
+    .map((attribute) => createMetadataEvent(attribute))
+    .filter(Boolean);
+  emitLifecycle(
+    'CANDIDATES',
+    candidateEvents.length > 0 ? 'FOUND' : 'NONE',
+    diagnosticLogger,
+    candidateEvents.length,
+  );
+  candidateEvents.forEach((event) => emitEvent(event, diagnosticLogger));
   return true;
 };
 

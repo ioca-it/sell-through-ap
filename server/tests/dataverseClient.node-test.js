@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   createDataverseClient,
   DATAVERSE_FORMATTED_VALUE_ANNOTATION,
+  DATAVERSE_METADATA_FAILURE_STAGES,
   DataverseRequestError,
+  getDataverseMetadataFailureStage,
 } from '../src/integrations/dataverse/dataverseClient.js';
 
 test('centraliza token, headers OData y parámetros internos', async () => {
@@ -304,4 +306,48 @@ test('metadata rechaza EntitySet y conceptos arbitrarios antes de hacer requests
     /conceptos de metadata inválidos/,
   );
   assert.equal(requests, 0);
+});
+
+test('clasifica internamente la etapa de fallo de metadata sin exponer upstream', async () => {
+  const createFailingClient = (failAttributes) => {
+    let requests = 0;
+    return createDataverseClient({
+      baseUrl: 'https://org.crm.dynamics.com',
+      tokenProvider: { getToken: async () => 'TOKEN-NO-REGISTRAR' },
+      fetchImpl: async () => {
+        requests += 1;
+        if (failAttributes && requests === 1) {
+          return {
+            ok: true,
+            json: async () => ({
+              value: [{
+                LogicalName: 'productpricelevel',
+                EntitySetName: 'productpricelevels',
+              }],
+            }),
+          };
+        }
+        return {
+          ok: false,
+          status: 403,
+          body: { cancel: async () => {} },
+        };
+      },
+    });
+  };
+
+  for (const [failAttributes, expectedStage] of [
+    [false, DATAVERSE_METADATA_FAILURE_STAGES.ENTITY_DEFINITION],
+    [true, DATAVERSE_METADATA_FAILURE_STAGES.ATTRIBUTES],
+  ]) {
+    await assert.rejects(
+      createFailingClient(failAttributes).retrieveEntityAttributeMetadataCandidates({
+        entitySetName: 'productpricelevels',
+        nameConcepts: ['url'],
+      }),
+      (error) => error instanceof DataverseRequestError
+        && getDataverseMetadataFailureStage(error) === expectedStage
+        && Object.keys(error).includes('dataverseMetadataFailure') === false,
+    );
+  }
 });

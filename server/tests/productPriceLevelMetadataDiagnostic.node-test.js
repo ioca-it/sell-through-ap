@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createDataverseClient } from '../src/integrations/dataverse/dataverseClient.js';
 import {
   resetProductPriceLevelMetadataDiagnosticForTests,
   runProductPriceLevelMetadataDiagnosticOnce,
@@ -45,6 +46,17 @@ test('registra únicamente metadata allowlist y nunca datos Product o autenticac
   assert.deepEqual(events, [{
     component: 'ProductPriceLevelMetadataDiagnostic',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'TRIGGER',
+    result: 'REACHED',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'CANDIDATES',
+    result: 'FOUND',
+    candidateCount: 2,
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
     logicalName: 'crbbe_producturl',
     schemaName: 'crbbe_ProductUrl',
     attributeType: 'String',
@@ -59,7 +71,7 @@ test('registra únicamente metadata allowlist y nunca datos Product o autenticac
     isValidForRead: false,
     result: 'NOT_CANDIDATE',
   }]);
-  events.forEach((event) => {
+  events.slice(2).forEach((event) => {
     assert.deepEqual(Object.keys(event), [
       'component',
       'diagnosticId',
@@ -79,6 +91,7 @@ test('registra únicamente metadata allowlist y nunca datos Product o autenticac
 
 test('protege concurrentemente la consulta de metadata once-per-process', async () => {
   let calls = 0;
+  const events = [];
   let resolveMetadata;
   const metadataPending = new Promise((resolve) => {
     resolveMetadata = resolve;
@@ -90,8 +103,15 @@ test('protege concurrentemente la consulta de metadata once-per-process', async 
     },
   };
 
-  const first = runProductPriceLevelMetadataDiagnosticOnce({ dataverseClient });
-  const second = runProductPriceLevelMetadataDiagnosticOnce({ dataverseClient });
+  const diagnosticLogger = (event) => events.push(event);
+  const first = runProductPriceLevelMetadataDiagnosticOnce({
+    dataverseClient,
+    diagnosticLogger,
+  });
+  const second = runProductPriceLevelMetadataDiagnosticOnce({
+    dataverseClient,
+    diagnosticLogger,
+  });
   assert.equal(await second, false);
   assert.equal(calls, 1);
   resolveMetadata([]);
@@ -101,6 +121,8 @@ test('protege concurrentemente la consulta de metadata once-per-process', async 
     false,
   );
   assert.equal(calls, 1);
+  assert.equal(events.filter(({ stage }) => stage === 'TRIGGER').length, 1);
+  assert.equal(events.filter(({ stage }) => stage === 'CANDIDATES').length, 1);
 });
 
 test('omite filas con nombres de metadata inseguros sin registrar su contenido', async () => {
@@ -116,5 +138,99 @@ test('omite filas con nombres de metadata inseguros sin registrar su contenido',
     },
     diagnosticLogger: (event) => events.push(event),
   });
-  assert.deepEqual(events, []);
+  assert.deepEqual(events, [{
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'TRIGGER',
+    result: 'REACHED',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'CANDIDATES',
+    result: 'NONE',
+    candidateCount: 0,
+  }]);
+  assert.doesNotMatch(JSON.stringify(events), /Authorization|Bearer|TOKEN/i);
+});
+
+const metadataFailureResponse = () => ({
+  ok: false,
+  status: 403,
+  body: { cancel: async () => {} },
+  json: async () => ({
+    error: {
+      message: 'OData payload Authorization Bearer TOKEN SKU-REAL precio=99',
+    },
+  }),
+});
+
+const createMetadataClient = (fetchImpl) => createDataverseClient({
+  baseUrl: 'https://org.crm.dynamics.com',
+  tokenProvider: { getToken: async () => 'TOKEN-NO-REGISTRAR' },
+  fetchImpl,
+});
+
+test('registra trigger y fallo sanitizado al resolver EntityDefinition', async () => {
+  const events = [];
+  await runProductPriceLevelMetadataDiagnosticOnce({
+    dataverseClient: createMetadataClient(async () => metadataFailureResponse()),
+    diagnosticLogger: (event) => events.push(event),
+  });
+
+  assert.deepEqual(events, [{
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'TRIGGER',
+    result: 'REACHED',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ENTITY_DEFINITION',
+    result: 'FAIL',
+  }]);
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /OData|payload|Authorization|Bearer|TOKEN|SKU-REAL|precio|https?:\/\//i,
+  );
+});
+
+test('registra trigger y fallo sanitizado al consultar Attributes', async () => {
+  const events = [];
+  let requests = 0;
+  await runProductPriceLevelMetadataDiagnosticOnce({
+    dataverseClient: createMetadataClient(async () => {
+      requests += 1;
+      if (requests === 1) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            value: [{
+              LogicalName: 'productpricelevel',
+              EntitySetName: 'productpricelevels',
+            }],
+          }),
+        };
+      }
+      return metadataFailureResponse();
+    }),
+    diagnosticLogger: (event) => events.push(event),
+  });
+
+  assert.equal(requests, 2);
+  assert.deepEqual(events, [{
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'TRIGGER',
+    result: 'REACHED',
+  }, {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'ATTRIBUTES',
+    result: 'FAIL',
+  }]);
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /OData|payload|Authorization|Bearer|TOKEN|SKU-REAL|precio|https?:\/\//i,
+  );
 });

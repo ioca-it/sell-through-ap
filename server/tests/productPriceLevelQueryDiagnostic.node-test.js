@@ -194,9 +194,28 @@ test('activa metadata únicamente después del FAIL individual de producturl', a
   const metadataIndex = events.findIndex((event) => (
     event.diagnosticId === 'PHASE1_048_PRODUCT_URL_METADATA'
   ));
+  const laterProbeIndex = events.findIndex((event) => (
+    event.diagnosticId === 'PHASE1_046_PRODUCT_QUERY_PROBE'
+      && event.category === 'select_field'
+      && event.element === 'amount'
+  ));
   assert.ok(failedProductUrlIndex >= 0);
   assert.equal(metadataIndex, failedProductUrlIndex + 1);
   assert.deepEqual(events[metadataIndex], {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'TRIGGER',
+    result: 'REACHED',
+  });
+  assert.ok(laterProbeIndex > metadataIndex);
+  assert.deepEqual(events[metadataIndex + 1], {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    stage: 'CANDIDATES',
+    result: 'FOUND',
+    candidateCount: 1,
+  });
+  assert.deepEqual(events[metadataIndex + 2], {
     component: 'ProductPriceLevelMetadataDiagnostic',
     diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
     logicalName: 'crbbe_producturl',
@@ -377,7 +396,7 @@ test('se ejecuta después del 400 específico, conserva 502 y no repite probes',
     timeline.filter(({ diagnosticId }) => (
       diagnosticId === 'PHASE1_048_PRODUCT_URL_METADATA'
     )).length,
-    1,
+    3,
   );
   assert.equal(
     requestUrls.filter(({ pathname }) => (
