@@ -2,15 +2,15 @@
 
 ## Fase actual
 
-PHASE1-044 queda **PASS — CORRECTED / NOT REVALIDATED / NOT ACTIVATED**. El smoke Product confirmado alcanzó Render, aceptó el JWT e intentó la consulta Dataverse; `retrieveMultiple` respondió HTTP 404 porque Product Price Level Gateway usaba el Entity Set singular `productpricelevel`. La única corrección runtime sustituye ese valor por el Entity Set confirmado `productpricelevels`, con cobertura que exige exactamente el plural y bloquea la reintroducción del singular. No se ejecutó un nuevo smoke productivo, deploy o activación de Product Dataverse.
+PHASE1-046 queda **PASS — DIAGNOSTIC IMPLEMENTED / NOT DEPLOYED / NOT EXECUTED / NOT ACTIVATED**. La evidencia productiva proporcionada confirma Render JWT aceptado, request Dataverse intentado y `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER` después de corregir el Entity Set en Phase1-044. `productpricelevels` permanece confirmado e intacto. El backend incorpora una secuencia temporal de 26 probes sanitizados que solo se activa después de ese error exacto y como máximo una vez por proceso; no se corrigió ningún LogicalName o tipo por suposición y no se ejecutó el diagnóstico contra Dataverse productivo.
 
-Maestro Producto dispone de una ruta intercambiable `local|dataverse` mediante `VITE_PRODUCT_SOURCE`, con `local` como default vigente. El backend portable incorpora `GET /api/products/master`; Product Price Level Gateway consulta exclusivamente `productpricelevels`, aplica en backend el filtro de compradores `IOCA USA INC` o `SAND SPORTS, CORP.`, pagina mediante Dataverse Client y consolida por SKU el pivot `USA -> priceUSA` / `CHINA -> priceChina`. La UI no envía OData y los LogicalNames permanecen exclusivamente en el gateway.
+Maestro Producto dispone de una ruta intercambiable `local|dataverse` mediante `VITE_PRODUCT_SOURCE`, con `local` como default vigente. El backend portable incorpora `GET /api/products/master`; Product Price Level Gateway consulta exclusivamente `productpricelevels`, aplica en backend el filtro de compradores `IOCA USA INC` o `SAND SPORTS, CORP.`, pagina mediante Dataverse Client y consolida por SKU el pivot `USA -> priceUSA` / `CHINA -> priceChina`. La UI no envía OData; los LogicalNames permanecen en la integración backend y Phase1-046 los replica temporalmente solo como candidatos de probe.
 
 El contrato normalizado frontend es `{ sku, productName, brand, category, discontinuationDate, fechaStr, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`. `fechaStr` se deriva con la única función `normalizeFechaStr`: fecha válida local/ISO/con hora produce `YYYY-MM-DD`, y ausencia o invalidez produce `""`, sin desplazar el día escrito por timezone. `discontinuationDate` y `creationDate` conservan `Date|null`. `level` y `status` solicitan FormattedValue; si falta, solo aceptan como fallback un valor fuente que ya sea texto y nunca publican códigos Choice numéricos. La consolidación ignora valores descriptivos vacíos, compara strings/URLs trimmed, fechas canónicas y etiquetas FormattedValue trimmed, e impide que valores no vacíos divergentes de cualquiera de los nueve atributos Product se consoliden silenciosamente. Tanto los conflictos de precio como los de atributo reutilizan `409 / PRODUCT_MASTER_CONFLICT`, se distinguen solo en metadata interna y mantienen el contrato público sanitizado. Phase1-038 fija `0 = precio real` y `null = precio no disponible`: `amount null|undefined` y un origen sin fila quedan en `null`, mientras las valorizaciones dependientes propagan `null` sin fallback. Render continúa transitorio, Azure sigue siendo el destino definitivo y no se activó Product Dataverse en producción.
 
 ## Último prompt aprobado
 
-PHASE1-044 — Correct Dataverse Product EntitySetName.
+PHASE1-046 — Isolate Dataverse Product Invalid Field or Filter.
 
 ## Última auditoría aprobada
 
@@ -31,7 +31,7 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - MSAL frontend: configuración/cliente desacoplados, procesamiento de redirect, cuenta activa y adquisición silenciosa mediante `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`.
 - Authentication Controls: inicio de sesión, identidad discreta y cierre de sesión sin almacenamiento manual de tokens.
 - Real Dataverse Customer Smoke Test: validado end-to-end como PASS mediante el arnés temporal `?phase1-010b-smoke=1`; `CL0000041` produjo `HTTP 200`, exactamente un Customer, JWT aceptado y request Dataverse intentado, sin exponer token o payload Customer. El arnés se conserva temporalmente.
-- Real Dataverse Product Master Smoke Test: el arnés temporal `?phase1-042-product-smoke=1` confirmó llegada a Render, JWT aceptado e intento Dataverse; la lectura devolvió HTTP 404 por el Entity Set singular corregido en Phase1-044. Consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`. La corrección no se revalidó con otro smoke productivo y el arnés puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
+- Real Dataverse Product Master Smoke Test: el arnés temporal `?phase1-042-product-smoke=1` confirmó llegada a Render, JWT aceptado e intento Dataverse. La evidencia posterior a Phase1-044 confirma que `productpricelevels` eliminó el 404 y que la consulta Product actual recibe `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`. Consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`; el arnés puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
 - Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Product normalizer, Repository y Product Master Application Service: contrato normalizado independiente de la fuente y adaptación hacia Master Parser/Record Assembler que preserva `0` como precio real, `null` como no disponible y `fechaStr` canónico sin perder el día fuente.
@@ -42,6 +42,7 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Diagnóstico seguro Dataverse Phase1-020: clasifica fallos HTTP/OData, respuesta inválida y red en siete identificadores internos; los Application Logs reciben solo identificador, operación, tipo de fallo, status upstream opcional y presencia de metadata estructurada, nunca error/payload/URL/query/credenciales/PII.
+- Diagnóstico temporal Product Phase1-046: después de `DATAVERSE_INVALID_FIELD_OR_FILTER / 400`, prueba una vez por proceso el Entity Set, 13 campos individuales, select compuesto, dos comparaciones textuales, filtro compuesto, cuatro órdenes individuales, orden compuesto, anotación, top y consulta compuesta. Cada probe usa `$top=1`, descarta el body sin leerlo y emite únicamente `sequence`, `category`, `element` y `PASS|FAIL`; debe retirarse tras la corrección definitiva.
 - Diagnósticos temporales Customer Phase1-022/024: retirados del runtime, Dataverse Client y pruebas después de confirmar los nombres productivos; no quedan probes, consultas de metadata ni estado one-shot.
 - Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais`, `new_tipocliente` y su propiedad FormattedValue; normaliza los cuatro campos Customer, obtiene `customerType` exclusivamente desde la etiqueta Choice y aplica los LogicalNames confirmados `customertypecode`, `statecode` y `crbbe_estadodelcliente` con valores empresariales 3/0/4.
 - Integración productiva de Maestro Cliente: fuente Dataverse activa en Vercel, Customer API autenticada en Render y acceso backend autorizado a Dataverse; búsqueda/selección preservan el contrato normalizado y no filtran nombres físicos fuera del gateway.
@@ -114,7 +115,7 @@ Vercel
   → accounts
 ```
 
-Arnés Product ejecutado previamente; corrección Phase1-044 todavía no revalidada:
+Arnés Product ejecutado previamente; Entity Set confirmado y consulta Product en HTTP 400:
 
 ```text
 Vercel + `?phase1-042-product-smoke=1`
@@ -132,20 +133,21 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Con autorización separada, desplegar la corrección Phase1-044 sin cambiar `VITE_PRODUCT_SOURCE=local` y revalidar una sola vez el arnés `?phase1-042-product-smoke=1`; revisar exclusivamente el objeto sanitizado de consola. La activación normal de `VITE_PRODUCT_SOURCE=dataverse` permanece como decisión posterior e independiente. La migración del backend portable desde Render hacia Azure continúa como línea separada, sin servicio Azure definido todavía.
+Solicitar autorización separada para checkpoint y deploy exclusivo del diagnóstico Phase1-046, sin cambiar `VITE_PRODUCT_SOURCE=local`; posteriormente ejecutar exactamente una vez el arnés `?phase1-042-product-smoke=1` y revisar únicamente los eventos sanitizados `PHASE1_046_PRODUCT_QUERY_PROBE`. La corrección de LogicalNames, tipos o filtros y la retirada del diagnóstico requieren otro prompt basado en esa evidencia. La activación normal de `VITE_PRODUCT_SOURCE=dataverse` permanece como decisión posterior e independiente.
 
 ## Decisiones congeladas
 
 - Preservar comportamiento, fórmulas, defaults, ordenamientos y contratos públicos durante refactorizaciones.
 - `BUSINESS_PARAMETERS.md` es el catálogo oficial del Configuration Center.
 - `CONFIGURATION_SCHEMA` es la fuente única de IDs, keys y metadatos migrados; defaults se declaran una sola vez.
-- Repository/Provider son la frontera obligatoria de fuentes. Customer y Product son contratos Dataverse normalizados aprobados; todos los LogicalNames permanecen en sus gateways backend.
+- Repository/Provider son la frontera obligatoria de fuentes. Customer y Product son contratos Dataverse normalizados aprobados; los LogicalNames permanecen en la integración Dataverse backend. La única réplica temporal permitida es la lista de candidatos de probes Phase1-046.
 - Toda consulta Product usa `productpricelevels` y filtra en Product Price Level Gateway `crbbe_companiacompradora` por `IOCA USA INC` o `SAND SPORTS, CORP.`. El frontend no puede enviar filtros, selects, órdenes ni parámetros OData.
 - Product consolida por SKU y pivota únicamente `USA -> priceUSA` y `CHINA -> priceChina`; `0` es precio real y un precio/origen ausente queda en `null`. Solo números distintos participan en conflictos: cero contra otro número bloquea con `PRODUCT_MASTER_CONFLICT`, mientras null/ausente no compite con un valor real. No existe fallback entre orígenes.
 - `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` son únicos por SKU: vacío más valor puede inicializar, pero dos valores no vacíos distintos después de normalizar bloquean con `PRODUCT_MASTER_CONFLICT`; no existe precedencia por fila, comprador, fecha, mayoría ni otro criterio.
 - `level` y `status` Product usan FormattedValue cuando está presente. Sin anotación, solo un valor fuente textual puede usarse como fallback; un Choice numérico nunca se publica como etiqueta.
 - `VITE_PRODUCT_SOURCE` selecciona `local|dataverse`; `local` es el default vigente y Product Dataverse no está activado en producción.
 - El smoke-test Phase1-042 solo puede ejecutarse con `?phase1-042-product-smoke=1`, llama al endpoint Product existente sin parámetros y no consulta mediante Product Provider Factory; su presencia no modifica la fuente global ni el flujo normal.
+- Phase1-046 es diagnóstico Product temporal: solo se activa tras `DATAVERSE_INVALID_FIELD_OR_FILTER` con upstream 400, corre máximo una vez por proceso y nunca expone sus probes al frontend. Debe retirarse después de identificar y corregir con evidencia los LogicalNames, tipos, literales o composiciones definitivos.
 - Account Customer Gateway encapsula `new_tipocliente@OData.Community.Display.V1.FormattedValue` y expone su etiqueta únicamente como `customerType`, con fallback vacío cuando la anotación falta, es `null` o `undefined`; el valor numérico `new_tipocliente` nunca sustituye la etiqueta.
 - Toda consulta Customer a `accounts` usa en Account Customer Gateway el filtro fijo confirmado `customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4`. Las tres reglas siguen siendo obligatorias y no amplían el `$select`, el mapping ni el contrato Customer.
 - La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.
@@ -185,12 +187,12 @@ Con autorización separada, desplegar la corrección Phase1-044 sin cambiar `VIT
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Treinta y un archivos de pruebas frontend y diez archivos de pruebas backend.
+- Treinta y dos archivos de pruebas frontend y once archivos de pruebas backend.
 
 ## Cantidad de pruebas
 
-Frontend: 342/342 aprobadas en 32 archivos. Backend: 87/87 aprobadas.
+Frontend: 342/342 aprobadas en 32 archivos. Backend: 95/95 aprobadas en 11 archivos.
 
 ## Estado del build
 
-Phase1-044: frontend 342/342 y backend 87/87; build frontend aprobado con Vite 5.4.21 y 1683 módulos transformados; backend syntax check aprobado. Phase1-032 permanece como último cierre productivo de Maestro Cliente; Product Dataverse no fue activado y la corrección del Entity Set no se revalidó con smoke productivo.
+Phase1-046: frontend 342/342 y backend 95/95; build frontend aprobado con Vite 5.4.21 y 1683 módulos transformados; backend syntax check aprobado. Phase1-032 permanece como último cierre productivo de Maestro Cliente; Product Dataverse no fue activado y los probes Phase1-046 no se desplegaron ni ejecutaron contra producción.

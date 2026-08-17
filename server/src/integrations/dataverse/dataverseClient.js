@@ -1,4 +1,5 @@
 import {
+  DATAVERSE_DIAGNOSTIC_IDS,
   createDataverseInvalidResponseDiagnostic,
   createDataverseNetworkDiagnostic,
   emitDataverseDiagnostic,
@@ -7,6 +8,25 @@ import {
 
 export const DATAVERSE_FORMATTED_VALUE_ANNOTATION =
   'OData.Community.Display.V1.FormattedValue';
+
+const DATAVERSE_HTTP_FAILURE = Symbol('dataverseHttpFailure');
+
+const attachHttpFailure = (error, diagnostic) => {
+  Object.defineProperty(error, DATAVERSE_HTTP_FAILURE, {
+    value: Object.freeze({
+      diagnosticId: diagnostic.diagnosticId,
+      upstreamStatus: diagnostic.upstreamStatus,
+    }),
+    enumerable: false,
+  });
+  return error;
+};
+
+export const isDataverseInvalidFieldOrFilterError = (error) => {
+  const failure = error?.[DATAVERSE_HTTP_FAILURE];
+  return failure?.diagnosticId === DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER
+    && failure?.upstreamStatus === 400;
+};
 
 const createPreferHeader = (includeAnnotations) => {
   if (includeAnnotations === undefined) return {};
@@ -97,7 +117,7 @@ export const createDataverseClient = ({
       if (!response.ok) {
         const diagnostic = await inspectDataverseHttpFailure(response);
         emitDataverseDiagnostic(diagnostic, diagnosticLogger);
-        throw new DataverseRequestError();
+        throw attachHttpFailure(new DataverseRequestError(), diagnostic);
       }
 
       let payload;
@@ -151,6 +171,37 @@ export const createDataverseClient = ({
     return page.value;
   };
 
+  // Ruta interna y temporal para diagnósticos controlados. Solo observa el
+  // status HTTP y descarta el body; no clasifica ni registra contenido OData.
+  const probeRetrieveMultiple = async (query) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const token = await tokenProvider.getToken();
+      const response = await fetchImpl(createQueryUrl(query), {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+          ...createPreferHeader(query.includeAnnotations),
+        },
+        signal: controller.signal,
+      });
+      try {
+        await response?.body?.cancel?.();
+      } catch {
+        // Descartar el body es best-effort y nunca altera PASS/FAIL del probe.
+      }
+      return response?.ok === true;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
   const retrieveAll = async (query) => {
     const rows = [];
     let url = createQueryUrl(query);
@@ -169,6 +220,9 @@ export const createDataverseClient = ({
   };
 
   return Object.freeze({
+    probeRetrieveMultiple(query) {
+      return probeRetrieveMultiple(query);
+    },
     retrieveMultiple(query) {
       return retrieveMultiple(query);
     },

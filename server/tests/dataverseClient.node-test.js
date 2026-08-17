@@ -169,3 +169,36 @@ test('emite la categoría inválida sanitizada sin ampliar el error público', a
   assert.equal(events[0].diagnosticId, 'DATAVERSE_INVALID_FIELD_OR_FILTER');
   assert.equal(events[0].upstreamStatus, 400);
 });
+
+test('probeRetrieveMultiple observa solo status y descarta el body sin emitir payload', async () => {
+  let jsonReads = 0;
+  let bodyCancels = 0;
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://org.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'TOKEN-SENSIBLE' },
+    fetchImpl: async () => ({
+      ok: false,
+      status: 400,
+      json: async () => {
+        jsonReads += 1;
+        return { error: { message: 'OData original payload sensible' } };
+      },
+      body: {
+        cancel: async () => {
+          bodyCancels += 1;
+        },
+      },
+    }),
+    diagnosticLogger: (event) => events.push(event),
+  });
+
+  assert.equal(await client.probeRetrieveMultiple({
+    entitySet: 'productpricelevels',
+    select: ['crbbe_sku'],
+    top: 1,
+  }), false);
+  assert.equal(jsonReads, 0);
+  assert.equal(bodyCancels, 1);
+  assert.deepEqual(events, []);
+});

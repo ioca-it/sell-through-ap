@@ -1,5 +1,21 @@
 # Roadmap aprobado
 
+## Phase1-046 — Isolate Dataverse Product Invalid Field or Filter
+
+Maestro Producto queda **DIAGNOSTIC IMPLEMENTED / NOT DEPLOYED / NOT EXECUTED /
+NOT ACTIVATED**. La evidencia productiva proporcionada confirma que
+`productpricelevels` responde y que la consulta actual falla con
+`HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`. El backend prepara 26 probes
+sanitizados en 10 categorías para aislar campos, comparaciones textuales,
+filtro, orden, anotación, top y composición, exclusivamente después del error
+exacto y máximo una vez por proceso.
+
+No cambia ningún LogicalName, mapping, literal funcional, regla Product o
+contrato público. Phase1-046 es temporal y debe retirarse al confirmar e
+implementar la corrección definitiva. El siguiente paso requiere autorización
+separada para checkpoint/deploy y una única ejecución del smoke Phase1-042; la
+activación normal de Product Dataverse continúa fuera de alcance.
+
 ## Phase1-044 — Correct Dataverse Product EntitySetName
 
 Maestro Producto queda **ENTITY SET CORRECTED / NOT REVALIDATED / NOT

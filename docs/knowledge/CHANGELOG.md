@@ -1,5 +1,30 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-046
+
+### Implementado
+
+- Diagnóstico Product temporal activado solo después de
+  `DATAVERSE_INVALID_FIELD_OR_FILTER / upstream 400`, máximo una vez por
+  proceso.
+- Secuencia de 26 probes con `$top=1`: Entity Set, 13 selects individuales,
+  select compuesto, dos comparaciones textuales, filtro compuesto, cuatro
+  órdenes individuales, orden compuesto, anotación, top y consulta compuesta.
+- Dataverse Client ofrece una ruta interna de probe que observa únicamente el
+  status y descarta el body sin parsear payload ni emitir mensajes upstream.
+
+### Seguridad y alcance
+
+- Eventos limitados a componente, identificador, secuencia, categoría,
+  elemento técnico y `PASS|FAIL`; no registran valores Product, compañías,
+  precios, URLs, payloads, queries, mensajes OData, tokens o PII.
+- `productpricelevels` permanece intacto. No se corrigieron LogicalNames o tipos
+  por suposición ni cambiaron mapping, filtro vigente, pivot, precios nullable,
+  conflictos, FormattedValue, `fechaStr`, Customer Master o contratos públicos.
+- Diagnóstico no desplegado ni ejecutado contra Dataverse productivo; sin
+  commit, push, deploy o activación. Debe retirarse después de identificar y
+  corregir con evidencia la consulta definitiva.
+
 ## 2026-08-17 — PHASE1-044
 
 ### Corregido

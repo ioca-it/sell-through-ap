@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/app/createApp.js';
+import { DataverseRequestError } from '../src/integrations/dataverse/dataverseClient.js';
 import { ProductMasterConflictError } from '../src/integrations/dataverse/productPriceLevelGateway.js';
 
 const product = Object.freeze({
@@ -130,6 +131,26 @@ test('publica PRODUCT_MASTER_CONFLICT estable sin detalles internos del atributo
       },
     });
     assert.doesNotMatch(JSON.stringify(payload), /SKU-SENSIBLE|productUrl|private\.invalid/);
+  });
+});
+
+test('mantiene el HTTP público sanitizado ante el fallo Dataverse Product', async () => {
+  const app = createTestApp({
+    loadMaster: async () => {
+      throw new DataverseRequestError('mensaje OData que no debe publicarse');
+    },
+  });
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/products/master`);
+    assert.equal(response.status, 502);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      error: {
+        code: 'DATAVERSE_REQUEST_FAILED',
+        message: 'No fue posible procesar la solicitud.',
+      },
+    });
+    assert.doesNotMatch(JSON.stringify(payload), /mensaje OData/);
   });
 });
 
