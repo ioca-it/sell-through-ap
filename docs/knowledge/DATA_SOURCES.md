@@ -18,7 +18,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-002 — Maestro de Productos
 
-- Fuentes implementadas: texto local existente y Dataverse `productpricelevel`; `VITE_PRODUCT_SOURCE=local` conserva la fuente efectiva y Product Dataverse no está activado en producción.
+- Fuentes implementadas: texto local existente y Dataverse `productpricelevel`; `VITE_PRODUCT_SOURCE=local` conserva la fuente efectiva y Product Dataverse no está activado en producción. Phase1-042 prepara una lectura temporal explícita del endpoint Product que no atraviesa ni modifica este selector.
 - Ruta local: texto pegado/muestra embebida -> `localDataProvider`/`masterParser.js`; `localProductProvider.js` reutiliza ese parser para exponer Product normalizado sin duplicar reglas. Un costo local vacío o inválido queda en `null`; el cero explícito se conserva. `fechaStr` se deriva mediante la normalización compartida.
 - Ruta Dataverse preparada: `GET /api/products/master` -> Product Service -> Product Price Level Gateway -> Dataverse Client -> `productpricelevel`; el frontend no envía OData.
 - Selector: `productProviderFactory.js`, cerrado a `local|dataverse`.
@@ -113,7 +113,7 @@ El gateway aplica en `$filter` únicamente `crbbe_companiacompradora = IOCA USA 
 ## DS-006 — Dataverse
 
 - Estado Customer: **IMPLEMENTED + PRODUCTION VALIDATED** por Phase1-032. Vercel usa `VITE_CUSTOMER_SOURCE=dataverse`; búsqueda/selección conservan el contrato Customer.
-- Estado Product: **IMPLEMENTED / NOT ACTIVATED** por Phase1-038. `VITE_PRODUCT_SOURCE=local` permanece como fuente efectiva; la integración `productpricelevel` está preparada y probada con dobles, incluida la semántica `0` real/`null` no disponible y la detección de conflictos de precio y atributos, sin consulta o validación productiva.
+- Estado Product: **SMOKE PREPARED / NOT EXECUTED / NOT ACTIVATED** por Phase1-042. `VITE_PRODUCT_SOURCE=local` permanece como fuente efectiva; la integración `productpricelevel` está preparada y probada con dobles, incluida la semántica `0` real/`null` no disponible y la detección de conflictos de precio y atributos, sin consulta o validación productiva.
 - Fuentes autorizadas: `accounts` para Maestro Cliente y `productpricelevel` para Maestro Producto, cada una mediante su endpoint funcional y gateway backend.
 - Frontend Providers: `dataverseCustomerProvider.js` y `dataverseProductProvider.js`, consumidores exclusivos del backend mediante `VITE_API_BASE_URL`; adjuntan Bearer MSAL a través del cliente HTTP compartido y normalizan fallos sin exponer detalles.
 - Selectores: `VITE_CUSTOMER_SOURCE=local|dataverse` (producción `dataverse`) y `VITE_PRODUCT_SOURCE=local|dataverse` (default/producción `local`).
@@ -132,6 +132,7 @@ El gateway aplica en `$filter` únicamente `crbbe_companiacompradora = IOCA USA 
 - Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
 - Probe JWT Phase1-007: `GET /api/customers/search?type=code` sin `q`; después de autenticar debe responder `400 / INVALID_CUSTOMER_REQUEST` antes de Customer Gateway. Este resultado valida la frontera usuario→API, no Dataverse.
 - Smoke Dataverse Phase1-010B/011: búsqueda protegida `GET /api/customers/search?type=code&q=CL0000041`, activada sólo mediante `?phase1-010b-smoke=1`; resultado real `HTTP 200`, JWT aceptado, request Dataverse intentado, exactamente un Customer y diagnóstico nulo. Se conserva sólo la cantidad, nunca el payload Customer, y el arnés permanece disponible temporalmente.
+- Smoke Product Phase1-042: `GET /api/products/master` sin parámetros, activado solo mediante `?phase1-042-product-smoke=1`. Requiere cuenta MSAL, adquiere el Bearer delegado por el mecanismo existente y aplica timeout; la respuesta se reduce en memoria a status, cantidad, etapas JWT/Dataverse, diagnóstico y presencia estructural de precios nullable y etiquetas legibles. No se publican SKU, atributos, precios, URLs, token, headers, payload, query strings, PII o secretos. El trigger no usa Product Provider Factory y todavía no fue ejecutado contra Dataverse real.
 - Diagnóstico seguro Phase1-020: conserva la clasificación sanitaria de fallos, incluido `DATAVERSE_INVALID_FIELD_OR_FILTER`, sin exponer detalles técnicos en el contrato HTTP. Los diagnósticos temporales de probes Phase1-022 y metadata Phase1-024 ya no forman parte del runtime.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún hostname de hosting está codificado en módulos Customer/Product/Dataverse.
 

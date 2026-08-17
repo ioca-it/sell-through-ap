@@ -2,13 +2,15 @@
 
 ## Fase actual
 
-PHASE1-040 queda **IMPLEMENTED / NOT ACTIVATED**. Maestro Producto dispone de una ruta intercambiable `local|dataverse` mediante `VITE_PRODUCT_SOURCE`, con `local` como default vigente. El backend portable incorpora `GET /api/products/master`; Product Price Level Gateway consulta exclusivamente `productpricelevel`, aplica en backend el filtro de compradores `IOCA USA INC` o `SAND SPORTS, CORP.`, pagina mediante Dataverse Client y consolida por SKU el pivot `USA -> priceUSA` / `CHINA -> priceChina`. La UI no envía OData y los LogicalNames permanecen exclusivamente en el gateway.
+PHASE1-042 queda **PREPARED / NOT EXECUTED / NOT ACTIVATED**. El arnés temporal `?phase1-042-product-smoke=1` prepara una única lectura autenticada de `GET /api/products/master` sin pasar por `VITE_PRODUCT_SOURCE`, cambiar su valor `local` ni activar Product Dataverse en la navegación normal. Reutiliza la sesión MSAL y el token delegado existentes, aplica timeout y reduce cualquier respuesta a status, conteo, etapas y booleanos estructurales; consola nunca recibe Product payload, token, headers, URLs, query strings, PII o secretos. La ejecución real contra Vercel/Render/Dataverse queda pendiente de autorización separada.
+
+Maestro Producto dispone de una ruta intercambiable `local|dataverse` mediante `VITE_PRODUCT_SOURCE`, con `local` como default vigente. El backend portable incorpora `GET /api/products/master`; Product Price Level Gateway consulta exclusivamente `productpricelevel`, aplica en backend el filtro de compradores `IOCA USA INC` o `SAND SPORTS, CORP.`, pagina mediante Dataverse Client y consolida por SKU el pivot `USA -> priceUSA` / `CHINA -> priceChina`. La UI no envía OData y los LogicalNames permanecen exclusivamente en el gateway.
 
 El contrato normalizado frontend es `{ sku, productName, brand, category, discontinuationDate, fechaStr, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`. `fechaStr` se deriva con la única función `normalizeFechaStr`: fecha válida local/ISO/con hora produce `YYYY-MM-DD`, y ausencia o invalidez produce `""`, sin desplazar el día escrito por timezone. `discontinuationDate` y `creationDate` conservan `Date|null`. `level` y `status` solicitan FormattedValue; si falta, solo aceptan como fallback un valor fuente que ya sea texto y nunca publican códigos Choice numéricos. La consolidación ignora valores descriptivos vacíos, compara strings/URLs trimmed, fechas canónicas y etiquetas FormattedValue trimmed, e impide que valores no vacíos divergentes de cualquiera de los nueve atributos Product se consoliden silenciosamente. Tanto los conflictos de precio como los de atributo reutilizan `409 / PRODUCT_MASTER_CONFLICT`, se distinguen solo en metadata interna y mantienen el contrato público sanitizado. Phase1-038 fija `0 = precio real` y `null = precio no disponible`: `amount null|undefined` y un origen sin fila quedan en `null`, mientras las valorizaciones dependientes propagan `null` sin fallback. Render continúa transitorio, Azure sigue siendo el destino definitivo y no se activó Product Dataverse en producción.
 
 ## Último prompt aprobado
 
-PHASE1-040 — Normalize fechaStr Across Data Sources.
+PHASE1-042 — Prepare Real Dataverse Product Master Smoke Test.
 
 ## Última auditoría aprobada
 
@@ -29,6 +31,7 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - MSAL frontend: configuración/cliente desacoplados, procesamiento de redirect, cuenta activa y adquisición silenciosa mediante `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`.
 - Authentication Controls: inicio de sesión, identidad discreta y cierre de sesión sin almacenamiento manual de tokens.
 - Real Dataverse Customer Smoke Test: validado end-to-end como PASS mediante el arnés temporal `?phase1-010b-smoke=1`; `CL0000041` produjo `HTTP 200`, exactamente un Customer, JWT aceptado y request Dataverse intentado, sin exponer token o payload Customer. El arnés se conserva temporalmente.
+- Real Dataverse Product Master Smoke Test: arnés temporal preparado mediante `?phase1-042-product-smoke=1`; consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`. No se ha ejecutado contra producción y puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
 - Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Product normalizer, Repository y Product Master Application Service: contrato normalizado independiente de la fuente y adaptación hacia Master Parser/Record Assembler que preserva `0` como precio real, `null` como no disponible y `fechaStr` canónico sin perder el día fuente.
@@ -111,11 +114,25 @@ Vercel
   → accounts
 ```
 
+Arnés Product preparado, todavía no ejecutado:
+
+```text
+Vercel + `?phase1-042-product-smoke=1`
+  -> initializeAuthentication / sesión MSAL existente
+    -> getAccessToken / delegated access token
+      -> GET Render `/api/products/master`
+        -> JWT Authenticator / Rate Limiter
+          -> Product Service
+            -> Product Price Level Gateway
+              -> Dataverse Client -> `productpricelevel`
+                -> resumen sanitizado en consola (sin Product payload)
+```
+
 Distribution y Pareto permanecen en Application Service. Executive Report consume el DTO de Portfolio Analysis; presentación, narrativas y exportaciones permanecen en `App.jsx` sin acceder directamente a fuentes físicas.
 
 ## Siguiente hito
 
-Revisar y autorizar por separado cualquier activación de `VITE_PRODUCT_SOURCE=dataverse` y validación real de Maestro Producto. Esa activación no debe cambiar mapping, filtro, consolidación, contratos, autenticación, normalización de `fechaStr` ni reglas del motor. La migración del backend portable desde Render hacia Azure continúa como línea independiente, sin servicio Azure definido todavía.
+Con autorización separada, desplegar en Vercel esta versión sin cambiar `VITE_PRODUCT_SOURCE=local`, iniciar una sesión MSAL válida y abrir una sola vez `https://sell-through-ap.vercel.app/?phase1-042-product-smoke=1`; revisar exclusivamente el objeto sanitizado de consola. La activación normal de `VITE_PRODUCT_SOURCE=dataverse` permanece como decisión posterior e independiente. La migración del backend portable desde Render hacia Azure continúa como línea separada, sin servicio Azure definido todavía.
 
 ## Decisiones congeladas
 
@@ -128,6 +145,7 @@ Revisar y autorizar por separado cualquier activación de `VITE_PRODUCT_SOURCE=d
 - `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` son únicos por SKU: vacío más valor puede inicializar, pero dos valores no vacíos distintos después de normalizar bloquean con `PRODUCT_MASTER_CONFLICT`; no existe precedencia por fila, comprador, fecha, mayoría ni otro criterio.
 - `level` y `status` Product usan FormattedValue cuando está presente. Sin anotación, solo un valor fuente textual puede usarse como fallback; un Choice numérico nunca se publica como etiqueta.
 - `VITE_PRODUCT_SOURCE` selecciona `local|dataverse`; `local` es el default vigente y Product Dataverse no está activado en producción.
+- El smoke-test Phase1-042 solo puede ejecutarse con `?phase1-042-product-smoke=1`, llama al endpoint Product existente sin parámetros y no consulta mediante Product Provider Factory; su presencia no modifica la fuente global ni el flujo normal.
 - Account Customer Gateway encapsula `new_tipocliente@OData.Community.Display.V1.FormattedValue` y expone su etiqueta únicamente como `customerType`, con fallback vacío cuando la anotación falta, es `null` o `undefined`; el valor numérico `new_tipocliente` nunca sustituye la etiqueta.
 - Toda consulta Customer a `accounts` usa en Account Customer Gateway el filtro fijo confirmado `customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4`. Las tres reglas siguen siendo obligatorias y no amplían el `$select`, el mapping ni el contrato Customer.
 - La UI mantiene una única selección de cliente; código, nombre, país y tipo se reemplazan juntos desde Customer Master Application Service.

@@ -1,5 +1,20 @@
 # Roadmap aprobado
 
+## Phase1-042 — Prepare Real Dataverse Product Master Smoke Test
+
+Maestro Producto queda **SMOKE PREPARED / NOT EXECUTED / NOT ACTIVATED**. El
+trigger temporal `?phase1-042-product-smoke=1` reutiliza sesión MSAL y token
+delegado para ejecutar exclusivamente `GET /api/products/master`; no añade un
+endpoint, no envía parámetros y no pasa por `VITE_PRODUCT_SOURCE`.
+
+El resultado de consola contiene solo status, cantidad, etapas sanitizadas,
+diagnóstico y booleanos estructurales. Se cubren ausencia de trigger/sesión,
+token, request autenticada, cero productos, 401, 403, 409
+`PRODUCT_MASTER_CONFLICT`, 429, 5xx, red/timeout y respuesta inválida, sin
+exponer Product payload. Customer smoke-test y navegación normal permanecen
+sin regresión. La ejecución productiva y cualquier activación global de
+Product Dataverse requieren autorización posterior e independiente.
+
 ## Phase1-040 — Normalize fechaStr Across Data Sources
 
 Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** con una única regla de

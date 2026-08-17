@@ -1,5 +1,29 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-042
+
+### Preparado
+
+- Arnés temporal Product activado exclusivamente por
+  `?phase1-042-product-smoke=1`, aislado de Product Provider Factory y de
+  `VITE_PRODUCT_SOURCE=local`.
+- Reutiliza inicialización MSAL, adquisición del token delegado y el endpoint
+  cerrado existente `GET /api/products/master`; no amplía el contrato público
+  ni admite query strings.
+- Aplica timeout y normaliza cero productos, 401, 403, 409
+  `PRODUCT_MASTER_CONFLICT`, 429, 5xx, red y respuesta inválida.
+
+### Sanitización y alcance
+
+- Consola recibe únicamente status, conteo, etapas JWT/Dataverse, diagnóstico
+  y booleanos estructurales; no recibe Product payload, SKU, atributos,
+  precios, URLs, token, headers, PII o secretos.
+- No se ejecutó el trigger, no se consultó Dataverse productivo y no se cambió
+  Product Gateway, mapping, filtro, conflictos, FormattedValue, precios nullable
+  o `fechaStr`.
+- Product Dataverse continúa **NOT ACTIVATED**; sin cambios en Vercel, Render,
+  Entra o Dataverse y sin commit, push o deploy.
+
 ## 2026-08-17 — PHASE1-040
 
 ### Normalizado
