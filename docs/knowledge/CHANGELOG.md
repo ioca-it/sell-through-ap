@@ -1,5 +1,37 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-055
+
+### Corregido
+
+- Product Price Level Gateway reemplaza el LogicalName anterior incorrecto
+  `producturl` por `crbbe_urlproducto` tanto en `$select` como en el mapping
+  exclusivo `crbbe_urlproducto` → `productUrl`.
+- `productUrl` conserva `trim()` y fallback `""` para `null`, `undefined` o
+  texto vacío; el contrato normalizado no expone el nombre físico Dataverse.
+- Entity Set, mappings restantes, filtros de compradores, FormattedValue,
+  pivot USA/CHINA, precios `0`/`null`, conflictos y `fechaStr` permanecen
+  intactos.
+
+### Retirado
+
+- Diagnóstico Product Phase1-046: probes, módulo, import/hook del gateway,
+  estado once-per-process y pruebas exclusivas.
+- Diagnóstico metadata Product Phase1-048/050/052: consultas
+  `EntityDefinitions`/`Attributes`, módulo, observabilidad, guard y pruebas
+  exclusivas.
+- Dataverse Client deja de exponer las tres rutas auxiliares temporales; sus
+  operaciones productivas y el diagnóstico general sanitizado Phase1-020 se
+  preservan.
+
+### Alcance
+
+- Product Domain, Provider, Repository, Application Service, Product API,
+  Customer Master, autenticación, contratos HTTP y
+  `VITE_PRODUCT_SOURCE=local` permanecen sin cambios funcionales.
+- Sin commit, push, deploy, smoke, cambios de variables o modificación de
+  Dataverse.
+
 ## 2026-08-17 — PHASE1-052
 
 ### Corregido

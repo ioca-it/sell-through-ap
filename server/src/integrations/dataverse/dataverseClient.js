@@ -1,5 +1,4 @@
 import {
-  DATAVERSE_DIAGNOSTIC_IDS,
   createDataverseInvalidResponseDiagnostic,
   createDataverseNetworkDiagnostic,
   emitDataverseDiagnostic,
@@ -8,25 +7,6 @@ import {
 
 export const DATAVERSE_FORMATTED_VALUE_ANNOTATION =
   'OData.Community.Display.V1.FormattedValue';
-
-const DATAVERSE_HTTP_FAILURE = Symbol('dataverseHttpFailure');
-
-const attachHttpFailure = (error, diagnostic) => {
-  Object.defineProperty(error, DATAVERSE_HTTP_FAILURE, {
-    value: Object.freeze({
-      diagnosticId: diagnostic.diagnosticId,
-      upstreamStatus: diagnostic.upstreamStatus,
-    }),
-    enumerable: false,
-  });
-  return error;
-};
-
-export const isDataverseInvalidFieldOrFilterError = (error) => {
-  const failure = error?.[DATAVERSE_HTTP_FAILURE];
-  return failure?.diagnosticId === DATAVERSE_DIAGNOSTIC_IDS.INVALID_FIELD_OR_FILTER
-    && failure?.upstreamStatus === 400;
-};
 
 const createPreferHeader = (includeAnnotations) => {
   if (includeAnnotations === undefined) return {};
@@ -117,7 +97,7 @@ export const createDataverseClient = ({
       if (!response.ok) {
         const diagnostic = await inspectDataverseHttpFailure(response);
         emitDataverseDiagnostic(diagnostic, diagnosticLogger);
-        throw attachHttpFailure(new DataverseRequestError(), diagnostic);
+        throw new DataverseRequestError();
       }
 
       let payload;
@@ -171,158 +151,6 @@ export const createDataverseClient = ({
     return page.value;
   };
 
-  // Ruta interna y temporal para resolver atributos por metadata sin recorrer
-  // tablas ni descargar definiciones completas. Los errores no leen ni
-  // registran el body upstream; el diagnóstico llamador preserva el fallo
-  // Product original.
-  const retrieveMetadataCollection = async (url) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const token = await tokenProvider.getToken();
-      const response = await fetchImpl(url, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-          'OData-MaxVersion': '4.0',
-          'OData-Version': '4.0',
-        },
-        signal: controller.signal,
-      });
-      if (!response?.ok) {
-        try {
-          await response?.body?.cancel?.();
-        } catch {
-          // Descartar el body es best-effort y nunca amplía la telemetría.
-        }
-        throw new DataverseRequestError();
-      }
-
-      let payload;
-      try {
-        payload = await response.json();
-      } catch {
-        throw new DataverseRequestError();
-      }
-      if (!Array.isArray(payload?.value)) throw new DataverseRequestError();
-      return payload.value;
-    } catch (error) {
-      if (error instanceof DataverseRequestError) throw error;
-      throw new DataverseRequestError();
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
-
-  const retrieveEntityDefinitionByEntitySetName = async ({
-    entitySetName,
-  } = {}) => {
-    if (typeof entitySetName !== 'string'
-      || !/^[A-Za-z0-9_]+$/.test(entitySetName)) {
-      throw new Error('DataverseClient: Entity Set de metadata inválido.');
-    }
-
-    const entityDefinitionsUrl = new URL(
-      '/api/data/v9.2/EntityDefinitions',
-      dataverseOrigin,
-    );
-    entityDefinitionsUrl.searchParams.set('$select', 'LogicalName,EntitySetName');
-    entityDefinitionsUrl.searchParams.set(
-      '$filter',
-      `EntitySetName eq '${entitySetName}'`,
-    );
-
-    const entityDefinitions = await retrieveMetadataCollection(entityDefinitionsUrl);
-    const exactMatches = entityDefinitions.filter((entityDefinition) => (
-      entityDefinition?.EntitySetName === entitySetName
-    ));
-    if (exactMatches.length !== 1) {
-      throw new DataverseRequestError();
-    }
-    const [entityDefinition] = exactMatches;
-    const entityLogicalName = entityDefinition?.LogicalName;
-    if (typeof entityLogicalName !== 'string'
-      || !/^[a-z0-9_]+$/.test(entityLogicalName)) {
-      throw new DataverseRequestError();
-    }
-    return Object.freeze({
-      EntitySetName: entitySetName,
-      LogicalName: entityLogicalName,
-    });
-  };
-
-  const retrieveEntityAttributeMetadataCandidates = async ({
-    entityLogicalName,
-    nameConcepts,
-  } = {}) => {
-    if (typeof entityLogicalName !== 'string'
-      || !/^[a-z0-9_]+$/.test(entityLogicalName)) {
-      throw new Error('DataverseClient: LogicalName de metadata inválido.');
-    }
-    if (!Array.isArray(nameConcepts)
-      || nameConcepts.length === 0
-      || nameConcepts.some((concept) => (
-        typeof concept !== 'string' || !/^[a-z0-9_]+$/.test(concept)
-      ))) {
-      throw new Error('DataverseClient: conceptos de metadata inválidos.');
-    }
-
-    const attributesUrl = new URL(
-      `/api/data/v9.2/EntityDefinitions(LogicalName='${entityLogicalName}')/Attributes`,
-      dataverseOrigin,
-    );
-    attributesUrl.searchParams.set(
-      '$select',
-      'LogicalName,SchemaName,AttributeType,IsValidForRead',
-    );
-    attributesUrl.searchParams.set(
-      '$filter',
-      nameConcepts
-        .map((concept) => `contains(LogicalName,'${concept}')`)
-        .join(' or '),
-    );
-
-    const attributes = await retrieveMetadataCollection(attributesUrl);
-    return Object.freeze(attributes.map((attribute) => Object.freeze({
-      LogicalName: attribute?.LogicalName,
-      SchemaName: attribute?.SchemaName,
-      AttributeType: attribute?.AttributeType,
-      IsValidForRead: attribute?.IsValidForRead,
-    })));
-  };
-
-  // Ruta interna y temporal para diagnósticos controlados. Solo observa el
-  // status HTTP y descarta el body; no clasifica ni registra contenido OData.
-  const probeRetrieveMultiple = async (query) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const token = await tokenProvider.getToken();
-      const response = await fetchImpl(createQueryUrl(query), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-          'OData-MaxVersion': '4.0',
-          'OData-Version': '4.0',
-          ...createPreferHeader(query.includeAnnotations),
-        },
-        signal: controller.signal,
-      });
-      try {
-        await response?.body?.cancel?.();
-      } catch {
-        // Descartar el body es best-effort y nunca altera PASS/FAIL del probe.
-      }
-      return response?.ok === true;
-    } catch {
-      return false;
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
-
   const retrieveAll = async (query) => {
     const rows = [];
     let url = createQueryUrl(query);
@@ -341,15 +169,6 @@ export const createDataverseClient = ({
   };
 
   return Object.freeze({
-    probeRetrieveMultiple(query) {
-      return probeRetrieveMultiple(query);
-    },
-    retrieveEntityDefinitionByEntitySetName(query) {
-      return retrieveEntityDefinitionByEntitySetName(query);
-    },
-    retrieveEntityAttributeMetadataCandidates(query) {
-      return retrieveEntityAttributeMetadataCandidates(query);
-    },
     retrieveMultiple(query) {
       return retrieveMultiple(query);
     },

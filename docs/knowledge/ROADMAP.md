@@ -1,5 +1,25 @@
 # Roadmap aprobado
 
+## Phase1-055 — Correct Product URL Logical Name and Remove Temporary Diagnostics
+
+Maestro Producto queda **PRODUCT URL LOGICAL NAME CORRECTED / TEMPORARY
+DIAGNOSTICS REMOVED / NOT DEPLOYED / NOT ACTIVATED**. Product Price Level
+Gateway sustituye el LogicalName anterior incorrecto `producturl` por el nombre
+confirmado `crbbe_urlproducto` en `$select` y mapping, manteniendo el contrato
+normalizado `productUrl`. Valores `null`, `undefined` o vacíos producen `""` y
+los textos válidos se publican con `trim()`.
+
+Phase1-046 y Phase1-048/050/052 quedan retirados por completo del runtime:
+módulos, imports, hooks, estado once-per-process, métodos temporales de probe y
+metadata en Dataverse Client, observabilidad Product temporal y pruebas
+exclusivas. El diagnóstico general sanitizado Dataverse Phase1-020 permanece
+vigente. Entity Set, mappings restantes, filtro de compañías, pivot USA/CHINA,
+precios `0`/`null`, FormattedValue, conflictos, `fechaStr`, capas Product,
+Customer Master, HTTP, autenticación y `VITE_PRODUCT_SOURCE=local` no cambian.
+
+Cualquier checkpoint, deploy, smoke o activación de Product Dataverse requiere
+autorización posterior e independiente.
+
 ## Phase1-052 — Fix Product Metadata Entity Resolution
 
 Maestro Producto queda **PRODUCT METADATA ENTITY RESOLUTION FIXED / NOT

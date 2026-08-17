@@ -20,7 +20,7 @@ const rawRow = (overrides = {}) => ({
   crbbe_etapa: 100000000,
   [`crbbe_etapa@${FORMATTED}`]: ' Activo ',
   crbbe_imagenproducto: ' https://images.invalid/sku-001.png ',
-  producturl: ' https://products.invalid/sku-001 ',
+  crbbe_urlproducto: ' https://products.invalid/sku-001 ',
   amount: 25,
   crbbe_origen: ' USA ',
   crbbe_companiacompradora: 'IOCA USA INC',
@@ -60,6 +60,27 @@ test('mapea todos los campos y usa FormattedValue para level/status Choice', () 
     origin: 'USA',
     buyerCompany: 'IOCA USA INC',
   });
+});
+
+test('normaliza crbbe_urlproducto hacia productUrl con fallback vacío', () => {
+  assert.equal(
+    mapProductPriceLevelRow(rawRow({
+      crbbe_urlproducto: ' https://products.invalid/trimmed ',
+    })).productUrl,
+    'https://products.invalid/trimmed',
+  );
+  assert.equal(
+    mapProductPriceLevelRow(rawRow({ crbbe_urlproducto: null })).productUrl,
+    '',
+  );
+  assert.equal(
+    mapProductPriceLevelRow(rawRow({ crbbe_urlproducto: undefined })).productUrl,
+    '',
+  );
+  assert.equal(
+    mapProductPriceLevelRow(rawRow({ crbbe_urlproducto: '   ' })).productUrl,
+    '',
+  );
 });
 
 test('normaliza amount distinguiendo cero real de precio no disponible', () => {
@@ -118,11 +139,12 @@ test('gateway consulta productpricelevels con ambas compañías en backend', asy
     'crbbe_clasificacioncomercial',
     'crbbe_etapa',
     'crbbe_imagenproducto',
-    'producturl',
+    'crbbe_urlproducto',
     'amount',
     'crbbe_origen',
     'crbbe_companiacompradora',
   ]);
+  assert.equal(calls[0].select.includes('producturl'), false);
 });
 
 test('no reintroduce productpricelevel como Entity Set runtime del gateway', async () => {
@@ -206,7 +228,7 @@ test('omite SKU vacío/inválido y conserva URLs vacías', () => {
     rawRow({
       crbbe_sku: 'VALIDO',
       crbbe_imagenproducto: null,
-      producturl: undefined,
+      crbbe_urlproducto: undefined,
     }),
   ]);
   assert.equal(products.length, 1);
@@ -281,7 +303,7 @@ test('fecha no vacía inválida no se vuelve equivalente a otra fecha', () => {
   ['discontinuationDate', { crbbe_validohasta: '2027-07-01T00:00:00Z' }],
   ['creationDate', { createdon: '2026-08-02T12:00:00Z' }],
   ['imageUrl', { crbbe_imagenproducto: 'https://images.invalid/other.png' }],
-  ['productUrl', { producturl: 'https://products.invalid/other' }],
+  ['productUrl', { crbbe_urlproducto: 'https://products.invalid/other' }],
 ].forEach(([field, override]) => {
   test(`detecta conflicto de atributo ${field} sin elegir precedencia`, () => {
     assertAttributeConflict(field, override);
@@ -348,5 +370,6 @@ test('el contrato final no expone nombres Dataverse ni campos auxiliares', () =>
     'priceUSA',
     'priceChina',
   ]);
+  assert.equal(Object.hasOwn(product, 'crbbe_urlproducto'), false);
   assert.doesNotMatch(JSON.stringify(product), /crbbe_|createdon|amount|companiacompradora/);
 });

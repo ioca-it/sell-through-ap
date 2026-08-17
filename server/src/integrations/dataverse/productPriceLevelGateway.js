@@ -1,13 +1,8 @@
-// Frontera runtime que conoce productpricelevels y sus LogicalNames. El módulo
-// diagnóstico temporal Phase1-046 replica candidatos solo para probarlos.
-// Este gateway devuelve el contrato Product y no publica campos auxiliares.
+// Frontera runtime que conoce productpricelevels y sus LogicalNames. Este
+// gateway devuelve el contrato Product y no publica campos auxiliares.
 
-import {
-  DATAVERSE_FORMATTED_VALUE_ANNOTATION,
-  isDataverseInvalidFieldOrFilterError,
-} from './dataverseClient.js';
+import { DATAVERSE_FORMATTED_VALUE_ANNOTATION } from './dataverseClient.js';
 import { quoteODataString } from './odata.js';
-import { runProductPriceLevelQueryDiagnosticOnce } from './productPriceLevelQueryDiagnostic.js';
 
 const PRODUCT_SOURCE = Object.freeze({
   entitySet: 'productpricelevels',
@@ -21,7 +16,7 @@ const PRODUCT_SOURCE = Object.freeze({
     level: 'crbbe_clasificacioncomercial',
     status: 'crbbe_etapa',
     imageUrl: 'crbbe_imagenproducto',
-    productUrl: 'producturl',
+    productUrl: 'crbbe_urlproducto',
     amount: 'amount',
     origin: 'crbbe_origen',
     buyerCompany: 'crbbe_companiacompradora',
@@ -258,43 +253,25 @@ const PRODUCT_COMPANY_FILTER = `(${ALLOWED_BUYER_COMPANIES
   ))
   .join(' or ')})`;
 
-export const createProductPriceLevelGateway = ({
-  dataverseClient,
-  diagnosticLogger,
-} = {}) => {
+export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
   if (!dataverseClient || typeof dataverseClient.retrieveAll !== 'function') {
     throw new Error('ProductPriceLevelGateway: Dataverse Client inválido.');
   }
 
   return Object.freeze({
     async loadProducts() {
-      let rows;
-      try {
-        rows = await dataverseClient.retrieveAll({
-          entitySet: PRODUCT_SOURCE.entitySet,
-          select: Object.freeze(Object.values(PRODUCT_SOURCE.fields)),
-          filter: PRODUCT_COMPANY_FILTER,
-          orderBy: [
-            PRODUCT_SOURCE.fields.sku,
-            PRODUCT_SOURCE.fields.origin,
-            PRODUCT_SOURCE.fields.buyerCompany,
-            PRODUCT_SOURCE.fields.creationDate,
-          ].map((field) => `${field} asc`).join(','),
-          includeAnnotations: Object.freeze([DATAVERSE_FORMATTED_VALUE_ANNOTATION]),
-        });
-      } catch (error) {
-        if (isDataverseInvalidFieldOrFilterError(error)) {
-          try {
-            await runProductPriceLevelQueryDiagnosticOnce({
-              dataverseClient,
-              diagnosticLogger,
-            });
-          } catch {
-            // Preservar siempre el error Dataverse original y su HTTP público.
-          }
-        }
-        throw error;
-      }
+      const rows = await dataverseClient.retrieveAll({
+        entitySet: PRODUCT_SOURCE.entitySet,
+        select: Object.freeze(Object.values(PRODUCT_SOURCE.fields)),
+        filter: PRODUCT_COMPANY_FILTER,
+        orderBy: [
+          PRODUCT_SOURCE.fields.sku,
+          PRODUCT_SOURCE.fields.origin,
+          PRODUCT_SOURCE.fields.buyerCompany,
+          PRODUCT_SOURCE.fields.creationDate,
+        ].map((field) => `${field} asc`).join(','),
+        includeAnnotations: Object.freeze([DATAVERSE_FORMATTED_VALUE_ANNOTATION]),
+      });
       return consolidateProductPriceLevelRows(rows);
     },
   });
