@@ -69,6 +69,7 @@ test('prueba campos individuales, continúa tras FAIL y emite solo eventos allow
   const calls = [];
   const events = [];
   let skuSelectCalls = 0;
+  let metadataCalls = 0;
   const dataverseClient = {
     probeRetrieveMultiple: async (query) => {
       calls.push(query);
@@ -83,6 +84,10 @@ test('prueba campos individuales, continúa tras FAIL y emite solo eventos allow
       }
       return true;
     },
+    retrieveEntityAttributeMetadataCandidates: async () => {
+      metadataCalls += 1;
+      return [];
+    },
   };
 
   assert.equal(await runProductPriceLevelQueryDiagnosticOnce({
@@ -92,6 +97,7 @@ test('prueba campos individuales, continúa tras FAIL y emite solo eventos allow
 
   assert.equal(calls.length, 26);
   assert.equal(events.length, 26);
+  assert.equal(metadataCalls, 0);
   assert.deepEqual(
     events.filter(({ category }) => category === 'select_field').map(({ element }) => element),
     EXPECTED_FIELDS,
@@ -155,6 +161,52 @@ test('prueba campos individuales, continúa tras FAIL y emite solo eventos allow
   assert.doesNotMatch(serializedLogs, /https?:\/\//i);
 });
 
+test('activa metadata únicamente después del FAIL individual de producturl', async () => {
+  const events = [];
+  let metadataCalls = 0;
+  const dataverseClient = {
+    probeRetrieveMultiple: async (query) => !(
+      query.select?.length === 1 && query.select[0] === 'producturl'
+    ),
+    retrieveEntityAttributeMetadataCandidates: async () => {
+      metadataCalls += 1;
+      return [{
+        LogicalName: 'crbbe_producturl',
+        SchemaName: 'crbbe_ProductUrl',
+        AttributeType: 'String',
+        IsValidForRead: true,
+      }];
+    },
+  };
+
+  await runProductPriceLevelQueryDiagnosticOnce({
+    dataverseClient,
+    diagnosticLogger: (event) => events.push(event),
+  });
+
+  assert.equal(metadataCalls, 1);
+  const failedProductUrlIndex = events.findIndex((event) => (
+    event.diagnosticId === 'PHASE1_046_PRODUCT_QUERY_PROBE'
+      && event.category === 'select_field'
+      && event.element === 'producturl'
+      && event.result === 'FAIL'
+  ));
+  const metadataIndex = events.findIndex((event) => (
+    event.diagnosticId === 'PHASE1_048_PRODUCT_URL_METADATA'
+  ));
+  assert.ok(failedProductUrlIndex >= 0);
+  assert.equal(metadataIndex, failedProductUrlIndex + 1);
+  assert.deepEqual(events[metadataIndex], {
+    component: 'ProductPriceLevelMetadataDiagnostic',
+    diagnosticId: 'PHASE1_048_PRODUCT_URL_METADATA',
+    logicalName: 'crbbe_producturl',
+    schemaName: 'crbbe_ProductUrl',
+    attributeType: 'String',
+    isValidForRead: true,
+    result: 'CANDIDATE',
+  });
+});
+
 test('protege la secuencia completa once-per-process', async () => {
   let calls = 0;
   const events = [];
@@ -203,6 +255,7 @@ test('detiene probes específicos cuando falla el Entity Set baseline', async ()
 
 test('no se ejecuta en Product exitoso ni ante un error no clasificado', async () => {
   let probes = 0;
+  let metadataCalls = 0;
   let shouldFail = false;
   const dataverseClient = {
     retrieveAll: async () => {
@@ -213,14 +266,20 @@ test('no se ejecuta en Product exitoso ni ante un error no clasificado', async (
       probes += 1;
       return true;
     },
+    retrieveEntityAttributeMetadataCandidates: async () => {
+      metadataCalls += 1;
+      return [];
+    },
   };
   const gateway = createProductPriceLevelGateway({ dataverseClient });
   assert.deepEqual(await gateway.loadProducts(), []);
   assert.equal(probes, 0);
+  assert.equal(metadataCalls, 0);
 
   shouldFail = true;
   await assert.rejects(gateway.loadProducts(), DataverseRequestError);
   assert.equal(probes, 0);
+  assert.equal(metadataCalls, 0);
 });
 
 test('no se ejecuta ante HTTP 400 distinto de invalid field/filter', async () => {
@@ -254,7 +313,35 @@ test('se ejecuta después del 400 específico, conserva 502 y no repite probes',
     fetchImpl: async (url) => {
       fetchCalls += 1;
       requestUrls.push(url);
-      if (fetchCalls === 1 || fetchCalls === 28) return invalidFieldResponse();
+      if (fetchCalls === 1 || fetchCalls === 12 || fetchCalls === 30) {
+        return invalidFieldResponse();
+      }
+      if (url.pathname === '/api/data/v9.2/EntityDefinitions') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            value: [{
+              LogicalName: 'productpricelevel',
+              EntitySetName: 'productpricelevels',
+            }],
+          }),
+        };
+      }
+      if (url.pathname.endsWith("/Attributes")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            value: [{
+              LogicalName: 'crbbe_producturl',
+              SchemaName: 'crbbe_ProductUrl',
+              AttributeType: 'String',
+              IsValidForRead: true,
+            }],
+          }),
+        };
+      }
       return probePassResponse(() => {
         cancelledBodies += 1;
       });
@@ -274,8 +361,8 @@ test('se ejecuta después del 400 específico, conserva 502 y no repite probes',
     );
   }
 
-  assert.equal(fetchCalls, 28);
-  assert.equal(cancelledBodies, 26);
+  assert.equal(fetchCalls, 30);
+  assert.equal(cancelledBodies, 25);
   assert.equal(timeline[0].component, 'DataverseClient');
   assert.equal(timeline[0].diagnosticId, 'DATAVERSE_INVALID_FIELD_OR_FILTER');
   assert.equal(timeline[0].upstreamStatus, 400);
@@ -286,7 +373,20 @@ test('se ejecuta después del 400 específico, conserva 502 y no repite probes',
     )).length,
     26,
   );
-  requestUrls.forEach((url) => {
-    assert.equal(url.pathname, '/api/data/v9.2/productpricelevels');
-  });
+  assert.equal(
+    timeline.filter(({ diagnosticId }) => (
+      diagnosticId === 'PHASE1_048_PRODUCT_URL_METADATA'
+    )).length,
+    1,
+  );
+  assert.equal(
+    requestUrls.filter(({ pathname }) => (
+      pathname === '/api/data/v9.2/productpricelevels'
+    )).length,
+    28,
+  );
+  assert.equal(
+    requestUrls.filter(({ pathname }) => pathname.includes('EntityDefinitions')).length,
+    2,
+  );
 });

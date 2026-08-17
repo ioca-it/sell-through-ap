@@ -1,5 +1,27 @@
 # Roadmap aprobado
 
+## Phase1-048 — Resolve Dataverse Product URL Logical Name
+
+Maestro Producto queda **METADATA DIAGNOSTIC IMPLEMENTED / NOT DEPLOYED / NOT
+EXECUTED / NOT ACTIVATED**. La evidencia productiva proporcionada de
+Phase1-046 confirma que `productpricelevels`, los otros doce campos, filtros,
+orden, FormattedValue y `$top` pasan, mientras `producturl` falla de forma
+individual y arrastra las dos composiciones que lo incluyen.
+
+Phase1-048 añade una consulta backend temporal de metadata que se dispara solo
+después de ese `FAIL`, máximo una vez por proceso. Resuelve la entidad por
+`EntitySetName=productpricelevels` y consulta únicamente sus atributos cuyos
+LogicalNames contienen `url`, `product` o `producto`; los eventos
+`PHASE1_048_PRODUCT_URL_METADATA` quedan reducidos a LogicalName, SchemaName,
+AttributeType, IsValidForRead y `CANDIDATE|NOT_CANDIDATE`.
+
+No cambia el Gateway definitivo: `producturl` permanece en `$select`, mapping
+y contrato `productUrl`. Tampoco cambia frontend, Product Domain/Provider/
+Repository/Application Service, Customer Master, variables o infraestructura.
+El siguiente paso requiere checkpoint/deploy backend autorizado y una única
+captura; la corrección del LogicalName y el retiro de Phase1-046/048 exigen un
+prompt posterior basado en metadata real.
+
 ## Phase1-046 — Isolate Dataverse Product Invalid Field or Filter
 
 Maestro Producto queda **DIAGNOSTIC IMPLEMENTED / NOT DEPLOYED / NOT EXECUTED /

@@ -171,6 +171,111 @@ export const createDataverseClient = ({
     return page.value;
   };
 
+  // Ruta interna y temporal para resolver atributos por metadata sin recorrer
+  // tablas ni descargar definiciones completas. Los errores no leen ni
+  // registran el body upstream; el diagnóstico llamador preserva el fallo
+  // Product original.
+  const retrieveMetadataCollection = async (url) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const token = await tokenProvider.getToken();
+      const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          'OData-MaxVersion': '4.0',
+          'OData-Version': '4.0',
+        },
+        signal: controller.signal,
+      });
+      if (!response?.ok) {
+        try {
+          await response?.body?.cancel?.();
+        } catch {
+          // Descartar el body es best-effort y nunca amplía la telemetría.
+        }
+        throw new DataverseRequestError();
+      }
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new DataverseRequestError();
+      }
+      if (!Array.isArray(payload?.value)) throw new DataverseRequestError();
+      return payload.value;
+    } catch (error) {
+      if (error instanceof DataverseRequestError) throw error;
+      throw new DataverseRequestError();
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  const retrieveEntityAttributeMetadataCandidates = async ({
+    entitySetName,
+    nameConcepts,
+  } = {}) => {
+    if (typeof entitySetName !== 'string'
+      || !/^[A-Za-z0-9_]+$/.test(entitySetName)) {
+      throw new Error('DataverseClient: Entity Set de metadata inválido.');
+    }
+    if (!Array.isArray(nameConcepts)
+      || nameConcepts.length === 0
+      || nameConcepts.some((concept) => (
+        typeof concept !== 'string' || !/^[a-z0-9_]+$/.test(concept)
+      ))) {
+      throw new Error('DataverseClient: conceptos de metadata inválidos.');
+    }
+
+    const entityDefinitionsUrl = new URL(
+      '/api/data/v9.2/EntityDefinitions',
+      dataverseOrigin,
+    );
+    entityDefinitionsUrl.searchParams.set('$select', 'LogicalName,EntitySetName');
+    entityDefinitionsUrl.searchParams.set(
+      '$filter',
+      `EntitySetName eq '${entitySetName}'`,
+    );
+    entityDefinitionsUrl.searchParams.set('$top', '2');
+
+    const entityDefinitions = await retrieveMetadataCollection(entityDefinitionsUrl);
+    if (entityDefinitions.length !== 1) throw new DataverseRequestError();
+    const [entityDefinition] = entityDefinitions;
+    const entityLogicalName = entityDefinition?.LogicalName;
+    if (entityDefinition?.EntitySetName !== entitySetName
+      || typeof entityLogicalName !== 'string'
+      || !/^[a-z0-9_]+$/.test(entityLogicalName)) {
+      throw new DataverseRequestError();
+    }
+
+    const attributesUrl = new URL(
+      `/api/data/v9.2/EntityDefinitions(LogicalName='${entityLogicalName}')/Attributes`,
+      dataverseOrigin,
+    );
+    attributesUrl.searchParams.set(
+      '$select',
+      'LogicalName,SchemaName,AttributeType,IsValidForRead',
+    );
+    attributesUrl.searchParams.set(
+      '$filter',
+      nameConcepts
+        .map((concept) => `contains(LogicalName,'${concept}')`)
+        .join(' or '),
+    );
+
+    const attributes = await retrieveMetadataCollection(attributesUrl);
+    return Object.freeze(attributes.map((attribute) => Object.freeze({
+      LogicalName: attribute?.LogicalName,
+      SchemaName: attribute?.SchemaName,
+      AttributeType: attribute?.AttributeType,
+      IsValidForRead: attribute?.IsValidForRead,
+    })));
+  };
+
   // Ruta interna y temporal para diagnósticos controlados. Solo observa el
   // status HTTP y descarta el body; no clasifica ni registra contenido OData.
   const probeRetrieveMultiple = async (query) => {
@@ -222,6 +327,9 @@ export const createDataverseClient = ({
   return Object.freeze({
     probeRetrieveMultiple(query) {
       return probeRetrieveMultiple(query);
+    },
+    retrieveEntityAttributeMetadataCandidates(query) {
+      return retrieveEntityAttributeMetadataCandidates(query);
     },
     retrieveMultiple(query) {
       return retrieveMultiple(query);

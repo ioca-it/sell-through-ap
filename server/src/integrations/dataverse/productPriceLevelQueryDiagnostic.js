@@ -1,5 +1,9 @@
 import { DATAVERSE_FORMATTED_VALUE_ANNOTATION } from './dataverseClient.js';
 import { quoteODataString } from './odata.js';
+import {
+  resetProductPriceLevelMetadataDiagnosticForTests,
+  runProductPriceLevelMetadataDiagnosticOnce,
+} from './productPriceLevelMetadataDiagnostic.js';
 
 const COMPONENT = 'ProductPriceLevelQueryDiagnostic';
 const DIAGNOSTIC_ID = 'PHASE1_046_PRODUCT_QUERY_PROBE';
@@ -140,6 +144,19 @@ export const runProductPriceLevelQueryDiagnosticOnce = async ({
     }
     emitProbe(probe, index + 1, passed, diagnosticLogger);
 
+    if (probe.category === 'select_field'
+      && probe.element === 'producturl'
+      && !passed) {
+      try {
+        await runProductPriceLevelMetadataDiagnosticOnce({
+          dataverseClient,
+          diagnosticLogger,
+        });
+      } catch {
+        // Preservar la secuencia Phase1-046 y el error Product original.
+      }
+    }
+
     // Sin baseline válido, consultas más específicas no aportarían evidencia
     // confiable y solo aumentarían tráfico upstream.
     if (index === 0 && !passed) break;
@@ -149,4 +166,5 @@ export const runProductPriceLevelQueryDiagnosticOnce = async ({
 
 export const resetProductPriceLevelQueryDiagnosticForTests = () => {
   executedInProcess = false;
+  resetProductPriceLevelMetadataDiagnosticForTests();
 };

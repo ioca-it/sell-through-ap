@@ -135,9 +135,14 @@ test('publica PRODUCT_MASTER_CONFLICT estable sin detalles internos del atributo
 });
 
 test('mantiene el HTTP público sanitizado ante el fallo Dataverse Product', async () => {
+  const error = new DataverseRequestError('mensaje OData que no debe publicarse');
+  error.productUrlMetadata = [{
+    logicalName: 'crbbe_producturl',
+    schemaName: 'crbbe_ProductUrl',
+  }];
   const app = createTestApp({
     loadMaster: async () => {
-      throw new DataverseRequestError('mensaje OData que no debe publicarse');
+      throw error;
     },
   });
   await withServer(app, async (baseUrl) => {
@@ -151,6 +156,10 @@ test('mantiene el HTTP público sanitizado ante el fallo Dataverse Product', asy
       },
     });
     assert.doesNotMatch(JSON.stringify(payload), /mensaje OData/);
+    assert.doesNotMatch(
+      JSON.stringify(payload),
+      /productUrlMetadata|crbbe_producturl|crbbe_ProductUrl/,
+    );
   });
 });
 

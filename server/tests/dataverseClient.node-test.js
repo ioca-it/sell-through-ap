@@ -202,3 +202,106 @@ test('probeRetrieveMultiple observa solo status y descarta el body sin emitir pa
   assert.equal(bodyCancels, 1);
   assert.deepEqual(events, []);
 });
+
+test('consulta metadata por EntitySet exacto y limita atributos a conceptos técnicos', async () => {
+  const requests = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://org.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'TOKEN-METADATA-NO-REGISTRAR' },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      if (url.pathname === '/api/data/v9.2/EntityDefinitions') {
+        return {
+          ok: true,
+          json: async () => ({
+            value: [{
+              LogicalName: 'productpricelevel',
+              EntitySetName: 'productpricelevels',
+              DisplayName: 'NO-REGISTRAR',
+            }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          value: [{
+            LogicalName: 'crbbe_producturl',
+            SchemaName: 'crbbe_ProductUrl',
+            AttributeType: 'String',
+            IsValidForRead: true,
+            Description: 'NO-REGISTRAR',
+          }],
+        }),
+      };
+    },
+  });
+
+  assert.deepEqual(await client.retrieveEntityAttributeMetadataCandidates({
+    entitySetName: 'productpricelevels',
+    nameConcepts: ['url', 'product', 'producto'],
+  }), [{
+    LogicalName: 'crbbe_producturl',
+    SchemaName: 'crbbe_ProductUrl',
+    AttributeType: 'String',
+    IsValidForRead: true,
+  }]);
+
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].url.pathname, '/api/data/v9.2/EntityDefinitions');
+  assert.equal(
+    requests[0].url.searchParams.get('$select'),
+    'LogicalName,EntitySetName',
+  );
+  assert.equal(
+    requests[0].url.searchParams.get('$filter'),
+    "EntitySetName eq 'productpricelevels'",
+  );
+  assert.equal(requests[0].url.searchParams.get('$top'), '2');
+  assert.equal(
+    requests[1].url.pathname,
+    "/api/data/v9.2/EntityDefinitions(LogicalName='productpricelevel')/Attributes",
+  );
+  assert.equal(
+    requests[1].url.searchParams.get('$select'),
+    'LogicalName,SchemaName,AttributeType,IsValidForRead',
+  );
+  assert.equal(
+    requests[1].url.searchParams.get('$filter'),
+    "contains(LogicalName,'url') or contains(LogicalName,'product') or contains(LogicalName,'producto')",
+  );
+  requests.forEach(({ options }) => {
+    assert.equal(
+      options.headers.Authorization,
+      'Bearer TOKEN-METADATA-NO-REGISTRAR',
+    );
+  });
+});
+
+test('metadata rechaza EntitySet y conceptos arbitrarios antes de hacer requests', async () => {
+  let requests = 0;
+  const client = createDataverseClient({
+    baseUrl: 'https://org.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async () => {
+      requests += 1;
+      return { ok: true, json: async () => ({ value: [] }) };
+    },
+  });
+
+  await assert.rejects(
+    client.retrieveEntityAttributeMetadataCandidates({
+      entitySetName: "productpricelevels?$select=secret",
+      nameConcepts: ['url'],
+    }),
+    /Entity Set de metadata inválido/,
+  );
+  await assert.rejects(
+    client.retrieveEntityAttributeMetadataCandidates({
+      entitySetName: 'productpricelevels',
+      nameConcepts: ["url') or contains(SchemaName,'secret"],
+    }),
+    /conceptos de metadata inválidos/,
+  );
+  assert.equal(requests, 0);
+});

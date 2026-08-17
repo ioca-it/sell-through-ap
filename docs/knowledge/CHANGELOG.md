@@ -1,5 +1,32 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-048
+
+### Implementado
+
+- Diagnóstico metadata Product temporal activado únicamente después del probe
+  individual `select_field=producturl / FAIL`, máximo una vez por proceso.
+- Resolución acotada de la entidad por `EntitySetName=productpricelevels` y
+  consulta de su navegación `Attributes` filtrada por LogicalNames que
+  contienen `url`, `product` o `producto`.
+- Evento `PHASE1_048_PRODUCT_URL_METADATA` limitado a `LogicalName`,
+  `SchemaName`, `AttributeType`, `IsValidForRead` y
+  `CANDIDATE|NOT_CANDIDATE`.
+
+### Seguridad y alcance
+
+- La metadata se reduce a las cuatro propiedades antes de llegar al logger;
+  no se registran filas Product, SKU, nombres, precios, URLs almacenadas,
+  payloads completos, tokens, Authorization, secretos o stack traces.
+- No se añade endpoint y el HTTP público conserva el error Product sanitizado;
+  la metadata nunca llega al frontend.
+- Product Gateway no se corrige: `producturl` y `productUrl` permanecen en
+  mapping/contrato. Product Domain, Provider, Repository, Application Service,
+  Customer Master, variables e infraestructura no cambian.
+- Diagnóstico no desplegado ni ejecutado contra Dataverse productivo; debe
+  retirarse junto con Phase1-046 después de confirmar e implementar el
+  LogicalName definitivo mediante otro prompt.
+
 ## 2026-08-17 — PHASE1-046
 
 ### Implementado
