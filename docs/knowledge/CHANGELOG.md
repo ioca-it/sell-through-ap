@@ -1,5 +1,27 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-044
+
+### Corregido
+
+- Product Price Level Gateway sustituye exclusivamente el Entity Set runtime
+  singular `productpricelevel` por el Entity Set confirmado
+  `productpricelevels`.
+- La prueba directa exige exactamente `productpricelevels` y una regresión
+  independiente falla si se reintroduce `productpricelevel` en runtime.
+- El smoke previo llegó a Render, aceptó el JWT e intentó Dataverse; el HTTP
+  404 observado motivó la corrección. No se ejecutó otro smoke productivo.
+
+### Alcance preservado
+
+- Mappings, filtro de compradores, pivot USA/CHINA, semántica de precios
+  nullable, FormattedValue, conflictos, contrato Product y `fechaStr` no
+  cambian.
+- Maestro Cliente permanece sin regresión; no se modificaron frontend, Product
+  Provider, contratos HTTP, autenticación, variables, Vercel, Render ni
+  Dataverse.
+- Product Dataverse continúa no activado; no hubo commit, push o deploy.
+
 ## 2026-08-17 — PHASE1-042
 
 ### Preparado

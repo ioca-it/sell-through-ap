@@ -90,7 +90,7 @@ test('fallback de level/status no inventa etiquetas para Choice numérico', () =
   assert.equal(mapProductPriceLevelRow(textFields).status, 'EOL');
 });
 
-test('gateway consulta productpricelevel con ambas compañías en backend', async () => {
+test('gateway consulta productpricelevels con ambas compañías en backend', async () => {
   const calls = [];
   const gateway = createProductPriceLevelGateway({
     dataverseClient: {
@@ -102,7 +102,7 @@ test('gateway consulta productpricelevel con ambas compañías en backend', asyn
   });
 
   assert.deepEqual(await gateway.loadProducts(), [expectedProduct]);
-  assert.equal(calls[0].entitySet, 'productpricelevel');
+  assert.equal(calls[0].entitySet, 'productpricelevels');
   assert.equal(
     calls[0].filter,
     "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.')",
@@ -123,6 +123,22 @@ test('gateway consulta productpricelevel con ambas compañías en backend', asyn
     'crbbe_origen',
     'crbbe_companiacompradora',
   ]);
+});
+
+test('no reintroduce productpricelevel como Entity Set runtime del gateway', async () => {
+  let runtimeEntitySet;
+  const gateway = createProductPriceLevelGateway({
+    dataverseClient: {
+      retrieveAll: async ({ entitySet }) => {
+        runtimeEntitySet = entitySet;
+        return [];
+      },
+    },
+  });
+
+  await gateway.loadProducts();
+  assert.notEqual(runtimeEntitySet, 'productpricelevel');
+  assert.equal(runtimeEntitySet, 'productpricelevels');
 });
 
 test('incluye IOCA y SAND, y excluye otras compañías en la defensa backend', () => {

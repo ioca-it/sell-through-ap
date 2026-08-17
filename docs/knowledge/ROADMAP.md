@@ -1,5 +1,20 @@
 # Roadmap aprobado
 
+## Phase1-044 — Correct Dataverse Product EntitySetName
+
+Maestro Producto queda **ENTITY SET CORRECTED / NOT REVALIDATED / NOT
+ACTIVATED**. El smoke Product confirmado alcanzó Render, aceptó el JWT e
+intentó la consulta Dataverse, que respondió HTTP 404 porque el Product Price
+Level Gateway usaba el Entity Set singular `productpricelevel`. El runtime
+consulta ahora exactamente `productpricelevels` y una prueba independiente
+falla si se reintroduce el singular.
+
+Mappings, filtro de compradores, semántica `0`/`null`, pivot USA/CHINA,
+FormattedValue, conflictos, contrato Product, `fechaStr` y Maestro Cliente no
+cambian. `VITE_PRODUCT_SOURCE=local` permanece vigente. Deploy, smoke
+productivo de revalidación y activación Dataverse requieren autorización
+posterior e independiente.
+
 ## Phase1-042 — Prepare Real Dataverse Product Master Smoke Test
 
 Maestro Producto queda **SMOKE PREPARED / NOT EXECUTED / NOT ACTIVATED**. El

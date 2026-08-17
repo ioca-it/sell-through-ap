@@ -1,11 +1,11 @@
-// Única frontera que conoce productpricelevel y sus LogicalNames. Devuelve el
+// Única frontera que conoce productpricelevels y sus LogicalNames. Devuelve el
 // contrato Product consolidado y nunca publica campos auxiliares Dataverse.
 
 import { DATAVERSE_FORMATTED_VALUE_ANNOTATION } from './dataverseClient.js';
 import { quoteODataString } from './odata.js';
 
 const PRODUCT_SOURCE = Object.freeze({
-  entitySet: 'productpricelevel',
+  entitySet: 'productpricelevels',
   fields: Object.freeze({
     brand: 'crbbe_nombremarca',
     sku: 'crbbe_sku',

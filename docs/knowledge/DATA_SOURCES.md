@@ -18,9 +18,9 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ## DS-002 — Maestro de Productos
 
-- Fuentes implementadas: texto local existente y Dataverse `productpricelevel`; `VITE_PRODUCT_SOURCE=local` conserva la fuente efectiva y Product Dataverse no está activado en producción. Phase1-042 prepara una lectura temporal explícita del endpoint Product que no atraviesa ni modifica este selector.
+- Fuentes implementadas: texto local existente y Dataverse `productpricelevels`; `VITE_PRODUCT_SOURCE=local` conserva la fuente efectiva y Product Dataverse no está activado en producción. Phase1-042 ejecutó una lectura temporal explícita del endpoint Product que no atraviesa ni modifica este selector; Phase1-044 corrige localmente el Entity Set después del HTTP 404 confirmado, sin revalidación productiva.
 - Ruta local: texto pegado/muestra embebida -> `localDataProvider`/`masterParser.js`; `localProductProvider.js` reutiliza ese parser para exponer Product normalizado sin duplicar reglas. Un costo local vacío o inválido queda en `null`; el cero explícito se conserva. `fechaStr` se deriva mediante la normalización compartida.
-- Ruta Dataverse preparada: `GET /api/products/master` -> Product Service -> Product Price Level Gateway -> Dataverse Client -> `productpricelevel`; el frontend no envía OData.
+- Ruta Dataverse preparada: `GET /api/products/master` -> Product Service -> Product Price Level Gateway -> Dataverse Client -> `productpricelevels`; el frontend no envía OData.
 - Selector: `productProviderFactory.js`, cerrado a `local|dataverse`.
 - Repository/Application: `productRepository.js` y `productMasterService.js`.
 - Contrato Product frontend: `{ sku, productName, brand, category, discontinuationDate, fechaStr, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`; la respuesta backend conserva sus campos físicos existentes y el normalizer frontend deriva `fechaStr`.
@@ -30,7 +30,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 
 ### Mapping Dataverse de Maestro Producto
 
-| Product | `productpricelevel` |
+| Product | `productpricelevels` |
 | --- | --- |
 | `brand` | `crbbe_nombremarca` |
 | `sku` | `crbbe_sku` |
@@ -113,14 +113,14 @@ El gateway aplica en `$filter` únicamente `crbbe_companiacompradora = IOCA USA 
 ## DS-006 — Dataverse
 
 - Estado Customer: **IMPLEMENTED + PRODUCTION VALIDATED** por Phase1-032. Vercel usa `VITE_CUSTOMER_SOURCE=dataverse`; búsqueda/selección conservan el contrato Customer.
-- Estado Product: **SMOKE PREPARED / NOT EXECUTED / NOT ACTIVATED** por Phase1-042. `VITE_PRODUCT_SOURCE=local` permanece como fuente efectiva; la integración `productpricelevel` está preparada y probada con dobles, incluida la semántica `0` real/`null` no disponible y la detección de conflictos de precio y atributos, sin consulta o validación productiva.
-- Fuentes autorizadas: `accounts` para Maestro Cliente y `productpricelevel` para Maestro Producto, cada una mediante su endpoint funcional y gateway backend.
+- Estado Product: **ENTITY SET CORRECTED / NOT REVALIDATED / NOT ACTIVATED** por Phase1-044. El smoke Phase1-042 llegó a Render, validó JWT e intentó Dataverse, donde el Entity Set singular produjo HTTP 404; `VITE_PRODUCT_SOURCE=local` permanece como fuente efectiva y la corrección a `productpricelevels` solo se validó con dobles automatizados.
+- Fuentes autorizadas: `accounts` para Maestro Cliente y `productpricelevels` para Maestro Producto, cada una mediante su endpoint funcional y gateway backend.
 - Frontend Providers: `dataverseCustomerProvider.js` y `dataverseProductProvider.js`, consumidores exclusivos del backend mediante `VITE_API_BASE_URL`; adjuntan Bearer MSAL a través del cliente HTTP compartido y normalizan fallos sin exponer detalles.
 - Selectores: `VITE_CUSTOMER_SOURCE=local|dataverse` (producción `dataverse`) y `VITE_PRODUCT_SOURCE=local|dataverse` (default/producción `local`).
 - Repositories/Application Services: Customer y Product separados; la UI no recibe nombres físicos Dataverse.
 - Alternativa temporal: `localCustomerProvider.js`, con cinco clientes claramente ficticios desde `customerFixtures.js` e inyección opcional de otros fixtures.
 - Backend: `server/`, portable y sin dependencias de Render/Azure; reutiliza OAuth, cache de token, Dataverse Client, diagnósticos, JWT, CORS y rate limiting para Customer/Product.
-- Entity Sets confirmados: `accounts` para Customer y `productpricelevel` para Product.
+- Entity Sets confirmados: `accounts` para Customer y `productpricelevels` para Product.
 - Mapping confirmado dentro de Account Customer Gateway: `new_codigocliente` → `customerCode`, `name` → `customerName`, `crbbe_nombrepais` → `country` y `new_tipocliente@OData.Community.Display.V1.FormattedValue` → `String(value).trim()` → `customerType`. El valor numérico de `new_tipocliente` no se expone; la ausencia de FormattedValue produce `customerType: ''`. El Choice global asociado es `new_tipoclienteglobal`, pero no se consulta por búsqueda porque la anotación entrega la etiqueta en la misma respuesta.
 - API Customer: búsquedas por código/nombre y lectura por código. API Product: una carga completa `GET /api/products/master`, sin parámetros. Select/filtro/orden/paginación se construyen solo en backend; `$filter`, `$select`, `$orderby` y OData libre se rechazan desde frontend.
 - Autenticación: dos fronteras separadas. Vercel usa MSAL/Microsoft Entra ID y entrega al backend portable un Bearer delegado para Customer/Product; Render valida firma, issuer, audience, tenant y scope mediante `AUTH_*`. El backend obtiene aparte su token OAuth 2.0 `client_credentials` mediante `DV_*` para consultar Dataverse; su scope se deriva de `DV_BASE_URL` y se cachea con margen de seguridad.
@@ -132,7 +132,7 @@ El gateway aplica en `$filter` únicamente `crbbe_companiacompradora = IOCA USA 
 - Health: `GET /health` anónimo, sin consultas a Entra, Dataverse o Customer Service.
 - Probe JWT Phase1-007: `GET /api/customers/search?type=code` sin `q`; después de autenticar debe responder `400 / INVALID_CUSTOMER_REQUEST` antes de Customer Gateway. Este resultado valida la frontera usuario→API, no Dataverse.
 - Smoke Dataverse Phase1-010B/011: búsqueda protegida `GET /api/customers/search?type=code&q=CL0000041`, activada sólo mediante `?phase1-010b-smoke=1`; resultado real `HTTP 200`, JWT aceptado, request Dataverse intentado, exactamente un Customer y diagnóstico nulo. Se conserva sólo la cantidad, nunca el payload Customer, y el arnés permanece disponible temporalmente.
-- Smoke Product Phase1-042: `GET /api/products/master` sin parámetros, activado solo mediante `?phase1-042-product-smoke=1`. Requiere cuenta MSAL, adquiere el Bearer delegado por el mecanismo existente y aplica timeout; la respuesta se reduce en memoria a status, cantidad, etapas JWT/Dataverse, diagnóstico y presencia estructural de precios nullable y etiquetas legibles. No se publican SKU, atributos, precios, URLs, token, headers, payload, query strings, PII o secretos. El trigger no usa Product Provider Factory y todavía no fue ejecutado contra Dataverse real.
+- Smoke Product Phase1-042: `GET /api/products/master` sin parámetros, activado solo mediante `?phase1-042-product-smoke=1`. Requiere cuenta MSAL, adquiere el Bearer delegado por el mecanismo existente y aplica timeout; la respuesta se reduce en memoria a status, cantidad, etapas JWT/Dataverse, diagnóstico y presencia estructural de precios nullable y etiquetas legibles. No se publican SKU, atributos, precios, URLs, token, headers, payload, query strings, PII o secretos. La ejecución confirmada llegó a Render, aceptó el JWT e intentó Dataverse, que devolvió HTTP 404 por el Entity Set singular; Phase1-044 corrige ese valor a `productpricelevels` sin ejecutar otro smoke productivo.
 - Diagnóstico seguro Phase1-020: conserva la clasificación sanitaria de fallos, incluido `DATAVERSE_INVALID_FIELD_OR_FILTER`, sin exponer detalles técnicos en el contrato HTTP. Los diagnósticos temporales de probes Phase1-022 y metadata Phase1-024 ya no forman parte del runtime.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún hostname de hosting está codificado en módulos Customer/Product/Dataverse.
 
