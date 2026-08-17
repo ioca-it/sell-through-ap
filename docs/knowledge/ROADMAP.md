@@ -1,5 +1,22 @@
 # Roadmap aprobado
 
+## Phase1-038 — Preserve Missing Product Prices as Null
+
+Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** con semántica explícita
+de precios: `0` es un precio real y `null` representa precio no disponible.
+`amount null|undefined` se normaliza a `null`; un SKU sin fila USA o CHINA deja
+en `null` el precio de ese origen. Gateway, Product Domain, Provider,
+Repository, Application Service, parser/adaptación, Record Assembler,
+valorizaciones, exportaciones y formatter preservan esa diferencia sin usar
+cero ni el otro origen como fallback.
+
+Solo valores numéricos distintos participan en conflictos; cero contra otro
+número distinto bloquea con `PRODUCT_MASTER_CONFLICT`, mientras ausencia/null
+no genera un falso conflicto con un valor real. Filtros de compañías, pivot,
+FormattedValue, atributos Phase1-036, Customer Master, Producto Nuevo y EOL se
+preservan. Product Dataverse sigue sin activarse y `fechaStr` continúa como
+pendiente separado.
+
 ## Phase1-036 — Detect Product Attribute Conflicts
 
 Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** con protección contra la
@@ -230,8 +247,8 @@ Prompt 024 crea un Business Service de presentación que consume exclusivamente 
 
 ### Siguiente hito técnico
 
-Resolver por separado `amount null/undefined` y `fechaStr`, y después revisar y
-autorizar cualquier activación productiva de Maestro Producto. En paralelo, la
+Resolver por separado `fechaStr`, y después revisar y autorizar cualquier
+activación productiva de Maestro Producto. En paralelo, la
 migración del backend portable de Render a Azure continúa pendiente, sin definir
 por anticipado el servicio Azure ni alterar contratos o fronteras. Executive
 Report y Recommendation Engine permanecen como líneas funcionales

@@ -8,12 +8,15 @@ describe('ProductRepository', () => {
         loadProducts: async () => [{
           sku: ' SKU-1 ',
           productName: 'Producto',
+          priceUSA: 0,
+          priceChina: null,
           extra: 'no-publicar',
         }],
       },
     });
     const products = await repository.getProducts();
     expect(products[0].sku).toBe('SKU-1');
+    expect(products[0]).toMatchObject({ priceUSA: 0, priceChina: null });
     expect(products[0]).not.toHaveProperty('extra');
   });
 

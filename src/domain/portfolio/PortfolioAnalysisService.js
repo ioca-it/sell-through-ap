@@ -15,6 +15,18 @@
 // =============================================================================
 
 import { obtenerSemanasPeriodo } from '../inventory/inventoryEngine.js';
+import {
+  isAvailablePrice,
+  multiplyPrice,
+  sumPriceValues,
+} from '../product/product.js';
+
+const compareNullableMoneyDescending = (left, right) => {
+  if (isAvailablePrice(left) && isAvailablePrice(right)) return right - left;
+  if (isAvailablePrice(left)) return -1;
+  if (isAvailablePrice(right)) return 1;
+  return 0;
+};
 
 const cloneStructure = (value) => {
   if (Array.isArray(value)) {
@@ -47,12 +59,15 @@ const consolidateRecords = (records) => {
   const ownedRecords = cloneStructure(records);
   const eolVencidos = ownedRecords.filter((record) =>
     record.estado === 'EOL' && record.diasDesc !== null && record.diasDesc >= 0
-  ).sort((a, b) => b.diasDesc - a.diasDesc || b.descUSD - a.descUSD);
+  ).sort((a, b) => (
+    b.diasDesc - a.diasDesc
+    || compareNullableMoneyDescending(a.descUSD, b.descUSD)
+  ));
   const eolFuturos = ownedRecords.filter((record) =>
     record.estado === 'EOL' && record.diasDesc !== null && record.diasDesc < 0
   ).sort((a, b) => b.diasDesc - a.diasDesc);
   const activos = ownedRecords.filter((record) => record.estado === 'ACTIVO')
-    .sort((a, b) => b.valorInv - a.valorInv);
+    .sort((a, b) => compareNullableMoneyDescending(a.valorInv, b.valorInv));
   const sinMaestro = ownedRecords.filter((record) => record.estado === 'SIN MAESTRO');
   const skusActivos = ownedRecords.filter((record) =>
     record.clasificacionTemporal === 'ACTIVO'
@@ -111,21 +126,20 @@ const analyzePortfolio = ({
   const ownedNewProductsMissingInventory = cloneStructure(newProductsMissingInventory);
 
   const totalUnidEOL = eolVencidos.reduce((sum, record) => sum + record.invFinal, 0);
-  const totalValorEOL = recs.filter((record) =>
+  const totalValorEOL = sumPriceValues(recs.filter((record) =>
     record.estado === 'EOL' && !(record.diasDesc !== null && record.diasDesc < 0)
-  ).reduce((sum, record) => sum + record.valorInv, 0);
-  const totalDescEOL = eolVencidos.reduce((sum, record) => sum + record.descTotal, 0);
-  const totalIOAEOL = eolVencidos.reduce((sum, record) => sum + record.ioaTotal, 0);
-  const totalRetailEOL = eolVencidos.reduce((sum, record) => sum + record.retailTotal, 0);
+  ).map((record) => record.valorInv));
+  const totalDescEOL = sumPriceValues(eolVencidos.map((record) => record.descTotal));
+  const totalIOAEOL = sumPriceValues(eolVencidos.map((record) => record.ioaTotal));
+  const totalRetailEOL = sumPriceValues(eolVencidos.map((record) => record.retailTotal));
 
   const skusSinOrigen = recs.filter((record) =>
     record.sinOrigenInv && record.estado !== 'SIN MAESTRO'
   );
   const skusConMerma = recs.filter((record) => record.alertaMerma);
   const totalMermaUnid = skusConMerma.reduce((sum, record) => sum + record.merma, 0);
-  const totalMermaValor = skusConMerma.reduce(
-    (sum, record) => sum + record.merma * record.costo,
-    0,
+  const totalMermaValor = sumPriceValues(
+    skusConMerma.map((record) => multiplyPrice(record.costo, record.merma)),
   );
   const todosSkusEnQuiebre = recs.filter((record) => record.alertaQuiebre);
   const skusEnQuiebreActivos = todosSkusEnQuiebre.filter(
@@ -155,17 +169,20 @@ const analyzePortfolio = ({
     (sum, record) => sum + record.invFinal,
     0,
   );
-  const valorInventarioSinVentas = productosSinRotacion.reduce(
-    (sum, record) => sum + record.valorInv,
-    0,
+  const valorInventarioSinVentas = sumPriceValues(
+    productosSinRotacion.map((record) => record.valorInv),
   );
 
   const transitoPorSku = new Map();
   recs.filter((record) => record.compra > 0).forEach((record) => {
+    const valorEnTransito = multiplyPrice(record.costo, record.compra);
     const existente = transitoPorSku.get(record.sku);
     if (existente) {
       existente.unidadesEnTransito += record.compra;
-      existente.valorEnTransito += record.compra * record.costo;
+      existente.valorEnTransito = sumPriceValues([
+        existente.valorEnTransito,
+        valorEnTransito,
+      ]);
       return;
     }
     transitoPorSku.set(record.sku, {
@@ -174,7 +191,7 @@ const analyzePortfolio = ({
       estado: record.estado,
       tier: record.tier,
       unidadesEnTransito: record.compra,
-      valorEnTransito: record.compra * record.costo,
+      valorEnTransito,
     });
   });
   const productosEnTransito = Array.from(transitoPorSku.values());
@@ -184,17 +201,15 @@ const analyzePortfolio = ({
   );
   // La totalización conserva la valorización ya calculada por SKU con el costo
   // aplicable vigente; no selecciona ni inventa un precio alternativo.
-  const totalValorTransito = productosEnTransito.reduce(
-    (sum, record) => sum + record.valorEnTransito,
-    0,
+  const totalValorTransito = sumPriceValues(
+    productosEnTransito.map((record) => record.valorEnTransito),
   );
   const totalReposicionUnid = activos.reduce(
     (sum, record) => sum + record.reposicionSugerida,
     0,
   );
-  const totalReposicionValor = activos.reduce(
-    (sum, record) => sum + record.valorReposicion,
-    0,
+  const totalReposicionValor = sumPriceValues(
+    activos.map((record) => record.valorReposicion),
   );
   const totalUnidades = recs.reduce((sum, record) => sum + record.invFinal, 0);
   const unidadesActivas = skusActivos.reduce((sum, record) => sum + record.invFinal, 0);
@@ -202,13 +217,15 @@ const analyzePortfolio = ({
   const unidadesPorVencer = skusPorVencer.reduce((sum, record) => sum + record.invFinal, 0);
   const unidadesMaestro = skusMaestro.reduce((sum, record) => sum + record.invFinal, 0);
   const unidadesSinMaestro = sinMaestro.reduce((sum, record) => sum + record.invFinal, 0);
-  const valorActivo = activos.reduce((sum, record) => sum + record.valorInv, 0);
-  const valorEOLFuturo = eolFuturos.reduce((sum, record) => sum + record.valorInv, 0);
-  const valorSinMaestro = sinMaestro.reduce((sum, record) => sum + record.valorInv, 0);
-  const valorTotalInventario = valorActivo
-    + totalValorEOL
-    + valorEOLFuturo
-    + valorSinMaestro;
+  const valorActivo = sumPriceValues(activos.map((record) => record.valorInv));
+  const valorEOLFuturo = sumPriceValues(eolFuturos.map((record) => record.valorInv));
+  const valorSinMaestro = sumPriceValues(sinMaestro.map((record) => record.valorInv));
+  const valorTotalInventario = sumPriceValues([
+    valorActivo,
+    totalValorEOL,
+    valorEOLFuturo,
+    valorSinMaestro,
+  ]);
 
   const semanasPeriodoUsadas = obtenerSemanasPeriodo(
     config.periodoAnalizado,
@@ -285,9 +302,10 @@ const analyzePortfolio = ({
       valorSinMaestro,
       valorInventarioSinVentas,
       valorTotalInventario,
-      pctValorEOL: valorTotalInventario > 0
-        ? (totalValorEOL / valorTotalInventario) * 100
-        : 0,
+      pctValorEOL: isAvailablePrice(valorTotalInventario)
+        && isAvailablePrice(totalValorEOL)
+        ? (valorTotalInventario > 0 ? (totalValorEOL / valorTotalInventario) * 100 : 0)
+        : null,
       descEOL: totalDescEOL,
       ioaEOL: totalIOAEOL,
       retailEOL: totalRetailEOL,

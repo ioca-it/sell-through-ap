@@ -40,7 +40,7 @@ const expectedProduct = {
   imageUrl: 'https://images.invalid/sku-001.png',
   productUrl: 'https://products.invalid/sku-001',
   priceUSA: 25,
-  priceChina: 0,
+  priceChina: null,
 };
 
 test('mapea todos los campos y usa FormattedValue para level/status Choice', () => {
@@ -60,6 +60,13 @@ test('mapea todos los campos y usa FormattedValue para level/status Choice', () 
     origin: 'USA',
     buyerCompany: 'IOCA USA INC',
   });
+});
+
+test('normaliza amount distinguiendo cero real de precio no disponible', () => {
+  assert.equal(mapProductPriceLevelRow(rawRow({ amount: 0 })).amount, 0);
+  assert.equal(mapProductPriceLevelRow(rawRow({ amount: null })).amount, null);
+  assert.equal(mapProductPriceLevelRow(rawRow({ amount: undefined })).amount, null);
+  assert.equal(mapProductPriceLevelRow(rawRow({ amount: '18.5' })).amount, 18.5);
 });
 
 test('fallback de level/status no inventa etiquetas para Choice numérico', () => {
@@ -135,28 +142,46 @@ test('consolida USA y CHINA del mismo SKU sin sumar ni promediar', () => {
   assert.deepEqual(products, [{ ...expectedProduct, priceChina: 18 }]);
 });
 
-test('mantiene cero controlado cuando un SKU solo tiene un origen', () => {
+test('mantiene null cuando un SKU no tiene fila para uno de los orígenes', () => {
   const onlyUSA = consolidateProductPriceLevelRows([rawRow({ amount: 25 })])[0];
   const onlyChina = consolidateProductPriceLevelRows([
     rawRow({ amount: 18, crbbe_origen: 'CHINA' }),
   ])[0];
   assert.deepEqual(
     { priceUSA: onlyUSA.priceUSA, priceChina: onlyUSA.priceChina },
-    { priceUSA: 25, priceChina: 0 },
+    { priceUSA: 25, priceChina: null },
   );
   assert.deepEqual(
     { priceUSA: onlyChina.priceUSA, priceChina: onlyChina.priceChina },
-    { priceUSA: 0, priceChina: 18 },
+    { priceUSA: null, priceChina: 18 },
   );
 });
 
-test('amount null/undefined no genera precio ni conflicto', () => {
+test('amount null/undefined conserva precio no disponible y no genera conflicto', () => {
   const product = consolidateProductPriceLevelRows([
     rawRow({ amount: null }),
     rawRow({ amount: undefined }),
   ])[0];
+  assert.equal(product.priceUSA, null);
+  assert.equal(product.priceChina, null);
+});
+
+test('conserva cero real para USA y CHINA', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ amount: 0, crbbe_origen: 'USA' }),
+    rawRow({ amount: 0, crbbe_origen: 'CHINA' }),
+  ])[0];
   assert.equal(product.priceUSA, 0);
   assert.equal(product.priceChina, 0);
+});
+
+test('null y un valor real del mismo origen conservan el valor sin falso conflicto', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ amount: null, crbbe_origen: 'USA' }),
+    rawRow({ amount: 25, crbbe_origen: 'USA' }),
+  ])[0];
+  assert.equal(product.priceUSA, 25);
+  assert.equal(product.priceChina, null);
 });
 
 test('omite SKU vacío/inválido y conserva URLs vacías', () => {
@@ -263,6 +288,20 @@ test('detecta determinísticamente precios distintos del mismo SKU/origen/compra
         && conflict.origin === 'USA'
         && conflict.buyerCompany === 'IOCA USA INC'
         && assert.deepEqual(conflict.values, [25, 26]) === undefined
+      )),
+  );
+});
+
+test('cero y otro número distinto generan conflicto de precio', () => {
+  assert.throws(
+    () => consolidateProductPriceLevelRows([
+      rawRow({ amount: 0 }),
+      rawRow({ amount: 25 }),
+    ]),
+    (error) => error instanceof ProductMasterConflictError
+      && error.conflicts.some((conflict) => (
+        conflict.conflictType === 'PRICE'
+        && assert.deepEqual(conflict.values, [0, 25]) === undefined
       )),
   );
 });

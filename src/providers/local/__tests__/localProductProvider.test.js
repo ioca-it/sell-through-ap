@@ -32,6 +32,15 @@ describe('LocalProductProvider', () => {
     await expect(createLocalProductProvider().loadProducts()).resolves.toEqual([]);
   });
 
+  it('preserva null para un precio local ausente y cero para un precio real', async () => {
+    const provider = createLocalProductProvider({
+      rawMaster: 'SKU\tUSA\tCHINA\nLOCAL-NULL\t0\t',
+    });
+    await expect(provider.loadProducts()).resolves.toEqual([
+      expect.objectContaining({ sku: 'LOCAL-NULL', priceUSA: 0, priceChina: null }),
+    ]);
+  });
+
   it('propaga el error contractual del parser para Maestro inválido', async () => {
     const provider = createLocalProductProvider({ rawMaster: 'MARCA\tMODELO\nM\tP' });
     await expect(provider.loadProducts()).rejects.toBeInstanceOf(LocalProductMasterError);

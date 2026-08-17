@@ -22,12 +22,12 @@ const findColumn = (headers, ...keywords) => {
   return -1;
 };
 
-// Convierte el costo textual y conserva cero para entradas vacías o inválidas.
+// Convierte el costo textual sin confundir ausencia o invalidez con precio cero.
 const parseCosto = (value) => {
-  if (!value) return 0;
+  if (value === null || value === undefined || String(value).trim() === '') return null;
   const clean = String(value).replace(/\$/g, '').replace(/,/g, '').trim();
   const number = parseFloat(clean);
-  return isNaN(number) ? 0 : number;
+  return Number.isFinite(number) ? number : null;
 };
 
 // Devuelve el Maestro indexado por SKU; el último duplicado reemplaza al anterior.
@@ -81,8 +81,8 @@ export const parseMaster = (rawMaster) => {
       fecha,
       fechaStr: fechaStr === '-' ? '' : fechaStr,
       creationDate: parseFecha(creationDateStr),
-      costoUSA: columns.usa >= 0 ? parseCosto(values[columns.usa]) : 0,
-      costoCHINA: columns.china >= 0 ? parseCosto(values[columns.china]) : 0,
+      costoUSA: columns.usa >= 0 ? parseCosto(values[columns.usa]) : null,
+      costoCHINA: columns.china >= 0 ? parseCosto(values[columns.china]) : null,
     };
   });
 

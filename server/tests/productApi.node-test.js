@@ -60,6 +60,17 @@ test('expone únicamente la carga funcional de Maestro Producto', async () => {
   assert.equal(calls, 1);
 });
 
+test('preserva null y cero en el contrato HTTP Product', async () => {
+  const prices = { ...product, priceUSA: 0, priceChina: null };
+  const app = createTestApp({ loadMaster: async () => [prices] });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/products/master`);
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).products, [prices]);
+  });
+});
+
 test('rechaza OData y cualquier parámetro arbitrario del frontend', async () => {
   const app = createTestApp({ loadMaster: async () => [product] });
   await withServer(app, async (baseUrl) => {

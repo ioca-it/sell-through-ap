@@ -283,8 +283,9 @@ describe('separadores y detección de encabezados', () => {
 
     expect(record).toMatchObject({
       estado: 'ACTIVO',
-      costoUSA: 0,
-      costo: 0,
+      costoUSA: null,
+      costo: null,
+      valorInv: null,
     });
   });
 });
@@ -348,19 +349,20 @@ describe('parser del Maestro y precedencia del cruce', () => {
       categoria: '—',
       estado: 'ACTIVO',
       fechaStr: '—',
-      costo: 0,
-      costoUSA: 0,
-      costoCHINA: 0,
+      costo: null,
+      costoUSA: null,
+      costoCHINA: null,
+      valorInv: null,
     });
   });
 
-  it('parsea moneda simple y convierte costos no numéricos en cero', () => {
+  it('parsea moneda simple y conserva null para costos no numéricos', () => {
     const maestro = 'SKU\tUSA\tCHINA\nMASTER-5\t $14.50 \tabc';
     const inventario = 'SKU\tINV FINAL\nMASTER-5\t1';
 
     const [record] = executeSuccessful(maestro, inventario).recs;
 
-    expect(record).toMatchObject({ costoUSA: 14.5, costoCHINA: 0, costo: 14.5 });
+    expect(record).toMatchObject({ costoUSA: 14.5, costoCHINA: null, costo: 14.5 });
   });
 
   it('conserva la última fila cuando el Maestro repite un SKU', () => {

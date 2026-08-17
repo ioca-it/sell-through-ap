@@ -12,9 +12,34 @@ const normalizeDate = (value) => {
 };
 
 const normalizePrice = (value) => {
-  if (value === null || value === undefined || value === '') return 0;
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  if (typeof value === 'boolean') return null;
   const price = Number(value);
-  return Number.isFinite(price) ? price : 0;
+  return Number.isFinite(price) ? price : null;
+};
+
+export const isAvailablePrice = (value) => (
+  typeof value === 'number' && Number.isFinite(value)
+);
+
+export const multiplyPrice = (price, quantity) => (
+  isAvailablePrice(price) && typeof quantity === 'number' && Number.isFinite(quantity)
+    ? price * quantity
+    : null
+);
+
+export const subtractPrices = (left, right) => (
+  isAvailablePrice(left) && isAvailablePrice(right) ? left - right : null
+);
+
+export const sumPriceValues = (values) => {
+  let total = 0;
+  for (const value of values) {
+    if (!isAvailablePrice(value)) return null;
+    total += value;
+  }
+  return total;
 };
 
 export const normalizeProduct = (product = {}) => Object.freeze({
@@ -47,10 +72,8 @@ export const isProduct = (product) => (
   && typeof product.status === 'string'
   && typeof product.imageUrl === 'string'
   && typeof product.productUrl === 'string'
-  && typeof product.priceUSA === 'number'
-  && Number.isFinite(product.priceUSA)
-  && typeof product.priceChina === 'number'
-  && Number.isFinite(product.priceChina)
+  && (product.priceUSA === null || isAvailablePrice(product.priceUSA))
+  && (product.priceChina === null || isAvailablePrice(product.priceChina))
 );
 
 const toIsoDate = (value) => (

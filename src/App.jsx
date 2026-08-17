@@ -34,6 +34,12 @@ import {
   normalizeProductSource,
   PRODUCT_SOURCES,
 } from './providers/productProviderFactory.js';
+import {
+  isAvailablePrice,
+  multiplyPrice,
+  subtractPrices,
+  sumPriceValues,
+} from './domain/product/product.js';
 
 // La hidratación ocurre en el servicio; mantenerla fuera del componente permite
 // conservar los contratos de caracterización que ejecutan App como función pura.
@@ -91,6 +97,17 @@ const PARETO_CLASS_STYLES = Object.freeze({
 // HELPERS
 // ============================================================
 
+const formatNullableFixed = (value, digits = 2) => (
+  isAvailablePrice(value) ? value.toFixed(digits) : ''
+);
+
+const compareNullableMoneyDescending = (left, right) => {
+  if (isAvailablePrice(left) && isAvailablePrice(right)) return right - left;
+  if (isAvailablePrice(left)) return -1;
+  if (isAvailablePrice(right)) return 1;
+  return 0;
+};
+
 const colorIdxRotacion = (v) => {
   // Color según interpretación del índice
   if (v === null || v === undefined || isNaN(v)) return { bg: '#f5f5f0', fg: '#999' };
@@ -115,19 +132,22 @@ const generarInformeEjecutivo = (resultados, config) => {
   const bajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 3 && r.indiceRotacion <= 10 && r.estado === 'ACTIVO');
   const muyBajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 10 && r.estado === 'ACTIVO');
   const sinMovimiento = resultados.alertas.productosSinRotacion;
-  const sinMovValor = sinMovimiento.reduce((s, r) => s + r.valorInv, 0);
+  const sinMovValor = sumPriceValues(sinMovimiento.map((r) => r.valorInv));
   const sobreinventario = recs.filter(r => r.estado === 'ACTIVO' && r.indiceRotacion !== null && r.indiceRotacion > 5);
   const subinventario = alertas.skusEnQuiebreActivos;
   const enQuiebreActivo = alertas.skusEnQuiebreActivos;
   const enQuiebreEOL = alertas.skusEnQuiebreEOL;
   const obsolescencia = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc >= 0 && r.invFinal > 0);
-  const obsolescenciaValor = obsolescencia.reduce((s, r) => s + r.valorInv, 0);
+  const obsolescenciaValor = sumPriceValues(obsolescencia.map((r) => r.valorInv));
   const requierenActivacion = recs.filter(r => r.estado === 'ACTIVO' && r.invFinal > 0 && r.ventas <= 1 && r.tier === 'BEST');
   
   // Métricas agregadas
   const valorTotalInventario = totales.valorTotalInventario;
   const pctValorEOL = totales.pctValorEOL;
-  const pctValorSinMov = valorTotalInventario > 0 ? (sinMovValor / valorTotalInventario) * 100 : 0;
+  const pctValorSinMov = isAvailablePrice(valorTotalInventario)
+    && isAvailablePrice(sinMovValor)
+    ? (valorTotalInventario > 0 ? (sinMovValor / valorTotalInventario) * 100 : 0)
+    : null;
   
   // SKU héroe (mayor venta)
   const skuHeroe = pareto.skusParetoA[0] || null;
@@ -165,7 +185,7 @@ const generarInformeEjecutivo = (resultados, config) => {
   // ===== HALLAZGOS CLAVE (5-10) =====
   const hallazgos = [];
   
-  if (pctValorEOL > 20) {
+  if (isAvailablePrice(pctValorEOL) && pctValorEOL > 20) {
     hallazgos.push({
       titulo: 'Alto valor inmovilizado en SKUs descontinuados',
       hallazgo: `El ${pctValorEOL.toFixed(0)}% del valor del inventario (${fmtUSD(totales.valorEOL)}) está en SKUs ya descontinuados (EOL Vencidos).`,
@@ -177,7 +197,7 @@ const generarInformeEjecutivo = (resultados, config) => {
   }
   
   if (enQuiebreActivo.length > 0) {
-    const valorQuiebre = enQuiebreActivo.reduce((s, r) => s + r.valorReposicion, 0);
+    const valorQuiebre = sumPriceValues(enQuiebreActivo.map((r) => r.valorReposicion));
     hallazgos.push({
       titulo: 'SKUs Activos en quiebre — pérdida de venta en curso',
       hallazgo: `${enQuiebreActivo.length} SKUs Activos están bajo Inventario de Seguridad. Reposición estimada: ${fmtUSD(valorQuiebre)}.`,
@@ -188,7 +208,9 @@ const generarInformeEjecutivo = (resultados, config) => {
     });
   }
   
-  if (sinMovimiento.length > 0 && pctValorSinMov > 10) {
+  if (sinMovimiento.length > 0
+    && isAvailablePrice(pctValorSinMov)
+    && pctValorSinMov > 10) {
     hallazgos.push({
       titulo: 'Inventario muerto — capital atrapado sin rotación',
       hallazgo: `${sinMovimiento.length} SKUs sin ventas en el período con inventario en piso por ${fmtUSD(sinMovValor)} (${pctValorSinMov.toFixed(0)}% del valor total).`,
@@ -244,7 +266,7 @@ const generarInformeEjecutivo = (resultados, config) => {
   }
   
   if (skuHeroe) {
-    const valorHeroe = skuHeroe.ventas * skuHeroe.costo;
+    const valorHeroe = multiplyPrice(skuHeroe.costo, skuHeroe.ventas);
     hallazgos.push({
       titulo: 'SKU héroe — concentra la oportunidad de crecimiento',
       hallazgo: `${skuHeroe.sku} (${skuHeroe.modelo}) lidera ventas con ${skuHeroe.ventas} unidades (${(skuHeroe.pctVentas * 100).toFixed(0)}% del total), tier ${skuHeroe.tier}.`,
@@ -268,7 +290,7 @@ const generarInformeEjecutivo = (resultados, config) => {
   
   // ===== CAUSAS RAÍZ =====
   const causasRaiz = [];
-  if (pctValorEOL > 20) causasRaiz.push({ causa: 'Compra inicial mal calculada', evidencia: `${pctValorEOL.toFixed(0)}% del valor en EOL sugiere sobre-compra del ciclo anterior.` });
+  if (isAvailablePrice(pctValorEOL) && pctValorEOL > 20) causasRaiz.push({ causa: 'Compra inicial mal calculada', evidencia: `${pctValorEOL.toFixed(0)}% del valor en EOL sugiere sobre-compra del ciclo anterior.` });
   if (sobreinventario.length > 5) causasRaiz.push({ causa: 'Exceso de SKUs sin movimiento', evidencia: `${sobreinventario.length} SKUs con índice de rotación > 5 — surtido inflado.` });
   if (requierenActivacion.length > 0) causasRaiz.push({ causa: 'Falta de comunicación de beneficios', evidencia: `${requierenActivacion.length} SKUs BEST con inventario y sin venta — exhibición o entrenamiento débil.` });
   if (categoriasEnObsolescencia.length > 0) causasRaiz.push({ causa: 'Portafolio no alineado al consumidor', evidencia: `${categoriasEnObsolescencia.length} categoría(s) con +75% EOL — el cliente no ha refrescado el surtido.` });
@@ -282,12 +304,12 @@ const generarInformeEjecutivo = (resultados, config) => {
   
   // Top 5 SKUs a liquidar (EOL Vencidos con mayor valor inmovilizado)
   const topLiquidar = recs.filter(r => r.estado === 'EOL' && r.diasDesc !== null && r.diasDesc >= 0 && r.invFinal > 0)
-    .sort((a, b) => b.valorInv - a.valorInv)
+    .sort((a, b) => compareNullableMoneyDescending(a.valorInv, b.valorInv))
     .slice(0, 5);
   
   // Top 5 SKUs a eliminar del surtido (Activos sin movimiento)
   const topEliminar = sinMovimiento.filter(r => r.estado === 'ACTIVO')
-    .sort((a, b) => b.valorInv - a.valorInv)
+    .sort((a, b) => compareNullableMoneyDescending(a.valorInv, b.valorInv))
     .slice(0, 5);
   
   return {
@@ -598,12 +620,12 @@ export default function App({
     const rows = resultados.recs.map(r => [
       r.sku, r.tienda, r.modelo, r.marca, r.estado, r.fechaStr,
       r.diasDesc ?? '', r.bucket ?? '', r.fase ?? '', r.origen,
-      r.costo.toFixed(2), r.invInicial, r.ventas, r.invFinal,
+      formatNullableFixed(r.costo), r.invInicial, r.ventas, r.invFinal,
       r.indiceRotacion !== null ? r.indiceRotacion.toFixed(2) : '—',
-      (r.descPct*100).toFixed(0)+'%', r.descUSD.toFixed(2),
-      ((r.ioaPct || 0)*100).toFixed(0)+'%', r.ioaUSD.toFixed(2),
-      ((r.retailPct || 0)*100).toFixed(0)+'%', r.retailUSD.toFixed(2),
-      r.descTotal.toFixed(2)
+      (r.descPct*100).toFixed(0)+'%', formatNullableFixed(r.descUSD),
+      ((r.ioaPct || 0)*100).toFixed(0)+'%', formatNullableFixed(r.ioaUSD),
+      ((r.retailPct || 0)*100).toFixed(0)+'%', formatNullableFixed(r.retailUSD),
+      formatNullableFixed(r.descTotal)
     ]);
     const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -782,7 +804,7 @@ export default function App({
       const rows = resultados.alertas.skusConMerma.map(r => [
         r.sku, r.modelo, r.marca, r.estado,
         r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
-        r.merma, r.mermaPct, r.costo, r.merma * r.costo
+        r.merma, r.mermaPct, r.costo, multiplyPrice(r.costo, r.merma)
       ]);
       rows.push(['', '', '', '', '', '', '', '', 'TOTAL', resultados.alertas.totalMermaUnid, '', '', resultados.alertas.totalMermaValor]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
@@ -821,7 +843,8 @@ export default function App({
     if (resultados.alertas.skusSinOrigen.length > 0) {
       const hdr = ['SKU', 'Modelo', 'Estado', 'Costo USA (aplicado)', 'Costo CHINA (alterno)', 'Delta USA-CHINA'];
       const rows = resultados.alertas.skusSinOrigen.map(r => [
-        r.sku, r.modelo, r.estado, r.costoUSA, r.costoCHINA, r.costoUSA - r.costoCHINA
+        r.sku, r.modelo, r.estado, r.costoUSA, r.costoCHINA,
+        subtractPrices(r.costoUSA, r.costoCHINA)
       ]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
       ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 11 }, { wch: 20 }, { wch: 22 }, { wch: 18 }];
@@ -859,7 +882,7 @@ export default function App({
       r.costoUSA, r.costoCHINA, r.costo,
       r.descPct, r.descUSD, r.ioaPct, r.ioaUSD, r.retailPct, r.retailUSD,
       r.inventarioMinimoReconocido, r.liquidacionSoloRetail ? 'SI' : 'NO',
-      r.valorInv, r.valorVentas || 0, r.valorReposicion, r.descTotal
+      r.valorInv, r.valorVentas, r.valorReposicion, r.descTotal
     ]);
     const wsAll = XLSX.utils.aoa_to_sheet([hdrAll, ...rowsAll]);
     XLSX.utils.book_append_sheet(wb, wsAll, 'Datos Completos');
@@ -880,7 +903,8 @@ export default function App({
         const d = dT.inventario.tiers[t];
         return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
       }),
-      ['TOTAL', dT.inventario.totalSKUs, dT.inventario.totalU, 1, dT.inventario.totalV, 1],
+      ['TOTAL', dT.inventario.totalSKUs, dT.inventario.totalU, 1,
+        dT.inventario.totalV, isAvailablePrice(dT.inventario.totalV) ? 1 : null],
       ['', '', '', '', '', ''],
       ['VENTAS DEL CLIENTE', '', '', '', '', ''],
       [`Total: ${dT.ventas.totalU} unidades · ${dT.ventas.totalSKUs} SKUs con venta`, '', '', '', '', ''],
@@ -889,7 +913,8 @@ export default function App({
         const d = dT.ventas.tiers[t];
         return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
       }),
-      ['TOTAL', dT.ventas.totalSKUs, dT.ventas.totalU, 1, dT.ventas.totalV, 1],
+      ['TOTAL', dT.ventas.totalSKUs, dT.ventas.totalU, 1,
+        dT.ventas.totalV, isAvailablePrice(dT.ventas.totalV) ? 1 : null],
       ['', '', '', '', '', ''],
       ['REPOSICIÓN SUGERIDA', '', '', '', '', ''],
       [`Total: ${dT.reposicion.totalU} unidades · ${dT.reposicion.totalSKUs} SKUs`, '', '', '', '', ''],
@@ -898,7 +923,8 @@ export default function App({
         const d = dT.reposicion.tiers[t];
         return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
       }),
-      ['TOTAL', dT.reposicion.totalSKUs, dT.reposicion.totalU, 1, dT.reposicion.totalV, 1],
+      ['TOTAL', dT.reposicion.totalSKUs, dT.reposicion.totalU, 1,
+        dT.reposicion.totalV, isAvailablePrice(dT.reposicion.totalV) ? 1 : null],
       ['', '', '', '', '', ''],
       ['COMPARATIVA: ¿La reposición sigue al inventario o a las ventas?', '', '', '', '', ''],
       ['Tier', '% Inv. Actual', '% Ventas', '% Reposición', 'Lectura', ''],
@@ -947,7 +973,8 @@ export default function App({
       const d = dC.inventario.categorias[c];
       if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
     });
-    distribCatData.push(['TOTAL', dC.inventario.totalSKUs, dC.inventario.totalU, 1, dC.inventario.totalV, 1]);
+    distribCatData.push(['TOTAL', dC.inventario.totalSKUs, dC.inventario.totalU, 1,
+      dC.inventario.totalV, isAvailablePrice(dC.inventario.totalV) ? 1 : null]);
     const invStart = 6; // primera fila de datos (tiers) en 0-indexed
     const invEnd = invStart + listaCats.length; // incluye fila TOTAL
     
@@ -960,7 +987,8 @@ export default function App({
       const d = dC.ventas.categorias[c];
       if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
     });
-    distribCatData.push(['TOTAL', dC.ventas.totalSKUs, dC.ventas.totalU, 1, dC.ventas.totalV, 1]);
+    distribCatData.push(['TOTAL', dC.ventas.totalSKUs, dC.ventas.totalU, 1,
+      dC.ventas.totalV, isAvailablePrice(dC.ventas.totalV) ? 1 : null]);
     const vtsEnd = vtsStart + listaCats.length;
     
     distribCatData.push(['', '', '', '', '', '']);
@@ -972,7 +1000,8 @@ export default function App({
       const d = dC.reposicion.categorias[c];
       if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
     });
-    distribCatData.push(['TOTAL', dC.reposicion.totalSKUs, dC.reposicion.totalU, 1, dC.reposicion.totalV, 1]);
+    distribCatData.push(['TOTAL', dC.reposicion.totalSKUs, dC.reposicion.totalU, 1,
+      dC.reposicion.totalV, isAvailablePrice(dC.reposicion.totalV) ? 1 : null]);
     const repEnd = repStart + listaCats.length;
     
     // Comparativa
@@ -1802,8 +1831,8 @@ export default function App({
                             <Td>{r.estado}</Td>
                             <Td align="right" bold style={{ color: '#1e40af' }}>{fmtUSD(r.costoUSA)}</Td>
                             <Td align="right" className="text-stone-600">{fmtUSD(r.costoCHINA)}</Td>
-                            <Td align="right" bold style={{ color: r.costoUSA > r.costoCHINA ? '#7f1d1d' : '#065f46' }}>
-                              {fmtUSD(r.costoUSA - r.costoCHINA)}
+                            <Td align="right" bold style={{ color: isAvailablePrice(subtractPrices(r.costoUSA, r.costoCHINA)) && subtractPrices(r.costoUSA, r.costoCHINA) > 0 ? '#7f1d1d' : '#065f46' }}>
+                              {fmtUSD(subtractPrices(r.costoUSA, r.costoCHINA))}
                             </Td>
                           </tr>
                         ))}
@@ -1845,7 +1874,7 @@ export default function App({
                             <Td align="center">{r.invFinal}</Td>
                             <Td align="center" bold style={{ background: '#fef3c7', color: '#92400e' }}>{r.merma}</Td>
                             <Td align="center" bold style={{ color: '#92400e' }}>{(r.mermaPct * 100).toFixed(0)}%</Td>
-                            <Td align="right" bold>{fmtUSD(r.merma * r.costo)}</Td>
+                            <Td align="right" bold>{fmtUSD(multiplyPrice(r.costo, r.merma))}</Td>
                           </tr>
                         ))}
                       </tbody>
@@ -2708,7 +2737,7 @@ export default function App({
                       <div className="text-[10px] uppercase tracking-wider font-bold" style={{ color: '#0a2540' }}>Qué está pasando</div>
                       <div style={{ fontSize: '12px', marginTop: '6px', lineHeight: '1.5' }}>
                         El portafolio analizado tiene <strong>{renderServiceValue(resultados.totales?.totalSKUs)} SKUs</strong> con un valor inmovilizado de <strong>{fmtUSD(informe.valorTotalInventario)}</strong>.
-                        El <strong>{informe.pctValorEOL.toFixed(0)}%</strong> del valor está concentrado en SKUs ya descontinuados, 
+                        El <strong>{fmtPctPoints(informe.pctValorEOL)}</strong> del valor está concentrado en SKUs ya descontinuados,
                         y <strong>{informe.sinMovimiento.length} SKUs</strong> no registraron ventas en el período.
                       </div>
                     </div>
@@ -2773,7 +2802,7 @@ export default function App({
                       <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
                         <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Sin movimiento (ventas = 0)</td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fee2e2', color: '#7f1d1d', fontWeight: 'bold' }}>{informe.sinMovimiento.length}</td>
-                        <td style={{ padding: '8px 10px' }}>Capital atrapado: {fmtUSD(informe.sinMovValor)} ({informe.pctValorSinMov.toFixed(0)}% del valor total).</td>
+                        <td style={{ padding: '8px 10px' }}>Capital atrapado: {fmtUSD(informe.sinMovValor)} ({fmtPctPoints(informe.pctValorSinMov)} del valor total).</td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
                         <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Sub-stock (riesgo de quiebre)</td>
@@ -3067,7 +3096,7 @@ export default function App({
                   <div style={{ background: '#faf8f3', border: '1px solid #e5e0d5', padding: '20px', fontFamily: '"Times New Roman", serif', fontSize: '13px', lineHeight: '1.7' }}>
                     <p style={{ marginBottom: '14px' }}>
                       <strong style={{ color: '#d4af37' }}>"Esto es lo que vemos."</strong> Su portafolio de {renderServiceValue(resultados.totales?.totalSKUs)} SKUs representa {fmtUSD(informe.valorTotalInventario)} en inventario.
-                      El {informe.pctValorEOL.toFixed(0)}% de ese valor está atrapado en SKUs descontinuados, y otro {informe.pctValorSinMov.toFixed(0)}% en SKUs sin movimiento. 
+                      El {fmtPctPoints(informe.pctValorEOL)} de ese valor está atrapado en SKUs descontinuados, y otro {fmtPctPoints(informe.pctValorSinMov)} en SKUs sin movimiento.
                       Simultáneamente, hay {informe.enQuiebreActivo.length} SKUs activos en sub-stock perdiendo venta cada día.
                     </p>
                     <p style={{ marginBottom: '14px' }}>
@@ -3298,7 +3327,7 @@ const DistribTierPanel = ({ titulo, subtitulo, data }) => {
                   <td className="px-2 py-1.5 text-right font-bold">{renderServiceValue(data[t]?.unidades)}</td>
                   <td className="px-2 py-1.5 text-right">{(data[t].pctUnidades * 100).toFixed(0)}%</td>
                   <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(data[t].valor)}</td>
-                  <td className="px-2 py-1.5 text-right">{(data[t].pctValor * 100).toFixed(0)}%</td>
+                  <td className="px-2 py-1.5 text-right">{fmtPct(data[t].pctValor)}</td>
                 </tr>
               ))}
             </tbody>
@@ -3396,7 +3425,7 @@ const DistribCategoriaPanel = ({ titulo, subtitulo, data, listaCategorias }) => 
                     <td className="px-2 py-1.5 text-right font-bold">{renderServiceValue(d?.unidades)}</td>
                     <td className="px-2 py-1.5 text-right">{(d.pctUnidades * 100).toFixed(0)}%</td>
                     <td className="px-2 py-1.5 text-right font-bold">{fmtUSDInline(d.valor)}</td>
-                    <td className="px-2 py-1.5 text-right">{(d.pctValor * 100).toFixed(0)}%</td>
+                    <td className="px-2 py-1.5 text-right">{fmtPct(d.pctValor)}</td>
                   </tr>
                 );
               })}

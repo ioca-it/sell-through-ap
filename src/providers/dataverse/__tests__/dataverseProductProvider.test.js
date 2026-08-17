@@ -61,6 +61,15 @@ describe('DataverseProductProvider vía backend portable', () => {
     expect(Object.keys((await provider.loadProducts())[0])).not.toContain('extra');
   });
 
+  it('preserva precios null y cero sin aplicar fallback', async () => {
+    const { provider } = createProvider({
+      payload: { products: [{ ...apiProduct, priceUSA: 0, priceChina: null }] },
+    });
+    await expect(provider.loadProducts()).resolves.toEqual([
+      expect.objectContaining({ priceUSA: 0, priceChina: null }),
+    ]);
+  });
+
   it('clasifica conflicto 409 sin seleccionar un precio', async () => {
     const { provider } = createProvider({ ok: false, status: 409 });
     await expect(provider.loadProducts()).rejects.toEqual(expect.objectContaining({

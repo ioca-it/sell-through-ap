@@ -26,6 +26,7 @@ import {
   obtenerAccionQuiebreEOL,
   clasificarTemporalmente,
 } from '../eol/eolEngine.js';
+import { multiplyPrice } from '../product/product.js';
 
 // Construye el contrato vigente con o sin coincidencia en el Maestro.
 export const assembleRecord = ({
@@ -241,9 +242,9 @@ export const assembleRecord = ({
     merma, mermaPct, alertaMerma,
     indiceRotacion,
     necesidadReposicion, reposicionSugerida, alertaQuiebre, accionSugerida,
-    valorInv: costo * invFinal,
-    valorVentas: costo * ventas,
-    valorReposicion: costo * reposicionSugerida,
+    valorInv: multiplyPrice(costo, invFinal),
+    valorVentas: multiplyPrice(costo, ventas),
+    valorReposicion: multiplyPrice(costo, reposicionSugerida),
     descTotal,
     ioaTotal,
     retailTotal,

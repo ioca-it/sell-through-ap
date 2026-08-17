@@ -22,17 +22,30 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - La fecha se interpreta para clasificar temporalmente productos EOL y no EOL.
 - Fechas aceptadas: `d/m/aaaa`, `d-m-aaaa` y `aaaa-m-d`.
 - Categoría vacía en un SKU presente en Maestro se muestra como `—`; `SIN CATEGORIA` queda reservado a SKU sin correspondencia en Maestro.
-- Los costos eliminan `$` y comas antes de convertirse a número; un valor inválido queda en cero.
+- Los costos eliminan `$` y comas antes de convertirse a número; `0` es un precio
+  real, mientras una entrada vacía o inválida queda en `null` como precio no
+  disponible.
 - El contrato incorpora `creationDate`; el origen local reconoce el encabezado normalizado `creationDate` y conserva `null` cuando falta o no puede interpretarse.
 - La alternativa Dataverse usa exclusivamente `productpricelevel` filtrado en backend por comprador `IOCA USA INC` o `SAND SPORTS, CORP.`; no descarga compañías ajenas para filtrarlas en React.
-- Dataverse consolida por SKU: origen `USA` alimenta `priceUSA` y origen `CHINA` alimenta `priceChina`; el precio ausente o `amount null|undefined` conserva cero compatible.
-- Importes distintos para un mismo SKU/origen/comprador, o entre compradores sin precedencia autorizada, son conflicto funcional: la carga se bloquea y no suma, promedia ni selecciona un valor.
+- Dataverse consolida por SKU: origen `USA` alimenta `priceUSA` y origen `CHINA`
+  alimenta `priceChina`; sin fila del origen, o con `amount null|undefined`, el
+  precio correspondiente queda en `null`. Un `amount = 0` se conserva como
+  precio real igual a cero.
+- Importes numéricos distintos para un mismo SKU/origen/comprador, o entre
+  compradores sin precedencia autorizada, son conflicto funcional: la carga se
+  bloquea y no suma, promedia ni selecciona un valor. Cero contra otro número
+  distinto también es conflicto; `null` o ausencia no entra en la comparación
+  ni genera conflicto falso con un valor numérico real.
 - `level` y `status` usan FormattedValue cuando existe. Sin anotación solo se acepta un valor fuente textual; códigos numéricos Choice no se convierten ni se exponen como etiquetas.
 - `imageUrl` y `productUrl` se conservan como atributos del Product y del detalle SKU sin introducir lógica Dataverse en UI.
 - `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` deben ser únicos por SKU. Vacío más valor puede inicializar el atributo; dos valores no vacíos distintos después de normalizar bloquean la consolidación sin elegir precedencia.
 - Para detectar esas divergencias, strings, URLs y FormattedValue usan `trim()` y las fechas una representación canónica equivalente. Una fecha no vacía inválida conserva su texto trimmed solo para comparación interna y no se vuelve equivalente artificialmente a otra fecha.
 - Precio y atributo reutilizan `PRODUCT_MASTER_CONFLICT` y se distinguen únicamente en metadata interna; el error público conserva código/mensaje sanitizados y no publica valores, campos físicos ni contexto Dataverse.
-- El tratamiento futuro de `amount null/undefined` y la diferencia de formato `fechaStr` entre fuentes permanecen pendientes separados; Phase1-036 no modifica ninguno.
+- Phase1-038 establece `0 = precio real` y `null = precio no disponible` en
+  gateway, contrato Product, parser/adaptación y consumidores financieros. Los
+  importes derivados y totales que dependen de un precio no disponible conservan
+  `null`; no se sustituyen por cero. La diferencia de formato `fechaStr` entre
+  fuentes permanece pendiente separada y no fue modificada.
 
 ### BR-004 — Inventario del Cliente
 
@@ -56,6 +69,9 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - Solo `CHINA` selecciona origen China; cualquier otro valor se trata como `USA`.
 - Un origen vacío se marca como alerta y usa USA por defecto.
 - El costo aplicado es el costo China o USA del Maestro según el origen resultante.
+- Si el precio del origen resultante no está disponible, el costo aplicado y las
+  valorizaciones dependientes quedan en `null`; no se usa el precio del otro
+  origen ni cero como fallback.
 
 ## EOL, buckets y fases
 

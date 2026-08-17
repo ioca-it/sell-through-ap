@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   indexProductsBySku,
   isProduct,
+  multiplyPrice,
   normalizeProduct,
   productToMasterRecord,
+  subtractPrices,
+  sumPriceValues,
 } from '../product.js';
 
 const sourceProduct = {
@@ -42,15 +45,32 @@ describe('contrato Product normalizado', () => {
     expect(JSON.stringify(product)).not.toMatch(/crbbe_|createdon|amount/);
   });
 
-  it('usa null para fechas inválidas y cero para precios ausentes', () => {
+  it('usa null para fechas inválidas y precios ausentes', () => {
     expect(normalizeProduct({ sku: 'SKU-1', creationDate: 'bad' })).toMatchObject({
       discontinuationDate: null,
       creationDate: null,
-      priceUSA: 0,
-      priceChina: 0,
+      priceUSA: null,
+      priceChina: null,
       imageUrl: '',
       productUrl: '',
     });
+  });
+
+  it('preserva cero como precio real y normaliza valores inválidos a null', () => {
+    expect(normalizeProduct({
+      sku: 'SKU-1',
+      priceUSA: 0,
+      priceChina: 'no-disponible',
+    })).toMatchObject({ priceUSA: 0, priceChina: null });
+  });
+
+  it('propaga precio no disponible en operaciones financieras', () => {
+    expect(multiplyPrice(null, 5)).toBeNull();
+    expect(multiplyPrice(0, 5)).toBe(0);
+    expect(subtractPrices(25, null)).toBeNull();
+    expect(subtractPrices(25, 0)).toBe(25);
+    expect(sumPriceValues([10, null, 5])).toBeNull();
+    expect(sumPriceValues([10, 0, 5])).toBe(15);
   });
 
   it('adapta Product al contrato legado sin cambiar reglas de status/costo', () => {
@@ -69,6 +89,14 @@ describe('contrato Product normalizado', () => {
       costoUSA: 25,
       costoCHINA: 18,
     });
+  });
+
+  it('adapta precios null al Maestro sin convertirlos en cero', () => {
+    expect(productToMasterRecord({
+      ...sourceProduct,
+      priceUSA: null,
+      priceChina: undefined,
+    })).toMatchObject({ costoUSA: null, costoCHINA: null });
   });
 
   it('rechaza SKU vacío al indexar el Maestro', () => {

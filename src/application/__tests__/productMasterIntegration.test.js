@@ -75,4 +75,32 @@ describe('Product normalizado en el pipeline existente', () => {
     expect(execution.resultados.alertas.productosNuevosNoPresentes.map(({ sku }) => sku))
       .toEqual(['NEW-89']);
   });
+
+  it('preserva null desde Product y no lo convierte en cero en records o valorizaciones', () => {
+    const repository = createSellThroughRepository({
+      rawInventario: [
+        'SKU\tORIGEN\tINV INICIAL\tVENTAS\tINV FINAL',
+        'SKU-001\tUSA\t5\t1\t4',
+      ].join('\n'),
+      config,
+    });
+    const execution = processSellThrough(repository, {
+      products: [product({ priceUSA: null, priceChina: 18 })],
+    });
+
+    expect(execution.error).toBeNull();
+    expect(execution.resultados.recs[0]).toMatchObject({
+      costoUSA: null,
+      costoCHINA: 18,
+      costo: null,
+      valorInv: null,
+      valorVentas: null,
+      valorReposicion: null,
+      descUSD: null,
+      descTotal: null,
+    });
+    expect(execution.resultados.totales.valorActivo).toBeNull();
+    expect(execution.resultados.totales.valorTotalInventario).toBeNull();
+    expect(execution.resultados.distribucionTier.inventario.totalV).toBeNull();
+  });
 });

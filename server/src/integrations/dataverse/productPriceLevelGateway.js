@@ -120,8 +120,8 @@ const createProduct = (row) => ({
   status: row.status,
   imageUrl: row.imageUrl,
   productUrl: row.productUrl,
-  priceUSA: 0,
-  priceChina: 0,
+  priceUSA: null,
+  priceChina: null,
 });
 
 const addAmount = (amounts, key, amount, context) => {

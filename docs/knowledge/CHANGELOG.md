@@ -1,5 +1,31 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-038
+
+### Corregido
+
+- Maestro Producto distingue `0` como precio real y `null` como precio no
+  disponible en gateway, Product Domain y ruta local.
+- `amount null|undefined`, fila USA ausente o fila CHINA ausente producen
+  `null`; valores numéricos válidos, incluido cero, se conservan.
+- Solo números distintos generan `PRODUCT_MASTER_CONFLICT`; cero contra otro
+  número bloquea y null/ausente no crea conflicto falso con un precio real.
+
+### Consumidores
+
+- Provider, Repository, Application Service, adaptación al Maestro, Record
+  Assembler, EOL, Portfolio, distribuciones y totales propagan `null` en
+  valorizaciones dependientes sin usar fallback.
+- UI y exportaciones usan presentación vacía/controlada para valores no
+  disponibles; el formatter existente muestra `—` y nunca `$0` para `null`.
+- Maestro Cliente, filtros de compañías, FormattedValue, Producto Nuevo, EOL y
+  `fechaStr` no cambian.
+
+### Alcance
+
+- Product Dataverse continúa **NOT ACTIVATED**; no se modifican Vercel, Render,
+  Entra ni Dataverse y no hay commit, push o deploy.
+
 ## 2026-08-17 — PHASE1-036
 
 ### Corregido

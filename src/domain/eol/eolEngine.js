@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { diasEntre } from '../../utils/dateUtils.js';
+import { multiplyPrice } from '../product/product.js';
 
 const FASE_4_DIAS_LIMITE = 365;
 const FASE_4_DIAS_MIN = FASE_4_DIAS_LIMITE + 1;
@@ -108,9 +109,9 @@ export const calcularDescuentoYAportes = ({ costo, faseConfig, invFinal }) => {
     && invFinal < inventarioMinimoReconocido;
   const ioaPct = liquidacionSoloRetail ? 0 : (faseConfig ? faseConfig.aporteIOCA : 0);
   const retailPct = liquidacionSoloRetail ? 1 : (faseConfig ? faseConfig.aporteRetail : 0);
-  const descUSD = costo * descPct;
-  const ioaUSD = descUSD * ioaPct;
-  const retailUSD = descUSD * retailPct;
+  const descUSD = multiplyPrice(costo, descPct);
+  const ioaUSD = multiplyPrice(descUSD, ioaPct);
+  const retailUSD = multiplyPrice(descUSD, retailPct);
 
   return {
     descPct,
@@ -119,9 +120,9 @@ export const calcularDescuentoYAportes = ({ costo, faseConfig, invFinal }) => {
     descUSD,
     ioaUSD,
     retailUSD,
-    descTotal: descUSD * invFinal,
-    ioaTotal: ioaUSD * invFinal,
-    retailTotal: retailUSD * invFinal,
+    descTotal: multiplyPrice(descUSD, invFinal),
+    ioaTotal: multiplyPrice(ioaUSD, invFinal),
+    retailTotal: multiplyPrice(retailUSD, invFinal),
     inventarioMinimoReconocido,
     liquidacionSoloRetail,
   };

@@ -14,7 +14,7 @@ import { assembleRecord } from '../domain/parser/recordAssembler.js';
 import { PortfolioAnalysisService } from '../domain/portfolio/PortfolioAnalysisService.js';
 import { ExecutiveReportService } from '../domain/report/ExecutiveReportService.js';
 import { findNewProductsMissingInventory } from '../domain/product/newProduct.js';
-import { indexProductsBySku } from '../domain/product/product.js';
+import { indexProductsBySku, isAvailablePrice } from '../domain/product/product.js';
 import { listarFasesEOLDisponibles } from '../domain/eol/eolEngine.js';
 import { primerDiaMes } from '../utils/dateUtils.js';
 
@@ -79,19 +79,27 @@ export const calculateTierDistribution = (records, unitField, valueField) => {
       ? 'SIN CATEGORIA'
       : (tiers.slice(0, 4).includes(tier) ? tier : 'GOOD');
     const units = record[unitField] || 0;
-    const value = record[valueField] || 0;
+    const value = record[valueField];
     if (units > 0) {
       result[validTier].unidades += units;
-      result[validTier].valor += value;
+      result[validTier].valor = isAvailablePrice(result[validTier].valor)
+        && isAvailablePrice(value)
+        ? result[validTier].valor + value
+        : null;
       result[validTier].skus += 1;
       totalU += units;
-      totalV += value;
+      totalV = isAvailablePrice(totalV) && isAvailablePrice(value)
+        ? totalV + value
+        : null;
       totalSKUs += 1;
     }
   });
   tiers.forEach((tier) => {
     result[tier].pctUnidades = totalU > 0 ? result[tier].unidades / totalU : 0;
-    result[tier].pctValor = totalV > 0 ? result[tier].valor / totalV : 0;
+    result[tier].pctValor = isAvailablePrice(totalV)
+      && isAvailablePrice(result[tier].valor)
+      ? (totalV > 0 ? result[tier].valor / totalV : 0)
+      : null;
     result[tier].pctSKUs = totalSKUs > 0 ? result[tier].skus / totalSKUs : 0;
   });
 
@@ -118,19 +126,27 @@ const calculateCategoryDistribution = (records, categories, unitField, valueFiel
   records.forEach((record) => {
     const category = record.categoria || 'SIN CATEGORIA';
     const units = record[unitField] || 0;
-    const value = record[valueField] || 0;
+    const value = record[valueField];
     if (units > 0 && result[category]) {
       result[category].unidades += units;
-      result[category].valor += value;
+      result[category].valor = isAvailablePrice(result[category].valor)
+        && isAvailablePrice(value)
+        ? result[category].valor + value
+        : null;
       result[category].skus += 1;
       totalU += units;
-      totalV += value;
+      totalV = isAvailablePrice(totalV) && isAvailablePrice(value)
+        ? totalV + value
+        : null;
       totalSKUs += 1;
     }
   });
   categories.forEach((category) => {
     result[category].pctUnidades = totalU > 0 ? result[category].unidades / totalU : 0;
-    result[category].pctValor = totalV > 0 ? result[category].valor / totalV : 0;
+    result[category].pctValor = isAvailablePrice(totalV)
+      && isAvailablePrice(result[category].valor)
+      ? (totalV > 0 ? result[category].valor / totalV : 0)
+      : null;
     result[category].pctSKUs = totalSKUs > 0 ? result[category].skus / totalSKUs : 0;
   });
 

@@ -31,6 +31,11 @@ describe.each([
   });
 });
 
+it('no representa un precio null como $0', () => {
+  expect(fmtUSD(null)).toBe('—');
+  expect(fmtUSDInline(null)).toBe('—');
+});
+
 describe('fmtPct', () => {
   it.each([
     ['formatea una razón normal sin decimales', 0.1234, '12%'],

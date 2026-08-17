@@ -6,9 +6,13 @@ import {
 
 describe('ProductMasterService', () => {
   it('delega la carga al Repository', async () => {
-    const repository = { getProducts: vi.fn(async () => [{ sku: 'SKU-1' }]) };
+    const repository = {
+      getProducts: vi.fn(async () => [{ sku: 'SKU-1', priceUSA: 0, priceChina: null }]),
+    };
     const service = createProductMasterService({ repository });
-    await expect(service.loadProducts()).resolves.toEqual([{ sku: 'SKU-1' }]);
+    await expect(service.loadProducts()).resolves.toEqual([
+      { sku: 'SKU-1', priceUSA: 0, priceChina: null },
+    ]);
     expect(repository.getProducts).toHaveBeenCalledOnce();
   });
 
