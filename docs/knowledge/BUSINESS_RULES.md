@@ -29,6 +29,10 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - Importes distintos para un mismo SKU/origen/comprador, o entre compradores sin precedencia autorizada, son conflicto funcional: la carga se bloquea y no suma, promedia ni selecciona un valor.
 - `level` y `status` usan FormattedValue cuando existe. Sin anotación solo se acepta un valor fuente textual; códigos numéricos Choice no se convierten ni se exponen como etiquetas.
 - `imageUrl` y `productUrl` se conservan como atributos del Product y del detalle SKU sin introducir lógica Dataverse en UI.
+- `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` deben ser únicos por SKU. Vacío más valor puede inicializar el atributo; dos valores no vacíos distintos después de normalizar bloquean la consolidación sin elegir precedencia.
+- Para detectar esas divergencias, strings, URLs y FormattedValue usan `trim()` y las fechas una representación canónica equivalente. Una fecha no vacía inválida conserva su texto trimmed solo para comparación interna y no se vuelve equivalente artificialmente a otra fecha.
+- Precio y atributo reutilizan `PRODUCT_MASTER_CONFLICT` y se distinguen únicamente en metadata interna; el error público conserva código/mensaje sanitizados y no publica valores, campos físicos ni contexto Dataverse.
+- El tratamiento futuro de `amount null/undefined` y la diferencia de formato `fechaStr` entre fuentes permanecen pendientes separados; Phase1-036 no modifica ninguno.
 
 ### BR-004 — Inventario del Cliente
 

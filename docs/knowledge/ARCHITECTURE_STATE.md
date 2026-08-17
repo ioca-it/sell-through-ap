@@ -2,17 +2,17 @@
 
 ## Fase actual
 
-PHASE1-033 queda **IMPLEMENTED / NOT ACTIVATED**. Maestro Producto dispone de una ruta intercambiable `local|dataverse` mediante `VITE_PRODUCT_SOURCE`, con `local` como default vigente. El backend portable incorpora `GET /api/products/master`; Product Price Level Gateway consulta exclusivamente `productpricelevel`, aplica en backend el filtro de compradores `IOCA USA INC` o `SAND SPORTS, CORP.`, pagina mediante Dataverse Client y consolida por SKU el pivot `USA -> priceUSA` / `CHINA -> priceChina`. La UI no envía OData y los LogicalNames permanecen exclusivamente en el gateway.
+PHASE1-036 queda **IMPLEMENTED / NOT ACTIVATED**. Maestro Producto dispone de una ruta intercambiable `local|dataverse` mediante `VITE_PRODUCT_SOURCE`, con `local` como default vigente. El backend portable incorpora `GET /api/products/master`; Product Price Level Gateway consulta exclusivamente `productpricelevel`, aplica en backend el filtro de compradores `IOCA USA INC` o `SAND SPORTS, CORP.`, pagina mediante Dataverse Client y consolida por SKU el pivot `USA -> priceUSA` / `CHINA -> priceChina`. La UI no envía OData y los LogicalNames permanecen exclusivamente en el gateway.
 
-El contrato normalizado es `{ sku, productName, brand, category, discontinuationDate, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`. `level` y `status` solicitan FormattedValue; si falta, solo aceptan como fallback un valor fuente que ya sea texto y nunca publican códigos Choice numéricos. Precios `null`/`undefined` conservan cero compatible. Valores distintos para el mismo SKU/origen/comprador, o entre compradores sin precedencia autorizada, producen `409 / PRODUCT_MASTER_CONFLICT`: no se suman, promedian ni seleccionan. Render continúa transitorio, Azure sigue siendo el destino definitivo y no se activó Product Dataverse en producción.
+El contrato normalizado es `{ sku, productName, brand, category, discontinuationDate, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`. `level` y `status` solicitan FormattedValue; si falta, solo aceptan como fallback un valor fuente que ya sea texto y nunca publican códigos Choice numéricos. La consolidación ignora valores descriptivos vacíos, compara strings/URLs trimmed, fechas canónicas y etiquetas FormattedValue trimmed, e impide que valores no vacíos divergentes de cualquiera de los nueve atributos Product se consoliden silenciosamente. Tanto los conflictos de precio como los de atributo reutilizan `409 / PRODUCT_MASTER_CONFLICT`, se distinguen solo en metadata interna y mantienen el contrato público sanitizado. Precios `null`/`undefined` conservan cero compatible; su redefinición y el formato `fechaStr` siguen pendientes separados. Render continúa transitorio, Azure sigue siendo el destino definitivo y no se activó Product Dataverse en producción.
 
 ## Último prompt aprobado
 
-PHASE1-033 — Implement Dataverse Product Master.
+PHASE1-036 — Detect Product Attribute Conflicts.
 
 ## Última auditoría aprobada
 
-Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 154 pruebas y build aprobados; su hallazgo de congelamiento cruzado fue resuelto por Prompt 023.
+Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. Identificó como blocker la consolidación silenciosa de atributos Product; Phase1-036 resuelve ese hallazgo sin activar Dataverse. Sus observaciones sobre `amount null/undefined` y `fechaStr` permanecen pendientes de decisión separada.
 
 ## Servicios implementados
 
@@ -34,7 +34,7 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Product normalizer, Repository y Product Master Application Service: contrato normalizado independiente de la fuente y adaptación compatible hacia Master Parser/Record Assembler.
 - Product Provider Factory: selecciona `local` o `dataverse` mediante `VITE_PRODUCT_SOURCE`; `local` continúa como default y reutiliza `masterParser.js` sin duplicar sus reglas.
 - Dataverse Product Provider frontend: consume únicamente `GET /api/products/master` mediante el transporte HTTP autenticado compartido; no construye OData ni conoce `productpricelevel` o sus LogicalNames.
-- Product Price Level Gateway backend: encapsula mapping, filtro de compañías, paginación, FormattedValue, consolidación USA/CHINA y detección determinística de conflictos.
+- Product Price Level Gateway backend: encapsula mapping, filtro de compañías, paginación, FormattedValue, consolidación USA/CHINA y detección determinística de conflictos de precio o de cualquiera de los nueve atributos únicos por SKU.
 - Product Service/API: endpoint funcional cerrado, protegido por el JWT/rate limiter existentes y compuesto con el Dataverse Client/OAuth/diagnóstico ya implementados.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
@@ -54,6 +54,8 @@ Claude 004 — Portfolio Analysis Service, ejecutada el 2026-08-06. Verificó 15
 - Render se mantiene como backend transitorio; la migración futura a Azure permanece pendiente.
 - Store distribuido de rate limiting: obligatorio antes de múltiples instancias o escala horizontal en Azure.
 - Activación productiva y validación real de `VITE_PRODUCT_SOURCE=dataverse`: pendientes de autorización separada; producción continúa en `local`.
+- Tratamiento funcional de `amount null/undefined`: pendiente; Phase1-036 conserva el cero compatible sin modificarlo.
+- Formato de `fechaStr` entre fuentes local y Dataverse: pendiente separado; Phase1-036 no lo modifica.
 - Redefinición de Sin origen, buckets/fases EOL, reposición para productos nuevos y fórmulas por Tipo de Cliente: no definidas y no implementadas.
 - Configuration Center completo: pendiente migrar parámetros adicionales; el MVP visual y local está habilitado solo para el schema actual.
 
@@ -115,7 +117,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Revisar Phase1-033 y autorizar por separado cualquier activación de `VITE_PRODUCT_SOURCE=dataverse` y validación real de Maestro Producto. Esa activación no debe cambiar mapping, filtro, consolidación, contratos, autenticación ni reglas del motor. La migración del backend portable desde Render hacia Azure continúa como línea independiente, sin servicio Azure definido todavía.
+Resolver mediante autorización separada el tratamiento de `amount null/undefined` y el pendiente de formato `fechaStr` antes de cualquier activación de `VITE_PRODUCT_SOURCE=dataverse` y validación real de Maestro Producto. Esa activación no debe cambiar mapping, filtro, consolidación, contratos, autenticación ni reglas del motor. La migración del backend portable desde Render hacia Azure continúa como línea independiente, sin servicio Azure definido todavía.
 
 ## Decisiones congeladas
 
@@ -125,6 +127,7 @@ Revisar Phase1-033 y autorizar por separado cualquier activación de `VITE_PRODU
 - Repository/Provider son la frontera obligatoria de fuentes. Customer y Product son contratos Dataverse normalizados aprobados; todos los LogicalNames permanecen en sus gateways backend.
 - Toda consulta Product usa `productpricelevel` y filtra en Product Price Level Gateway `crbbe_companiacompradora` por `IOCA USA INC` o `SAND SPORTS, CORP.`. El frontend no puede enviar filtros, selects, órdenes ni parámetros OData.
 - Product consolida por SKU y pivota únicamente `USA -> priceUSA` y `CHINA -> priceChina`; precios faltantes quedan en cero. Un precio distinto para el mismo SKU/origen/comprador, o entre compradores sin precedencia, bloquea la carga con `PRODUCT_MASTER_CONFLICT` hasta definición funcional.
+- `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` son únicos por SKU: vacío más valor puede inicializar, pero dos valores no vacíos distintos después de normalizar bloquean con `PRODUCT_MASTER_CONFLICT`; no existe precedencia por fila, comprador, fecha, mayoría ni otro criterio.
 - `level` y `status` Product usan FormattedValue cuando está presente. Sin anotación, solo un valor fuente textual puede usarse como fallback; un Choice numérico nunca se publica como etiqueta.
 - `VITE_PRODUCT_SOURCE` selecciona `local|dataverse`; `local` es el default vigente y Product Dataverse no está activado en producción.
 - Account Customer Gateway encapsula `new_tipocliente@OData.Community.Display.V1.FormattedValue` y expone su etiqueta únicamente como `customerType`, con fallback vacío cuando la anotación falta, es `null` o `undefined`; el valor numérico `new_tipocliente` nunca sustituye la etiqueta.

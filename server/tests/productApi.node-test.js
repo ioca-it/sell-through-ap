@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/app/createApp.js';
+import { ProductMasterConflictError } from '../src/integrations/dataverse/productPriceLevelGateway.js';
 
 const product = Object.freeze({
   sku: 'SKU-001',
@@ -94,10 +95,14 @@ test('protege Product API con el mismo autenticador y rate limiter', async () =>
   assert.equal(authentications, 1);
 });
 
-test('publica conflicto sin elegir, sumar o promediar un precio', async () => {
-  const conflict = new Error('Conflicto funcional pendiente');
-  conflict.code = 'PRODUCT_MASTER_CONFLICT';
-  conflict.statusCode = 409;
+test('publica PRODUCT_MASTER_CONFLICT estable sin detalles internos del atributo', async () => {
+  const conflict = new ProductMasterConflictError([{
+    conflictType: 'ATTRIBUTE',
+    scope: 'SKU_ATTRIBUTE',
+    sku: 'SKU-SENSIBLE',
+    field: 'productUrl',
+    values: ['https://private.invalid/one', 'https://private.invalid/two'],
+  }]);
   const app = createTestApp({
     loadMaster: async () => {
       throw conflict;
@@ -106,6 +111,38 @@ test('publica conflicto sin elegir, sumar o promediar un precio', async () => {
   await withServer(app, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/products/master`);
     assert.equal(response.status, 409);
-    assert.equal((await response.json()).error.code, 'PRODUCT_MASTER_CONFLICT');
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      error: {
+        code: 'PRODUCT_MASTER_CONFLICT',
+        message: 'El Maestro Producto contiene valores en conflicto que requieren definición funcional.',
+      },
+    });
+    assert.doesNotMatch(JSON.stringify(payload), /SKU-SENSIBLE|productUrl|private\.invalid/);
+  });
+});
+
+test('mantiene Maestro Cliente sin regresión al compartir la aplicación', async () => {
+  const customer = {
+    customerCode: 'C-001',
+    customerName: 'Cliente Uno',
+    country: 'Guatemala',
+    customerType: 'Distribuidor',
+  };
+  const app = createApp({
+    customerService: {
+      search: async () => [customer],
+      getByCode: async () => customer,
+    },
+    productService: { loadMaster: async () => [] },
+    allowedOrigins: ['http://localhost:5173'],
+    authenticator: { authenticate: async () => ({ subject: 'test-user' }) },
+    rateLimiter: { check: async () => ({ allowed: true, retryAfterSeconds: 0 }) },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/customers/search?type=code&q=C-001`);
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).customers, [customer]);
   });
 });

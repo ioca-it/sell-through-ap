@@ -182,6 +182,71 @@ test('normaliza fechas válidas y usa null para fechas ausentes o inválidas', (
   assert.equal(product.creationDate, null);
 });
 
+test('mismo SKU y atributos equivalentes normalizados no generan conflicto', () => {
+  const products = consolidateProductPriceLevelRows([
+    rawRow(),
+    rawRow({
+      crbbe_nombreproducto: 'Crusher Evo',
+      crbbe_validohasta: '2027-06-29T20:00:00-04:00',
+      createdon: '2026-08-01T08:00:00-04:00',
+      [`crbbe_clasificacioncomercial@${FORMATTED}`]: 'Better',
+      [`crbbe_etapa@${FORMATTED}`]: 'Activo',
+    }),
+  ]);
+  assert.deepEqual(products, [expectedProduct]);
+});
+
+test('atributo vacío seguido de valor inicializa sin conflicto', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ crbbe_nombreproducto: '  ' }),
+    rawRow({ crbbe_nombreproducto: ' Crusher Evo ' }),
+  ])[0];
+  assert.equal(product.productName, 'Crusher Evo');
+});
+
+test('atributo con valor seguido de vacío conserva el valor sin conflicto', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ crbbe_nombreproducto: ' Crusher Evo ' }),
+    rawRow({ crbbe_nombreproducto: null }),
+  ])[0];
+  assert.equal(product.productName, 'Crusher Evo');
+});
+
+const assertAttributeConflict = (field, override) => {
+  assert.throws(
+    () => consolidateProductPriceLevelRows([rawRow(), rawRow(override)]),
+    (error) => error instanceof ProductMasterConflictError
+      && error.code === 'PRODUCT_MASTER_CONFLICT'
+      && error.statusCode === 409
+      && error.conflicts.some((conflict) => (
+        conflict.conflictType === 'ATTRIBUTE'
+        && conflict.scope === 'SKU_ATTRIBUTE'
+        && conflict.sku === 'SKU-001'
+        && conflict.field === field
+      )),
+  );
+};
+
+test('fecha no vacía inválida no se vuelve equivalente a otra fecha', () => {
+  assertAttributeConflict('discontinuationDate', { crbbe_validohasta: 'otra-fecha-inválida' });
+});
+
+[
+  ['productName', { crbbe_nombreproducto: 'Crusher ANC' }],
+  ['brand', { crbbe_nombremarca: 'Otra marca' }],
+  ['category', { crbbe_nombrecategoria: 'Parlantes' }],
+  ['level', { [`crbbe_clasificacioncomercial@${FORMATTED}`]: 'Best' }],
+  ['status', { [`crbbe_etapa@${FORMATTED}`]: 'EOL' }],
+  ['discontinuationDate', { crbbe_validohasta: '2027-07-01T00:00:00Z' }],
+  ['creationDate', { createdon: '2026-08-02T12:00:00Z' }],
+  ['imageUrl', { crbbe_imagenproducto: 'https://images.invalid/other.png' }],
+  ['productUrl', { producturl: 'https://products.invalid/other' }],
+].forEach(([field, override]) => {
+  test(`detecta conflicto de atributo ${field} sin elegir precedencia`, () => {
+    assertAttributeConflict(field, override);
+  });
+});
+
 test('detecta determinísticamente precios distintos del mismo SKU/origen/comprador', () => {
   assert.throws(
     () => consolidateProductPriceLevelRows([
@@ -192,7 +257,8 @@ test('detecta determinísticamente precios distintos del mismo SKU/origen/compra
       && error.code === 'PRODUCT_MASTER_CONFLICT'
       && error.statusCode === 409
       && error.conflicts.some((conflict) => (
-        conflict.scope === 'SKU_ORIGIN_BUYER'
+        conflict.conflictType === 'PRICE'
+        && conflict.scope === 'SKU_ORIGIN_BUYER'
         && conflict.sku === 'SKU-001'
         && conflict.origin === 'USA'
         && conflict.buyerCompany === 'IOCA USA INC'

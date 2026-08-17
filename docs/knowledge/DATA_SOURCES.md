@@ -45,7 +45,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 | `priceUSA` | `amount` cuando `crbbe_origen = USA` |
 | `priceChina` | `amount` cuando `crbbe_origen = CHINA` |
 
-El gateway aplica en `$filter` únicamente `crbbe_companiacompradora = IOCA USA INC` o `SAND SPORTS, CORP.` y repite la allowlist defensivamente en backend. Consolida por SKU; `amount null|undefined` no aporta precio y el contrato compatible usa cero para el origen ausente. Valores distintos del mismo SKU/origen/comprador, o entre ambos compradores sin precedencia autorizada, detienen la carga con `409 / PRODUCT_MASTER_CONFLICT`. No se suman, promedian ni eligen. Los nombres de esta tabla permanecen exclusivamente en Product Price Level Gateway.
+El gateway aplica en `$filter` únicamente `crbbe_companiacompradora = IOCA USA INC` o `SAND SPORTS, CORP.` y repite la allowlist defensivamente en backend. Consolida por SKU; `amount null|undefined` no aporta precio y el contrato compatible usa cero para el origen ausente, comportamiento pendiente de decisión funcional y no modificado por Phase1-036. Valores distintos del mismo SKU/origen/comprador, o entre ambos compradores sin precedencia autorizada, detienen la carga con `409 / PRODUCT_MASTER_CONFLICT`. La misma protección aplica a divergencias no vacías de `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` o `productUrl`: strings, URLs y etiquetas FormattedValue se comparan con `trim()` y las fechas mediante representación canónica. Vacío más valor no es conflicto; dos valores no vacíos diferentes bloquean sin elegir precedencia. Los nombres de esta tabla permanecen exclusivamente en Product Price Level Gateway y la respuesta pública no expone metadata interna del conflicto. `fechaStr` no cambia y continúa como pendiente separado.
 
 ### Alias reconocidos del Maestro
 
@@ -113,7 +113,7 @@ El gateway aplica en `$filter` únicamente `crbbe_companiacompradora = IOCA USA 
 ## DS-006 — Dataverse
 
 - Estado Customer: **IMPLEMENTED + PRODUCTION VALIDATED** por Phase1-032. Vercel usa `VITE_CUSTOMER_SOURCE=dataverse`; búsqueda/selección conservan el contrato Customer.
-- Estado Product: **IMPLEMENTED / NOT ACTIVATED** por Phase1-033. `VITE_PRODUCT_SOURCE=local` permanece como fuente efectiva; la integración `productpricelevel` está preparada y probada con dobles, sin consulta o validación productiva.
+- Estado Product: **IMPLEMENTED / NOT ACTIVATED** por Phase1-036. `VITE_PRODUCT_SOURCE=local` permanece como fuente efectiva; la integración `productpricelevel` está preparada y probada con dobles, incluida la detección de conflictos de precio y atributos, sin consulta o validación productiva.
 - Fuentes autorizadas: `accounts` para Maestro Cliente y `productpricelevel` para Maestro Producto, cada una mediante su endpoint funcional y gateway backend.
 - Frontend Providers: `dataverseCustomerProvider.js` y `dataverseProductProvider.js`, consumidores exclusivos del backend mediante `VITE_API_BASE_URL`; adjuntan Bearer MSAL a través del cliente HTTP compartido y normalizan fallos sin exponer detalles.
 - Selectores: `VITE_CUSTOMER_SOURCE=local|dataverse` (producción `dataverse`) y `VITE_PRODUCT_SOURCE=local|dataverse` (default/producción `local`).

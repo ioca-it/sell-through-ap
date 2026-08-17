@@ -1,5 +1,20 @@
 # Roadmap aprobado
 
+## Phase1-036 — Detect Product Attribute Conflicts
+
+Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** con protección contra la
+consolidación silenciosa de atributos divergentes. Para un mismo SKU,
+`productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`,
+`creationDate`, `imageUrl` y `productUrl` admiten valores vacíos, inicializan con
+el primer valor no vacío y bloquean si aparece otro valor no vacío distinto
+después de normalizar. No se define precedencia.
+
+Los conflictos de precio y atributo reutilizan `PRODUCT_MASTER_CONFLICT`, se
+distinguen solo en metadata interna y conservan el contrato público sanitizado.
+El pivot USA/CHINA no cambia. `amount null/undefined -> 0` y `fechaStr` tampoco
+cambian y continúan pendientes de decisión separada antes de autorizar una
+activación productiva o validación real de Product Dataverse.
+
 ## Phase1-033 — Implement Dataverse Product Master
 
 Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** sobre el backend portable.
@@ -215,11 +230,12 @@ Prompt 024 crea un Business Service de presentación que consume exclusivamente 
 
 ### Siguiente hito técnico
 
-Revisar y autorizar por separado cualquier activación productiva de Maestro
-Producto. En paralelo, la migración del backend portable de Render a Azure
-continúa pendiente, sin definir por anticipado el servicio Azure ni alterar
-contratos o fronteras. Executive Report y Recommendation Engine permanecen
-como líneas funcionales independientes.
+Resolver por separado `amount null/undefined` y `fechaStr`, y después revisar y
+autorizar cualquier activación productiva de Maestro Producto. En paralelo, la
+migración del backend portable de Render a Azure continúa pendiente, sin definir
+por anticipado el servicio Azure ni alterar contratos o fronteras. Executive
+Report y Recommendation Engine permanecen como líneas funcionales
+independientes.
 
 La presencia parcial de nombres del roadmap en el código no equivale a declarar entregado un hito. Solo un acuerdo o prompt aprobado puede cambiar su estado formal.
 

@@ -44,6 +44,16 @@ const normalizeDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
+// Las fechas válidas se comparan por instante canónico. Si Dataverse entrega
+// texto no vacío inválido, se conserva trimmed solo para detectar divergencias,
+// sin publicarlo ni volver equivalentes artificialmente dos valores distintos.
+const comparableDate = (value) => {
+  const text = normalizeText(value);
+  if (!text) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? text : date.toISOString();
+};
+
 const normalizeAmount = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const amount = Number(value);
@@ -125,12 +135,51 @@ const findAmountConflicts = (amounts, scope) => (
     .filter(({ values }) => values.size > 1)
     .map(({ values, context }) => ({
       ...context,
+      conflictType: 'PRICE',
       scope,
       values: Object.freeze([...values].sort((a, b) => a - b)),
     }))
     .sort((left, right) => (
       `${left.sku}|${left.origin}|${left.buyerCompany || ''}`
         .localeCompare(`${right.sku}|${right.origin}|${right.buyerCompany || ''}`)
+    ))
+);
+
+const comparableAttributeValue = (rawRow, row, field) => {
+  if (field === 'discontinuationDate' || field === 'creationDate') {
+    return comparableDate(rawRow[PRODUCT_SOURCE.fields[field]]);
+  }
+  return row[field];
+};
+
+const addAttributeValues = (attributesBySku, rawRow, row) => {
+  if (!attributesBySku.has(row.sku)) attributesBySku.set(row.sku, new Map());
+  const attributes = attributesBySku.get(row.sku);
+  PRODUCT_ATTRIBUTE_FIELDS.forEach((field) => {
+    const value = comparableAttributeValue(rawRow, row, field);
+    if (!value) return;
+    if (!attributes.has(field)) attributes.set(field, new Set());
+    attributes.get(field).add(value);
+  });
+};
+
+const findAttributeConflicts = (attributesBySku) => (
+  [...attributesBySku.entries()]
+    .flatMap(([sku, attributes]) => (
+      [...attributes.entries()]
+        .filter(([, values]) => values.size > 1)
+        .map(([field, values]) => ({
+          conflictType: 'ATTRIBUTE',
+          scope: 'SKU_ATTRIBUTE',
+          sku,
+          field,
+          values: Object.freeze([...values].sort((left, right) => (
+            left.localeCompare(right)
+          ))),
+        }))
+    ))
+    .sort((left, right) => (
+      `${left.sku}|${left.field}`.localeCompare(`${right.sku}|${right.field}`)
     ))
 );
 
@@ -142,12 +191,15 @@ export const consolidateProductPriceLevelRows = (rows) => {
   const products = new Map();
   const amountsBySkuOriginBuyer = new Map();
   const amountsBySkuOrigin = new Map();
+  const attributesBySku = new Map();
 
-  rows.map(mapProductPriceLevelRow).forEach((row) => {
+  rows.forEach((rawRow) => {
+    const row = mapProductPriceLevelRow(rawRow);
     // El filtro OData es obligatorio; esta defensa backend impide publicar una
     // compañía ajena aunque una respuesta upstream no respete el predicado.
     if (!ALLOWED_BUYER_COMPANY_SET.has(row.buyerCompany) || !row.sku) return;
     if (!products.has(row.sku)) products.set(row.sku, createProduct(row));
+    addAttributeValues(attributesBySku, rawRow, row);
 
     const product = products.get(row.sku);
     PRODUCT_ATTRIBUTE_FIELDS.forEach((field) => {
@@ -177,7 +229,8 @@ export const consolidateProductPriceLevelRows = (rows) => {
     .filter((conflict) => !buyerConflicts.some((buyerConflict) => (
       buyerConflict.sku === conflict.sku && buyerConflict.origin === conflict.origin
     )));
-  const conflicts = [...buyerConflicts, ...crossBuyerConflicts];
+  const attributeConflicts = findAttributeConflicts(attributesBySku);
+  const conflicts = [...buyerConflicts, ...crossBuyerConflicts, ...attributeConflicts];
   if (conflicts.length > 0) throw new ProductMasterConflictError(conflicts);
 
   amountsBySkuOrigin.forEach(({ values, context }) => {

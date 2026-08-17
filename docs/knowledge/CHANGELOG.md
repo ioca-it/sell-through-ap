@@ -1,5 +1,36 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-036
+
+### Corregido
+
+- Product Price Level Gateway deja de consolidar silenciosamente atributos
+  descriptivos divergentes del mismo SKU.
+- `productName`, `brand`, `category`, `level`, `status`,
+  `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` bloquean la
+  carga cuando contienen más de un valor no vacío distinto normalizado.
+- Valores vacíos no generan conflicto y el primer valor no vacío solo
+  inicializa; no se agrega precedencia por fila, comprador, fecha o mayoría.
+
+### Contrato y normalización
+
+- Strings, URLs y etiquetas FormattedValue se comparan trimmed; fechas válidas
+  se comparan en representación ISO canónica y texto de fecha no vacío inválido
+  se conserva únicamente para detectar divergencias internas.
+- Precio y atributo reutilizan `409 / PRODUCT_MASTER_CONFLICT`, diferenciados
+  internamente como `PRICE` y `ATTRIBUTE`; el contrato HTTP continúa estable y
+  no expone metadata interna o nombres físicos Dataverse.
+- Pivot USA/CHINA, `amount null/undefined -> 0` compatible y `fechaStr` no se
+  modifican. Los dos últimos asuntos permanecen pendientes separados.
+
+### Validación y alcance
+
+- Se agregan casos para equivalencia normalizada, vacío/valor en ambos órdenes,
+  los nueve atributos, precio, sanitización pública y regresión de Maestro
+  Cliente.
+- Product Dataverse permanece no activado; sin cambios en Inventario Cliente,
+  Vercel, Render, Entra o Dataverse, y sin commit, push o deploy.
+
 ## 2026-08-17 — PHASE1-033
 
 ### Implementado
