@@ -13,12 +13,32 @@ const jsonResponse = (payload, { contentType = 'application/json; charset=utf-8'
   })
 );
 
+const expectedNetworkDiagnostic = (networkCategory, timeoutConfiguredMs = 10000) => ({
+  component: 'DataverseClient',
+  diagnosticId: 'DATAVERSE_NETWORK_ERROR',
+  operation: 'retrieveMultiple',
+  failureType: 'network',
+  structuredErrorMetadata: false,
+  networkCategory,
+  timeoutConfiguredMs,
+  tokenAcquired: true,
+  baseUrlConfigured: true,
+  baseUrlProtocolValid: true,
+});
+
 test('centraliza token, headers OData y parámetros internos', async () => {
+  const sequence = [];
   let request;
   const client = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',
-    tokenProvider: { getToken: async () => 'access-token' },
+    tokenProvider: {
+      getToken: async () => {
+        sequence.push('token');
+        return 'access-token';
+      },
+    },
     fetchImpl: async (url, options) => {
+      sequence.push('fetch');
       request = { url, options };
       return { ok: true, json: async () => ({ value: [{ id: 1 }] }) };
     },
@@ -42,6 +62,7 @@ test('centraliza token, headers OData y parámetros internos', async () => {
   );
   assert.equal(request.url.searchParams.get('$select'), 'field_one,field_two');
   assert.equal(request.url.searchParams.get('$top'), '20');
+  assert.deepEqual(sequence, ['token', 'fetch']);
 });
 
 test('omite Prefer cuando el consumidor no solicita anotaciones', async () => {
@@ -257,13 +278,37 @@ test('rechaza Entity Sets arbitrarios inválidos', async () => {
   );
 });
 
-test('cancela por timeout y devuelve un error Dataverse normalizado', async () => {
+test('clasifica fetch TypeError como NETWORK_FETCH_FAILED', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => {
+      throw new TypeError('detalle sensible de fetch');
+    },
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'accounts' }),
+    DataverseRequestError,
+  );
+  assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_FETCH_FAILED')]);
+});
+
+test('cancela por timeout y clasifica NETWORK_TIMEOUT', async () => {
+  const events = [];
   const client = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',
     tokenProvider: { getToken: async () => 'access-token' },
     timeoutMs: 1,
+    diagnosticLogger: (event) => events.push(event),
     fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
-      options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      options.signal.addEventListener('abort', () => {
+        const error = new Error('detalle sensible de timeout');
+        error.name = 'AbortError';
+        reject(error);
+      });
     }),
   });
 
@@ -271,6 +316,101 @@ test('cancela por timeout y devuelve un error Dataverse normalizado', async () =
     client.retrieveMultiple({ entitySet: 'accounts' }),
     (error) => error instanceof DataverseRequestError
       && error.message === 'No fue posible consultar Dataverse.',
+  );
+  assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_TIMEOUT', 1)]);
+});
+
+test('clasifica AbortError no disparado por el timer como NETWORK_ABORTED', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => {
+      const error = new Error('detalle sensible de aborto');
+      error.name = 'AbortError';
+      throw error;
+    },
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'accounts' }),
+    DataverseRequestError,
+  );
+  assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_ABORTED')]);
+});
+
+test('clasifica código ERR_INVALID_URL sin registrar la URL inválida', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => {
+      const error = new TypeError('https://sensitive.invalid/?tenant=secret');
+      error.code = 'ERR_INVALID_URL';
+      throw error;
+    },
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'accounts' }),
+    DataverseRequestError,
+  );
+  assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_INVALID_URL')]);
+  assert.doesNotMatch(JSON.stringify(events), /sensitive|tenant|https:\/\//);
+});
+
+test('clasifica un rechazo fetch sin señales conocidas como NETWORK_UNKNOWN', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => {
+      throw new Error('detalle sensible desconocido');
+    },
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'accounts' }),
+    DataverseRequestError,
+  );
+  assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_UNKNOWN')]);
+});
+
+test('fallo de token no ejecuta fetch ni se clasifica como red Dataverse', async () => {
+  const events = [];
+  let fetchCalled = false;
+  const tokenError = new Error('token sensible');
+  tokenError.statusCode = 502;
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => { throw tokenError; } },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return jsonResponse({ value: [] });
+    },
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'accounts' }),
+    (error) => error === tokenError,
+  );
+  assert.equal(fetchCalled, false);
+  assert.deepEqual(events, []);
+});
+
+test('rechaza baseUrl inválida con un error local sanitizado', () => {
+  assert.throws(
+    () => createDataverseClient({
+      baseUrl: 'tenant=sensible no es una URL',
+      tokenProvider: { getToken: async () => 'access-token' },
+      fetchImpl: async () => jsonResponse({ value: [] }),
+    }),
+    (error) => error.message === 'DataverseClient: "baseUrl" inválida.'
+      && !error.message.includes('tenant=sensible'),
   );
 });
 

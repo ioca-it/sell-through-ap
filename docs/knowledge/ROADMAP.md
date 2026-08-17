@@ -1,5 +1,26 @@
 # Roadmap aprobado
 
+## Phase1-059 — Diagnose Render to Dataverse Network Failure
+
+Dataverse Client queda **NETWORK CATCH ISOLATED / SAFE TRANSPORT CLASSIFICATION
+ADDED / PRODUCTIVE CAUSE PENDING / NOT DEPLOYED / NOT ACTIVATED**. Solo el
+rechazo de fetch después de adquirir el token backend puede emitir ahora
+`DATAVERSE_NETWORK_ERROR`; token, preparación del request y respuesta HTTP
+mantienen fronteras separadas. La señal se limita a cinco categorías seguras,
+timeout configurado y estado booleano de token/base URL, sin error crudo ni
+datos sensibles.
+
+El timeout se conserva en 10 000 ms y sigue compartido por las consultas
+Product/Customer. La comparación Git confirma que Phase1-057 no modificó el
+transporte y no introdujo la transición observada de HTTP 200 a fallo de red.
+No se cambia lógica Product, mappings, filtros, fuentes, autenticación,
+variables ni infraestructura.
+
+Siguiente acción exacta: después de revisión y autorización separada, realizar
+checkpoint/deploy solo del backend instrumentado y una única revalidación
+Product autenticada para capturar la categoría segura. No ejecutar otro smoke
+antes del deploy ni activar `VITE_PRODUCT_SOURCE=dataverse`.
+
 ## Phase1-055 — Correct Product URL Logical Name and Remove Temporary Diagnostics
 
 Maestro Producto queda **PRODUCT URL LOGICAL NAME CORRECTED / TEMPORARY

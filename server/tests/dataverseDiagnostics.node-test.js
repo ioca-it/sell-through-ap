@@ -98,8 +98,12 @@ test('clasifica fallos de transporte sin registrar el error o stack', async () =
     tokenProvider: { getToken: async () => 'access-token-sensitive' },
     diagnosticLogger: (event) => events.push(event),
     fetchImpl: async () => {
-      const error = new Error('network secret CL0000041');
-      error.stack = 'stack with Authorization Bearer jwt-sensitive';
+      const error = new TypeError([
+        'network secret CL0000041',
+        'https://organization.crm.dynamics.com/api/data/v9.2/accounts?$filter=sensitive',
+        'Authorization Bearer access-token-sensitive',
+      ].join(' '));
+      error.stack = 'stack with Authorization Bearer jwt-sensitive tenant-sensitive';
       throw error;
     },
   });
@@ -114,6 +118,14 @@ test('clasifica fallos de transporte sin registrar el error o stack', async () =
     operation: 'retrieveMultiple',
     failureType: 'network',
     structuredErrorMetadata: false,
+    networkCategory: 'NETWORK_FETCH_FAILED',
+    timeoutConfiguredMs: 10000,
+    tokenAcquired: true,
+    baseUrlConfigured: true,
+    baseUrlProtocolValid: true,
   }]);
-  assert.doesNotMatch(JSON.stringify(events), /secret|CL0000041|Authorization|stack|jwt-sensitive/);
+  assert.doesNotMatch(
+    JSON.stringify(events),
+    /secret|CL0000041|Authorization|stack|jwt-sensitive|tenant|\$filter|https:\/\//,
+  );
 });

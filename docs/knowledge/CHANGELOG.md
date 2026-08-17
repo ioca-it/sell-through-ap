@@ -1,5 +1,36 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-059
+
+### Diagnosticado
+
+- El catch amplio de `retrievePage` emitía `DATAVERSE_NETWORK_ERROR` para toda
+  excepción posterior a adquirir el token; no distinguía timeout, aborto,
+  TypeError de fetch, URL inválida por código seguro u otro rechazo.
+- La adquisición del token ocurre antes de fetch y sus fallos no producen un
+  diagnóstico falso de red Dataverse.
+- Phase1-057 no modificó fetch, AbortController, headers ni aceptación del
+  response; no introdujo una regresión de transporte.
+
+### Implementado
+
+- Solo el catch estrecho de `fetchImpl` emite ahora el diagnóstico de red con
+  `NETWORK_TIMEOUT`, `NETWORK_ABORTED`, `NETWORK_FETCH_FAILED`,
+  `NETWORK_INVALID_URL` o `NETWORK_UNKNOWN`.
+- El evento añade únicamente `timeoutConfiguredMs`, `tokenAcquired`,
+  `baseUrlConfigured` y `baseUrlProtocolValid`; no registra error/message/stack
+  originales ni URL, query, headers, tokens, secretos o datos de negocio.
+- El timeout permanece en 10 000 ms, con la misma implementación mediante
+  AbortController y el mismo cliente compartido por Product y Customer.
+
+### Alcance
+
+- Sin cambios en `productpricelevels`, `crbbe_urlproducto`, mappings, filtros,
+  pivot USA/CHINA, precios nullable, conflictos, FormattedValue, `fechaStr`,
+  contratos Product/Customer, MSAL/JWT, variables, frontend o infraestructura.
+- La causa productiva exacta queda pendiente de una revalidación posterior al
+  deploy instrumentado; no se asume que Dataverse esté caído.
+
 ## 2026-08-17 — PHASE1-055
 
 ### Corregido

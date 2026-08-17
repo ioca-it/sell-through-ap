@@ -8,6 +8,65 @@ import {
 export const DATAVERSE_FORMATTED_VALUE_ANNOTATION =
   'OData.Community.Display.V1.FormattedValue';
 
+const DATAVERSE_NETWORK_CATEGORIES = Object.freeze({
+  TIMEOUT: 'NETWORK_TIMEOUT',
+  ABORTED: 'NETWORK_ABORTED',
+  FETCH_FAILED: 'NETWORK_FETCH_FAILED',
+  INVALID_URL: 'NETWORK_INVALID_URL',
+  UNKNOWN: 'NETWORK_UNKNOWN',
+});
+
+const FETCH_FAILURE_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
+const readSafeErrorCodes = (error) => [error?.code, error?.cause?.code]
+  .filter((code) => typeof code === 'string')
+  .map((code) => code.toUpperCase());
+
+const classifyDataverseNetworkError = ({ error, timeoutTriggered }) => {
+  if (timeoutTriggered) return DATAVERSE_NETWORK_CATEGORIES.TIMEOUT;
+
+  const safeCodes = readSafeErrorCodes(error);
+  if (safeCodes.includes('ERR_INVALID_URL')) {
+    return DATAVERSE_NETWORK_CATEGORIES.INVALID_URL;
+  }
+  if (error?.name === 'AbortError' || safeCodes.includes('ABORT_ERR')) {
+    return DATAVERSE_NETWORK_CATEGORIES.ABORTED;
+  }
+  if (error instanceof TypeError
+    || error?.name === 'TypeError'
+    || safeCodes.some((code) => FETCH_FAILURE_CODES.has(code))) {
+    return DATAVERSE_NETWORK_CATEGORIES.FETCH_FAILED;
+  }
+  return DATAVERSE_NETWORK_CATEGORIES.UNKNOWN;
+};
+
+const createNetworkDiagnostic = ({
+  error,
+  timeoutTriggered,
+  timeoutConfiguredMs,
+  tokenAcquired,
+  baseUrlConfigured,
+  baseUrlProtocolValid,
+}) => Object.freeze({
+  ...createDataverseNetworkDiagnostic(),
+  networkCategory: classifyDataverseNetworkError({ error, timeoutTriggered }),
+  timeoutConfiguredMs,
+  tokenAcquired: Boolean(tokenAcquired),
+  baseUrlConfigured: Boolean(baseUrlConfigured),
+  baseUrlProtocolValid: Boolean(baseUrlProtocolValid),
+});
+
 const createPreferHeader = (includeAnnotations) => {
   if (includeAnnotations === undefined) return {};
   if (!Array.isArray(includeAnnotations)
@@ -67,7 +126,8 @@ export const createDataverseClient = ({
   timeoutMs = 10000,
   diagnosticLogger,
 } = {}) => {
-  if (typeof baseUrl !== 'string' || baseUrl.trim() === '') {
+  const baseUrlConfigured = typeof baseUrl === 'string' && baseUrl.trim() !== '';
+  if (!baseUrlConfigured) {
     throw new Error('DataverseClient: falta "baseUrl".');
   }
   if (!tokenProvider || typeof tokenProvider.getToken !== 'function') {
@@ -79,8 +139,18 @@ export const createDataverseClient = ({
   if (diagnosticLogger !== undefined && typeof diagnosticLogger !== 'function') {
     throw new Error('DataverseClient: Diagnostic Logger inválido.');
   }
+  if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('DataverseClient: timeout inválido.');
+  }
 
-  const dataverseOrigin = new URL(baseUrl).origin;
+  let parsedBaseUrl;
+  try {
+    parsedBaseUrl = new URL(baseUrl);
+  } catch {
+    throw new Error('DataverseClient: "baseUrl" inválida.');
+  }
+  const baseUrlProtocolValid = parsedBaseUrl.protocol === 'https:';
+  const dataverseOrigin = parsedBaseUrl.origin;
   const createQueryUrl = ({
     entitySet,
     select,
@@ -104,22 +174,55 @@ export const createDataverseClient = ({
 
   const retrievePage = async ({ url, includeAnnotations }) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    let dataverseRequestStarted = false;
+    let timeoutTriggered = false;
+    const timeout = setTimeout(() => {
+      timeoutTriggered = true;
+      controller.abort();
+    }, timeoutMs);
     try {
-      const token = await tokenProvider.getToken();
-      dataverseRequestStarted = true;
-      const response = await fetchImpl(url, {
-        method: 'GET',
-        headers: {
+      let token;
+      try {
+        token = await tokenProvider.getToken();
+      } catch (error) {
+        if (error?.statusCode === 502) throw error;
+        throw new DataverseRequestError();
+      }
+
+      let requestHeaders;
+      try {
+        requestHeaders = {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
           'OData-MaxVersion': '4.0',
           'OData-Version': '4.0',
           ...createPreferHeader(includeAnnotations),
-        },
-        signal: controller.signal,
-      });
+        };
+      } catch {
+        throw new DataverseRequestError();
+      }
+
+      let response;
+      try {
+        response = await fetchImpl(url, {
+          method: 'GET',
+          headers: requestHeaders,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        emitDataverseDiagnostic(
+          createNetworkDiagnostic({
+            error,
+            timeoutTriggered,
+            timeoutConfiguredMs: timeoutMs,
+            tokenAcquired: true,
+            baseUrlConfigured,
+            baseUrlProtocolValid,
+          }),
+          diagnosticLogger,
+        );
+        throw new DataverseRequestError();
+      }
+
       if (!response.ok) {
         const diagnostic = await inspectDataverseHttpFailure(response);
         emitDataverseDiagnostic(diagnostic, diagnosticLogger);
@@ -153,13 +256,6 @@ export const createDataverseClient = ({
           ? payload['@odata.nextLink']
           : null,
       };
-    } catch (error) {
-      if (error instanceof DataverseRequestError) throw error;
-      if (dataverseRequestStarted) {
-        emitDataverseDiagnostic(createDataverseNetworkDiagnostic(), diagnosticLogger);
-      }
-      if (error?.statusCode === 502) throw error;
-      throw new DataverseRequestError();
     } finally {
       clearTimeout(timeout);
     }
