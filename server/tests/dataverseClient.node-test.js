@@ -6,6 +6,13 @@ import {
   DataverseRequestError,
 } from '../src/integrations/dataverse/dataverseClient.js';
 
+const jsonResponse = (payload, { contentType = 'application/json; charset=utf-8' } = {}) => (
+  new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { 'Content-Type': contentType },
+  })
+);
+
 test('centraliza token, headers OData y parámetros internos', async () => {
   let request;
   const client = createDataverseClient({
@@ -48,9 +55,55 @@ test('omite Prefer cuando el consumidor no solicita anotaciones', async () => {
     },
   });
 
-  await client.retrieveMultiple({ entitySet: 'accounts' });
+  assert.deepEqual(await client.retrieveMultiple({ entitySet: 'accounts' }), []);
 
   assert.equal(Object.hasOwn(request.options.headers, 'Prefer'), false);
+});
+
+test('acepta el contrato estándar Dataverse 200 con @odata.context y value poblado', async () => {
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async () => jsonResponse({
+      '@odata.context': 'https://organization.crm.dynamics.com/api/data/v9.2/$metadata#productpricelevels',
+      value: [{ syntheticId: 1 }],
+    }),
+  });
+
+  assert.deepEqual(
+    await client.retrieveMultiple({ entitySet: 'productpricelevels' }),
+    [{ syntheticId: 1 }],
+  );
+});
+
+test('acepta el contrato estándar Dataverse 200 con value vacío', async () => {
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async () => jsonResponse({
+      '@odata.context': 'https://organization.crm.dynamics.com/api/data/v9.2/$metadata#accounts',
+      value: [],
+    }),
+  });
+
+  assert.deepEqual(await client.retrieveMultiple({ entitySet: 'accounts' }), []);
+});
+
+test('acepta JSON válido aunque Content-Type no sea JSON porque no lo usa como condición', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => jsonResponse({ value: [{ syntheticId: 1 }] }, {
+      contentType: 'text/plain',
+    }),
+  });
+
+  assert.deepEqual(await client.retrieveMultiple({ entitySet: 'accounts' }), [
+    { syntheticId: 1 },
+  ]);
+  assert.deepEqual(events, []);
 });
 
 test('retrieveAll sigue la paginación Dataverse sin aceptar otro origen', async () => {
@@ -61,15 +114,13 @@ test('retrieveAll sigue la paginación Dataverse sin aceptar otro origen', async
     fetchImpl: async (url) => {
       requests.push(url);
       if (requests.length === 1) {
-        return {
-          ok: true,
-          json: async () => ({
-            value: [{ id: 1 }],
-            '@odata.nextLink': 'https://organization.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=next',
-          }),
-        };
+        return jsonResponse({
+          '@odata.context': 'https://organization.crm.dynamics.com/api/data/v9.2/$metadata#accounts',
+          value: [{ id: 1 }],
+          '@odata.nextLink': 'https://organization.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=next',
+        });
       }
-      return { ok: true, json: async () => ({ value: [{ id: 2 }] }) };
+      return jsonResponse({ value: [{ id: 2 }] });
     },
   });
 
@@ -82,18 +133,100 @@ test('retrieveAll sigue la paginación Dataverse sin aceptar otro origen', async
   const invalidClient = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',
     tokenProvider: { getToken: async () => 'access-token' },
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({
+    fetchImpl: async () => jsonResponse({
         value: [],
         '@odata.nextLink': 'https://attacker.invalid/api/data/v9.2/accounts',
-      }),
     }),
   });
   await assert.rejects(
     invalidClient.retrieveAll({ entitySet: 'accounts' }),
     DataverseRequestError,
   );
+});
+
+test('clasifica 200 con JSON válido y shape inesperado como invalid_response', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => jsonResponse({
+      value: {},
+      '@odata.nextLink': 'https://organization.crm.dynamics.com/api/data/v9.2/productpricelevels?$skiptoken=unused',
+    }, { contentType: 'text/plain' }),
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'productpricelevels' }),
+    DataverseRequestError,
+  );
+  assert.deepEqual(events, [{
+    component: 'DataverseClient',
+    diagnosticId: 'DATAVERSE_UPSTREAM_ERROR',
+    operation: 'retrieveMultiple',
+    failureType: 'invalid_response',
+    upstreamStatus: 200,
+    structuredErrorMetadata: false,
+    hasValueArray: false,
+    hasNextLink: true,
+    bodyType: 'object',
+    contentTypeValid: false,
+    parseSuccess: true,
+  }]);
+});
+
+test('clasifica 200 con JSON inválido como invalid_response sin registrar el body', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => new Response('{json-invalido', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; odata.metadata=minimal' },
+    }),
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'productpricelevels' }),
+    DataverseRequestError,
+  );
+  assert.deepEqual(events, [{
+    component: 'DataverseClient',
+    diagnosticId: 'DATAVERSE_UPSTREAM_ERROR',
+    operation: 'retrieveMultiple',
+    failureType: 'invalid_response',
+    upstreamStatus: 200,
+    structuredErrorMetadata: false,
+    hasValueArray: false,
+    hasNextLink: false,
+    bodyType: 'unparsed',
+    contentTypeValid: true,
+    parseSuccess: false,
+  }]);
+  assert.doesNotMatch(JSON.stringify(events), /json-invalido/);
+});
+
+test('clasifica body vacío 200 como fallo de parse JSON', async () => {
+  const events = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    diagnosticLogger: (event) => events.push(event),
+    fetchImpl: async () => new Response('', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  });
+
+  await assert.rejects(
+    client.retrieveMultiple({ entitySet: 'accounts' }),
+    DataverseRequestError,
+  );
+  assert.equal(events[0].failureType, 'invalid_response');
+  assert.equal(events[0].parseSuccess, false);
+  assert.equal(events[0].bodyType, 'unparsed');
+  assert.equal(events[0].contentTypeValid, true);
 });
 
 test('normaliza errores Dataverse sin propagar respuestas técnicas', async () => {

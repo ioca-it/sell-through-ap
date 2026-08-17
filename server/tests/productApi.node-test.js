@@ -2,8 +2,15 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/app/createApp.js';
-import { DataverseRequestError } from '../src/integrations/dataverse/dataverseClient.js';
-import { ProductMasterConflictError } from '../src/integrations/dataverse/productPriceLevelGateway.js';
+import {
+  createDataverseClient,
+  DataverseRequestError,
+} from '../src/integrations/dataverse/dataverseClient.js';
+import {
+  createProductPriceLevelGateway,
+  ProductMasterConflictError,
+} from '../src/integrations/dataverse/productPriceLevelGateway.js';
+import { createProductService } from '../src/modules/products/productService.js';
 
 const product = Object.freeze({
   sku: 'SKU-001',
@@ -59,6 +66,46 @@ test('expone únicamente la carga funcional de Maestro Producto', async () => {
     assert.deepEqual((await response.json()).products, [product]);
   });
   assert.equal(calls, 1);
+});
+
+test('flujo Product procesa el contrato estándar Dataverse 200 hasta la API', async () => {
+  const baseRow = {
+    crbbe_nombremarca: product.brand,
+    crbbe_sku: product.sku,
+    crbbe_nombreproducto: product.productName,
+    crbbe_nombrecategoria: product.category,
+    crbbe_validohasta: product.discontinuationDate,
+    createdon: product.creationDate,
+    crbbe_clasificacioncomercial: product.level,
+    crbbe_etapa: product.status,
+    crbbe_imagenproducto: product.imageUrl,
+    crbbe_urlproducto: product.productUrl,
+    crbbe_companiacompradora: 'IOCA USA INC',
+  };
+  const dataverseClient = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async () => new Response(JSON.stringify({
+      '@odata.context': 'https://organization.crm.dynamics.com/api/data/v9.2/$metadata#productpricelevels',
+      value: [
+        { ...baseRow, crbbe_origen: 'USA', amount: product.priceUSA },
+        { ...baseRow, crbbe_origen: 'CHINA', amount: product.priceChina },
+      ],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; odata.metadata=minimal' },
+    }),
+  });
+  const productService = createProductService({
+    productGateway: createProductPriceLevelGateway({ dataverseClient }),
+  });
+  const app = createTestApp(productService);
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/products/master`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { products: [product] });
+  });
 });
 
 test('preserva null y cero en el contrato HTTP Product', async () => {

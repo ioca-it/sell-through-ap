@@ -25,6 +25,32 @@ const createPreferHeader = (includeAnnotations) => {
   };
 };
 
+const readInvalidResponseMetadata = ({ response, payload, parseSuccess }) => {
+  const contentType = response?.headers?.get?.('content-type');
+  const mediaType = typeof contentType === 'string'
+    ? contentType.split(';', 1)[0].trim().toLowerCase()
+    : '';
+  const bodyType = parseSuccess
+    ? (payload === null ? 'null' : Array.isArray(payload) ? 'array' : typeof payload)
+    : 'unparsed';
+  const isObjectBody = payload !== null && typeof payload === 'object';
+
+  return Object.freeze({
+    hasValueArray: parseSuccess && Array.isArray(payload?.value),
+    hasNextLink: parseSuccess
+      && isObjectBody
+      && Object.hasOwn(payload, '@odata.nextLink'),
+    bodyType,
+    contentTypeValid: mediaType === 'application/json' || mediaType.endsWith('+json'),
+    parseSuccess,
+  });
+};
+
+const createInvalidResponseDiagnostic = ({ response, payload, parseSuccess }) => Object.freeze({
+  ...createDataverseInvalidResponseDiagnostic(response?.status),
+  ...readInvalidResponseMetadata({ response, payload, parseSuccess }),
+});
+
 export class DataverseRequestError extends Error {
   constructor(message = 'No fue posible consultar Dataverse.') {
     super(message);
@@ -105,14 +131,18 @@ export const createDataverseClient = ({
         payload = await response.json();
       } catch {
         emitDataverseDiagnostic(
-          createDataverseInvalidResponseDiagnostic(response.status),
+          createInvalidResponseDiagnostic({
+            response,
+            payload: undefined,
+            parseSuccess: false,
+          }),
           diagnosticLogger,
         );
         throw new DataverseRequestError();
       }
       if (!Array.isArray(payload?.value)) {
         emitDataverseDiagnostic(
-          createDataverseInvalidResponseDiagnostic(response.status),
+          createInvalidResponseDiagnostic({ response, payload, parseSuccess: true }),
           diagnosticLogger,
         );
         throw new DataverseRequestError();

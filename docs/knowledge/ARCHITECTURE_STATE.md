@@ -2,6 +2,10 @@
 
 ## Fase actual
 
+PHASE1-057 queda **PASS — INVALID 200 CONDITION IDENTIFIED / PRODUCT ROOT CAUSE NOT YET CONFIRMED / SAFE RESPONSE-SHAPE OBSERVABILITY ADDED / NOT DEPLOYED / NOT ACTIVATED**. Con `response.ok = true`, Dataverse Client emite `DATAVERSE_UPSTREAM_ERROR / invalid_response` en dos casos: `response.json()` lanza durante el parse, o el JSON parseado no cumple `Array.isArray(payload?.value)`. El evento previo no distinguía ambas rutas, por lo que la causa específica de la respuesta Product observada no puede confirmarse sin una nueva ejecución autorizada.
+
+El contrato estándar Dataverse `{ "@odata.context": "...", "value": [...] }` ya es compatible. `value: []` también es válido; `retrieveAll` sigue un `@odata.nextLink` string del mismo origen y path API permitido, mientras `retrieveMultiple` devuelve solo `value`. Content-Type no participa en la aceptación actual: `response.json()` decide el parse. Sin cambiar esa lógica, el diagnóstico inválido incorpora exclusivamente `hasValueArray`, `hasNextLink`, `bodyType`, `contentTypeValid` y `parseSuccess`; no registra body, payload Product ni valores comerciales.
+
 PHASE1-055 queda **PASS — PRODUCT URL LOGICAL NAME CORRECTED / TEMPORARY DIAGNOSTICS REMOVED / NOT DEPLOYED / NOT ACTIVATED**. El LogicalName Dataverse confirmado para el URL de Product Master es `crbbe_urlproducto`; el nombre anterior `producturl` era incorrecto. Product Price Level Gateway usa ahora `crbbe_urlproducto` en `$select` y lo normaliza exclusivamente como `productUrl`, con `trim()` y fallback `""` para `null`, `undefined` o texto vacío. El contrato público conserva `productUrl` y no expone el nombre físico.
 
 Phase1-046 y Phase1-048/050/052 quedaron retirados del runtime: se eliminaron los módulos de probes/metadata, sus imports y hooks en el gateway, el estado once-per-process, las rutas temporales del Dataverse Client y las pruebas exclusivas del diagnóstico. No quedan consultas runtime a `EntityDefinitions`/`Attributes` ni eventos `PHASE1_046_PRODUCT_QUERY_PROBE` o `PHASE1_048_PRODUCT_URL_METADATA`. El diagnóstico general sanitizado Dataverse de Phase1-020 permanece intacto y continúa clasificando fallos HTTP/OData, respuestas inválidas y red.
@@ -12,7 +16,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-055 — Correct Product URL Logical Name and Remove Temporary Diagnostics.
+PHASE1-057 — Diagnose Dataverse Product Invalid 200 Response.
 
 ## Última auditoría aprobada
 
@@ -135,7 +139,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Después de revisar Phase1-055, cualquier checkpoint, deploy backend o revalidación real del endpoint Product requiere autorización separada y debe mantener `VITE_PRODUCT_SOURCE=local`. La activación normal de Product Dataverse permanece como decisión posterior e independiente.
+Después de revisar Phase1-057, la siguiente acción exacta es autorizar por separado un checkpoint/deploy backend y una única revalidación Product para capturar los cinco indicadores sanitizados de la respuesta inválida. Esa evidencia distinguirá fallo de parse de shape sin solicitar ni registrar el payload. Debe mantenerse `VITE_PRODUCT_SOURCE=local`; la activación normal de Product Dataverse permanece como decisión posterior e independiente.
 
 ## Decisiones congeladas
 
