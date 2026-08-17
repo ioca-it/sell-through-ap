@@ -24,6 +24,16 @@ import { getAccessToken } from './auth/customerApiAccessToken.js';
 import { configurationService } from './configuration/configurationService.js';
 import { createCustomerRepository } from './repositories/customerRepository.js';
 import { createCustomerProvider } from './providers/customerProviderFactory.js';
+import {
+  createProductMasterService,
+  getProductMasterErrorMessage,
+} from './application/productMasterService.js';
+import { createProductRepository } from './repositories/productRepository.js';
+import {
+  createProductProvider,
+  normalizeProductSource,
+  PRODUCT_SOURCES,
+} from './providers/productProviderFactory.js';
 
 // La hidratación ocurre en el servicio; mantenerla fuera del componente permite
 // conservar los contratos de caracterización que ejecutan App como función pura.
@@ -51,6 +61,15 @@ const customerSourceRepository = createCustomerRepository({
 });
 const defaultCustomerMasterService = createCustomerMasterService({
   repository: customerSourceRepository,
+});
+const defaultProductSource = normalizeProductSource(import.meta.env.VITE_PRODUCT_SOURCE);
+const defaultProductMasterService = createProductMasterService({
+  repository: createProductRepository({
+    provider: createProductProvider({
+      source: defaultProductSource,
+      getAccessToken,
+    }),
+  }),
 });
 const {
   bucketEOL: BUCKET_EOL,
@@ -293,6 +312,8 @@ const generarInformeEjecutivo = (resultados, config) => {
 
 export default function App({
   customerMasterService = defaultCustomerMasterService,
+  productMasterService = defaultProductMasterService,
+  productSource = defaultProductSource,
   phaseDiscountTable = DEFAULT_PHASE_DISCOUNT_TABLE,
 } = {}) {
   const fase4Referencial = phaseDiscountTable.find((fase) => fase.fase === 4);
@@ -520,13 +541,24 @@ export default function App({
   
   // Validaciones para habilitar navegación
   const configCompleta = config.codigoCliente.trim() !== '' && config.nombreCliente.trim() !== '';
-  const dataCargada = rawMaestro.trim() !== '' && rawInventario.trim() !== '';
+  const dataCargada = (
+    productSource === PRODUCT_SOURCES.DATAVERSE || rawMaestro.trim() !== ''
+  ) && rawInventario.trim() !== '';
   const productosReposicionSugerida = resultados?.recs
     ?.filter((record) => record.reposicionSugerida > 0) ?? [];
 
-  const procesar = () => {
+  const procesar = async () => {
     setError(null);
     try {
+      let normalizedProducts;
+      if (productSource === PRODUCT_SOURCES.DATAVERSE) {
+        try {
+          normalizedProducts = await productMasterService.loadProducts();
+        } catch (productError) {
+          setError(getProductMasterErrorMessage(productError));
+          return;
+        }
+      }
       const processingRepository = createSellThroughRepository({
         rawMaestro,
         rawInventario,
@@ -534,6 +566,7 @@ export default function App({
       });
       const { resultados: nuevosResultados, error: errorProcesamiento } = processSellThrough(
         processingRepository,
+        normalizedProducts === undefined ? undefined : { products: normalizedProducts },
       );
       if (errorProcesamiento) {
         setError(errorProcesamiento);

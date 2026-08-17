@@ -2,8 +2,11 @@ import { createEntraTokenProvider } from '../auth/entraTokenProvider.js';
 import { createCustomerApiAuthenticator } from '../auth/customerApiAuthenticator.js';
 import { createAccountCustomerGateway } from '../integrations/dataverse/accountCustomerGateway.js';
 import { createDataverseClient } from '../integrations/dataverse/dataverseClient.js';
+import { createProductPriceLevelGateway } from '../integrations/dataverse/productPriceLevelGateway.js';
 import { createCustomerService } from '../modules/customers/customerService.js';
+import { createProductService } from '../modules/products/productService.js';
 import { handleCustomerRoutes } from '../routes/customerRoutes.js';
+import { handleProductRoutes } from '../routes/productRoutes.js';
 import { createRateLimiter } from '../security/rateLimiter.js';
 
 const writeJson = (response, statusCode, payload) => {
@@ -32,6 +35,7 @@ const applyCors = ({ request, response, allowedOrigins }) => {
 
 export const createApp = ({
   customerService,
+  productService,
   allowedOrigins,
   authenticator,
   rateLimiter,
@@ -65,7 +69,7 @@ export const createApp = ({
         return;
       }
 
-      if (/^\/api\/customers(?:\/|$)/.test(url.pathname)) {
+      if (/^\/api\/(?:customers|products)(?:\/|$)/.test(url.pathname)) {
         const forwardedFor = request.headers['x-forwarded-for'];
         const ip = typeof forwardedFor === 'string'
           ? forwardedFor.split(',')[0].trim()
@@ -104,7 +108,13 @@ export const createApp = ({
         url,
         customerService,
       });
-      if (!handled) {
+      const productHandled = handled ? false : await handleProductRoutes({
+        request,
+        response,
+        url,
+        productService,
+      });
+      if (!handled && !productHandled) {
         writeJson(response, 404, { error: { code: 'NOT_FOUND', message: 'Ruta no encontrada.' } });
       }
     } catch (error) {
@@ -141,9 +151,12 @@ export const createCustomerApi = ({ config, fetchImpl = globalThis.fetch } = {})
     fetchImpl,
   });
   const customerGateway = createAccountCustomerGateway({ dataverseClient });
+  const productGateway = createProductPriceLevelGateway({ dataverseClient });
   const customerService = createCustomerService({ customerGateway });
+  const productService = createProductService({ productGateway });
   return createApp({
     customerService,
+    productService,
     allowedOrigins: config.allowedOrigins,
     authenticator,
     rateLimiter,

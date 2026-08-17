@@ -55,13 +55,12 @@ export const createDataverseClient = ({
   }
 
   const dataverseOrigin = new URL(baseUrl).origin;
-  const retrieveMultiple = async ({
+  const createQueryUrl = ({
     entitySet,
     select,
     filter,
     orderBy,
     top,
-    includeAnnotations,
   }) => {
     if (typeof entitySet !== 'string' || !/^[A-Za-z0-9_]+$/.test(entitySet)) {
       throw new Error('DataverseClient: Entity Set inválido.');
@@ -74,7 +73,10 @@ export const createDataverseClient = ({
     if (filter) url.searchParams.set('$filter', filter);
     if (orderBy) url.searchParams.set('$orderby', orderBy);
     if (Number.isInteger(top) && top > 0) url.searchParams.set('$top', String(top));
+    return url;
+  };
 
+  const retrievePage = async ({ url, includeAnnotations }) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let dataverseRequestStarted = false;
@@ -115,7 +117,12 @@ export const createDataverseClient = ({
         );
         throw new DataverseRequestError();
       }
-      return payload.value;
+      return {
+        value: payload.value,
+        nextLink: typeof payload['@odata.nextLink'] === 'string'
+          ? payload['@odata.nextLink']
+          : null,
+      };
     } catch (error) {
       if (error instanceof DataverseRequestError) throw error;
       if (dataverseRequestStarted) {
@@ -128,9 +135,45 @@ export const createDataverseClient = ({
     }
   };
 
+  const validateNextLink = (nextLink) => {
+    const url = new URL(nextLink, dataverseOrigin);
+    if (url.origin !== dataverseOrigin || !url.pathname.startsWith('/api/data/v9.2/')) {
+      throw new DataverseRequestError();
+    }
+    return url;
+  };
+
+  const retrieveMultiple = async (query) => {
+    const page = await retrievePage({
+      url: createQueryUrl(query),
+      includeAnnotations: query.includeAnnotations,
+    });
+    return page.value;
+  };
+
+  const retrieveAll = async (query) => {
+    const rows = [];
+    let url = createQueryUrl(query);
+    let pageCount = 0;
+    while (url) {
+      pageCount += 1;
+      if (pageCount > 1000) throw new DataverseRequestError();
+      const page = await retrievePage({
+        url,
+        includeAnnotations: query.includeAnnotations,
+      });
+      rows.push(...page.value);
+      url = page.nextLink ? validateNextLink(page.nextLink) : null;
+    }
+    return rows;
+  };
+
   return Object.freeze({
     retrieveMultiple(query) {
       return retrieveMultiple(query);
+    },
+    retrieveAll(query) {
+      return retrieveAll(query);
     },
   });
 };

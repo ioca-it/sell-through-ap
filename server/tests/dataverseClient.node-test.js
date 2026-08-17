@@ -53,6 +53,49 @@ test('omite Prefer cuando el consumidor no solicita anotaciones', async () => {
   assert.equal(Object.hasOwn(request.options.headers, 'Prefer'), false);
 });
 
+test('retrieveAll sigue la paginación Dataverse sin aceptar otro origen', async () => {
+  const requests = [];
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async (url) => {
+      requests.push(url);
+      if (requests.length === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            value: [{ id: 1 }],
+            '@odata.nextLink': 'https://organization.crm.dynamics.com/api/data/v9.2/accounts?$skiptoken=next',
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ value: [{ id: 2 }] }) };
+    },
+  });
+
+  assert.deepEqual(await client.retrieveAll({ entitySet: 'accounts' }), [
+    { id: 1 },
+    { id: 2 },
+  ]);
+  assert.equal(requests.length, 2);
+
+  const invalidClient = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        value: [],
+        '@odata.nextLink': 'https://attacker.invalid/api/data/v9.2/accounts',
+      }),
+    }),
+  });
+  await assert.rejects(
+    invalidClient.retrieveAll({ entitySet: 'accounts' }),
+    DataverseRequestError,
+  );
+});
+
 test('normaliza errores Dataverse sin propagar respuestas técnicas', async () => {
   const client = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',

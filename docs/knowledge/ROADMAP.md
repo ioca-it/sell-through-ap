@@ -1,5 +1,51 @@
 # Roadmap aprobado
 
+## Phase1-033 — Implement Dataverse Product Master
+
+Maestro Producto queda **IMPLEMENTED / NOT ACTIVATED** sobre el backend portable.
+La fuente autorizada es Dataverse `productpricelevel`; Product Price Level
+Gateway encapsula el mapping físico, filtra en backend exclusivamente `IOCA USA
+INC` o `SAND SPORTS, CORP.`, pagina el conjunto y consolida por SKU el pivot
+`USA -> priceUSA` / `CHINA -> priceChina`.
+
+El contrato externo es `{ sku, productName, brand, category,
+discontinuationDate, creationDate, level, status, imageUrl, productUrl,
+priceUSA, priceChina }`. `level` y `status` solicitan FormattedValue sin asumir
+que los campos sean Choice: la anotación tiene prioridad, un valor fuente
+textual es el único fallback y un código numérico nunca se expone como label.
+
+Si existen importes distintos para un mismo SKU/origen/comprador —o entre los
+dos compradores sin precedencia autorizada— la carga se bloquea con
+`PRODUCT_MASTER_CONFLICT`; no suma, promedia o elige precios. El provider local
+y Master Parser permanecen vigentes, y `VITE_PRODUCT_SOURCE=local` es el default.
+No se modifican Inventario Cliente, EOL, fórmulas, Vercel, Render, Entra o
+Dataverse; no se activa tráfico Product real.
+
+El siguiente paso requiere revisión y autorización separada para activar
+`VITE_PRODUCT_SOURCE=dataverse` y validar el contrato contra el entorno real.
+Render continúa como backend transitorio y Azure como destino definitivo.
+
+## Phase1-032 — Close Dataverse Customer Master Integration
+
+Maestro Cliente queda cerrado como **IMPLEMENTED + PRODUCTION VALIDATED**. En
+producción, Vercel usa `VITE_CUSTOMER_SOURCE=dataverse`, MSAL/Microsoft Entra ID
+entrega el token delegado requerido por Customer API y el backend portable
+alojado transitoriamente en Render accede a Dataverse con su integración
+autorizada separada. La búsqueda por código fue validada, la búsqueda por nombre
+está implementada, la selección sincroniza código, nombre, país y tipo, y la UI
+conserva manejo controlado de cero resultados y errores.
+
+La fuente autorizada es `accounts`; Account Customer Gateway aplica
+`customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4` y
+encapsula todos los nombres físicos. `customerType` procede exclusivamente de
+`new_tipocliente@OData.Community.Display.V1.FormattedValue`, con `trim()` y
+fallback `''`; el valor numérico no se publica y `new_tipoclienteglobal` no se
+consulta por búsqueda.
+
+Siguiente hito lógico: definir y autorizar la migración del Customer API
+portable desde Render hacia Azure, sin seleccionar por anticipado un servicio
+Azure ni cambiar filtros, mappings, contratos, autenticación o providers.
+
 ## Phase1-029 — Resolve Dataverse Customer Type Global Choice Label
 
 Account Customer Gateway obtiene `customerType` desde
@@ -13,7 +59,8 @@ Las tres operaciones solicitan
 Dataverse Client que compone el header `Prefer`. No se consulta metadata ni el
 Global Choice `new_tipoclienteglobal`; permanecen intactos `$select`, filtros
 Phase1-026, límites, orden, escape OData, contratos, autenticación y
-diagnósticos Phase1-020. No se activa Dataverse en Vercel ni se despliega.
+diagnósticos Phase1-020. Phase1-032 registra la activación y validación
+productiva posterior, sin alterar esta implementación.
 
 ## Phase1-026 — Correct Dataverse Customer Filters
 
@@ -26,20 +73,19 @@ lectura exacta por código.
 
 Phase1-022 y Phase1-024 se retiran por completo después de cumplir su propósito;
 Phase1-020 permanece disponible para observabilidad segura. El `$select`,
-`new_tipocliente -> customerType`, contratos, autenticación y variables no
-cambian. `VITE_CUSTOMER_SOURCE=local` continúa vigente y cualquier checkpoint o
-despliegue requiere autorización independiente.
+el campo seleccionado `new_tipocliente`, contratos, autenticación y variables
+no cambian. La activación productiva y el mapping final por FormattedValue se
+registran posteriormente en Phase1-032 y Phase1-029, respectivamente.
 
 ## Phase1-016 — Map Dataverse Customer Type
 
-El contrato Customer de Dataverse incorpora el mapping confirmado
-`new_tipocliente` → `customerType` exclusivamente en Account Customer Gateway.
-Las búsquedas por código/nombre y la lectura exacta seleccionan el nuevo campo,
-normalizan `null` o `undefined` a `''` y preservan los filtros de elegibilidad
-Phase1-015. UI, autenticación y despliegue permanecen sin cambios.
+Phase1-016 incorporó `new_tipocliente` al `$select` exclusivamente dentro de
+Account Customer Gateway. Phase1-029 sustituyó su normalización inicial por el
+mapping definitivo desde FormattedValue, con fallback `''` y sin exponer el
+valor numérico. UI, autenticación y despliegue permanecieron sin cambios.
 
-La activación de `VITE_CUSTOMER_SOURCE=dataverse` y la validación interactiva
-real de `customerType` continúan sujetas a revisión y autorización posteriores.
+La activación de `VITE_CUSTOMER_SOURCE=dataverse` y la validación productiva
+posteriores quedan cerradas por Phase1-032.
 
 ## Phase1-012 — Activate Dataverse Customer Provider in UI
 
@@ -50,10 +96,10 @@ selección única, sincronización de cuatro campos, cero resultados, sesión
 ausente, errores sanitizados, timeout, deduplicación y respuestas obsoletas
 quedan implementados y cubiertos.
 
-No se activa todavía la fuente: `VITE_CUSTOMER_SOURCE=local` permanece vigente.
-El siguiente paso requiere revisar este hito, autorizar el cambio en Vercel y
-validar interactivamente ambos combobox. `customerType` conserva fallback vacío
-hasta confirmar su columna lógica; Render continúa transitorio y Azure futuro.
+En ese hito no se activó todavía la fuente. Phase1-032 registra posteriormente
+`VITE_CUSTOMER_SOURCE=dataverse` en producción y el cierre de la integración;
+Phase1-029 ya había confirmado el mapping FormattedValue de `customerType`.
+Render continúa transitorio y Azure permanece como destino futuro.
 
 ## Phase1-011 — Close Real Dataverse Smoke Test
 
@@ -64,10 +110,10 @@ delegated access token → Render Customer API → JWT validation → backend
 `CL0000041` devolvió exactamente una coincidencia sin almacenar el payload real
 del cliente, JWT, headers `Authorization`, secretos ni claims sensibles.
 
-`VITE_CUSTOMER_SOURCE=local` permanece vigente y el arnés temporal no se
-elimina. Los pendientes reales son activar el Customer Provider Dataverse en
-UI, completar `customerType` real, validar búsqueda por nombre y validar manejo
-de errores/cero resultados. Render se mantiene como backend transitorio y Azure
+En ese hito `VITE_CUSTOMER_SOURCE=local` permaneció vigente y el arnés temporal
+no se eliminó. Phase1-032 cierra posteriormente la activación del Customer
+Provider Dataverse, `customerType`, búsqueda por nombre y manejo de
+errores/cero resultados. Render se mantiene como backend transitorio y Azure
 como destino futuro.
 
 ## Hito Astrid 2026-08-11 — Cambios confirmados de Dashboard
@@ -79,9 +125,9 @@ Implementado sin ampliar fuentes ni infraestructura:
 - Pareto conserva su cálculo y presenta Vitales/Complementarios con A verde, B azul y C rojo.
 - Reposición Sugerida totaliza SKU incluidos y unidades ya calculadas; Inventario en Tránsito agrega valor por SKU y total con el costo aplicado vigente.
 - Maestro Producto incorpora `creationDate`; Producto Nuevo aplica con antigüedad estrictamente menor a 90 días y Nuevos no presentes cruza Maestro contra Inventario sin generar reposición.
-- Customer incorpora `customerType` con fallback vacío y presentación en Configuración, sin mapping físico Dataverse.
+- Customer incorpora `customerType` con fallback vacío y presentación en Configuración; el mapping físico, ausente en ese hito, quedó resuelto por Phase1-029 y cerrado en producción por Phase1-032.
 
-Pendientes no implementados: significado de Sin origen, redefinición de buckets o fases EOL, reposición de productos nuevos, fórmula por Tipo de Cliente, mapping Dataverse de `customerType`, MSAL, Entra, Render, Azure y conexiones reales.
+Pendientes vigentes de esa lista: significado de Sin origen, redefinición de buckets o fases EOL, reposición de productos nuevos, fórmula por Tipo de Cliente y migración a Azure. Mapping Dataverse de `customerType`, MSAL, Entra, Render y conexión real de Maestro Cliente quedaron resueltos posteriormente y cerrados por Phase1-032.
 
 ## Fase 1.1B — Phase1-003 Real Customer Transport
 
@@ -93,8 +139,9 @@ Dataverse y el frontend conserva Customer Repository, Application Service,
 combobox y protección de respuestas obsoletas.
 
 Render queda como hosting temporal configurable y Azure como migración futura;
-ninguno forma parte de la lógica Customer. Despliegue, secretos, permisos y smoke
-test real continúan pendientes de autorización/ejecución manual.
+ninguno forma parte de la lógica Customer. Despliegue, secretos, permisos y
+validación real, pendientes al finalizar este hito, quedaron completados para
+la integración vigente y cerrados por Phase1-032.
 
 ## Fase 1.1 — Phase1-002 Dataverse Maestro Cliente
 
@@ -152,7 +199,7 @@ Este documento consolida únicamente las líneas ya registradas en `docs/ROADMAP
 - El código V1 ya contiene dashboard, informe ejecutivo, reposición sugerida, Maestro de Productos, Pareto, Tier y motor EOL hasta F3.
 - No se observa una capacidad separada de Inventario en Tránsito.
 - No se observa Fase 4 en la tabla de fases actual.
-- Application Service y Domain Service están implementados parcialmente; desde Prompt 022 existe Portfolio Analysis y desde Prompt 024 Executive Report MVP como Business Services separados. Repository y Local Provider de sell-through conservan su versión síncrona; Configuration Center posee una foundation limitada a tres pilotos. Phase1-002 agregó la frontera asíncrona de Maestro Cliente y Phase1-003 su API/transport real portable, pendiente únicamente de configuración, despliegue y validación contra el entorno real.
+- Application Service y Domain Service están implementados parcialmente; desde Prompt 022 existe Portfolio Analysis y desde Prompt 024 Executive Report MVP como Business Services separados. Repository y Local Provider de sell-through conservan su versión síncrona; Configuration Center posee una foundation limitada a tres pilotos. Phase1-002 agregó la frontera asíncrona de Maestro Cliente, Phase1-003 su API/transport real portable y Phase1-032 cierra configuración, despliegue y validación productiva de esa integración.
 
 ### Posición de Portfolio Analysis Service
 
@@ -168,7 +215,11 @@ Prompt 024 crea un Business Service de presentación que consume exclusivamente 
 
 ### Siguiente hito técnico
 
-Integrar el DTO `executiveReport` en Dashboard mediante un prompt aprobado; después definir Recommendation Engine sin asumir reglas o fuentes nuevas.
+Revisar y autorizar por separado cualquier activación productiva de Maestro
+Producto. En paralelo, la migración del backend portable de Render a Azure
+continúa pendiente, sin definir por anticipado el servicio Azure ni alterar
+contratos o fronteras. Executive Report y Recommendation Engine permanecen
+como líneas funcionales independientes.
 
 La presencia parcial de nombres del roadmap en el código no equivale a declarar entregado un hito. Solo un acuerdo o prompt aprobado puede cambiar su estado formal.
 

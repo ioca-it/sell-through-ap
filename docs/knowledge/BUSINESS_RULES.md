@@ -24,6 +24,11 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - Categoría vacía en un SKU presente en Maestro se muestra como `—`; `SIN CATEGORIA` queda reservado a SKU sin correspondencia en Maestro.
 - Los costos eliminan `$` y comas antes de convertirse a número; un valor inválido queda en cero.
 - El contrato incorpora `creationDate`; el origen local reconoce el encabezado normalizado `creationDate` y conserva `null` cuando falta o no puede interpretarse.
+- La alternativa Dataverse usa exclusivamente `productpricelevel` filtrado en backend por comprador `IOCA USA INC` o `SAND SPORTS, CORP.`; no descarga compañías ajenas para filtrarlas en React.
+- Dataverse consolida por SKU: origen `USA` alimenta `priceUSA` y origen `CHINA` alimenta `priceChina`; el precio ausente o `amount null|undefined` conserva cero compatible.
+- Importes distintos para un mismo SKU/origen/comprador, o entre compradores sin precedencia autorizada, son conflicto funcional: la carga se bloquea y no suma, promedia ni selecciona un valor.
+- `level` y `status` usan FormattedValue cuando existe. Sin anotación solo se acepta un valor fuente textual; códigos numéricos Choice no se convierten ni se exponen como etiquetas.
+- `imageUrl` y `productUrl` se conservan como atributos del Product y del detalle SKU sin introducir lógica Dataverse en UI.
 
 ### BR-004 — Inventario del Cliente
 

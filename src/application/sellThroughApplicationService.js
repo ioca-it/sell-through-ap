@@ -14,6 +14,7 @@ import { assembleRecord } from '../domain/parser/recordAssembler.js';
 import { PortfolioAnalysisService } from '../domain/portfolio/PortfolioAnalysisService.js';
 import { ExecutiveReportService } from '../domain/report/ExecutiveReportService.js';
 import { findNewProductsMissingInventory } from '../domain/product/newProduct.js';
+import { indexProductsBySku } from '../domain/product/product.js';
 import { listarFasesEOLDisponibles } from '../domain/eol/eolEngine.js';
 import { primerDiaMes } from '../utils/dateUtils.js';
 
@@ -227,17 +228,21 @@ export const calculatePareto = (records) => {
 };
 
 // Ejecuta el pipeline síncrono usando únicamente los contratos del Repository.
-export const processSellThrough = (repository) => {
+export const processSellThrough = (repository, { products } = {}) => {
   const rawMaestro = repository.getMaestro();
   const rawInventario = repository.getInventario();
-  if (!rawMaestro.trim()) {
+  const usesNormalizedProducts = products !== undefined;
+  if ((!usesNormalizedProducts && !rawMaestro.trim())
+    || (usesNormalizedProducts && (!Array.isArray(products) || products.length === 0))) {
     return { resultados: null, error: 'Falta cargar el Maestro de Productos.' };
   }
   if (!rawInventario.trim()) {
     return { resultados: null, error: 'Falta cargar el Inventario del Cliente.' };
   }
 
-  const masterResult = parseMaster(rawMaestro);
+  const masterResult = usesNormalizedProducts
+    ? { masterBySku: indexProductsBySku(products), error: null }
+    : parseMaster(rawMaestro);
   if (masterResult.error) {
     return { resultados: null, error: masterResult.error };
   }

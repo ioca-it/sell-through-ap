@@ -1,5 +1,78 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-17 — PHASE1-033
+
+### Implementado
+
+- Contrato Product normalizado con SKU, nombre, marca, categoría, fechas de
+  descontinuación/creación, nivel, estado, URLs y precios USA/China.
+- Product Provider Factory `local|dataverse`, Product Repository y Product
+  Master Application Service; `local` permanece como default y reutiliza Master
+  Parser.
+- Dataverse Product Provider frontend sobre el transporte autenticado
+  compartido y endpoint cerrado `GET /api/products/master`, sin OData frontend.
+- Product Service y Product Price Level Gateway sobre el Dataverse Client,
+  OAuth/cache/diagnóstico/JWT/rate limiter existentes.
+- Paginación Dataverse validada y restringida al origen/ruta de la organización.
+
+### Fuente y consolidación
+
+- Entity Set `productpricelevel` y mapping completo encapsulado en el gateway.
+- Filtro backend obligatorio por `IOCA USA INC` o `SAND SPORTS, CORP.`.
+- Consolidación por SKU y pivot `USA -> priceUSA`, `CHINA -> priceChina`;
+  `amount null|undefined` y origen ausente quedan en cero compatible.
+- `level`/`status` priorizan FormattedValue; sin anotación solo aceptan texto
+  fuente y nunca publican el código numérico de un posible Choice.
+- Importes distintos para el mismo SKU/origen/comprador, o entre compradores
+  sin precedencia autorizada, bloquean la carga con
+  `409 / PRODUCT_MASTER_CONFLICT`; no se suman, promedian ni seleccionan.
+
+### Compatibilidad, seguridad y validación
+
+- El pipeline local, Master Parser, Producto Nuevo `<90 días`, fechas EOL,
+  cálculos y contratos previos permanecen vigentes; `level`, `imageUrl` y
+  `productUrl` quedan disponibles en el detalle normalizado/record SKU.
+- Product API reutiliza MSAL/Bearer, autenticador JWT, CORS y rate limiting; no
+  expone LogicalNames ni acepta parámetros arbitrarios.
+- 302/302 pruebas frontend y 67/67 backend aprobadas; build frontend aprobado
+  con Vite 5.4.21/1682 módulos y backend syntax check aprobado. Validaciones Git
+  se registran en el log de Phase1-033 al cierre.
+- `VITE_PRODUCT_SOURCE=local` permanece vigente. Sin activación productiva,
+  consulta real, cambio en Vercel/Render/Entra/Dataverse, commit, push o deploy.
+
+## 2026-08-14 — PHASE1-032
+
+### Cierre productivo
+
+- Maestro Cliente queda **IMPLEMENTED + PRODUCTION VALIDATED** sin cambios
+  funcionales ni consultas productivas ejecutadas por este prompt.
+- Vercel usa `VITE_CUSTOMER_SOURCE=dataverse`; MSAL/Microsoft Entra ID entrega
+  el access token delegado de Customer API y el backend transitorio en Render
+  usa su integración autorizada separada para Dataverse.
+- Búsqueda por código validada, búsqueda por nombre implementada, selección de
+  código/nombre/país/tipo sincronizada y manejo de cero resultados/errores
+  implementado.
+
+### Contrato registrado
+
+- Fuente `accounts` y filtro obligatorio `customertypecode eq 3 and statecode
+  eq 0 and crbbe_estadodelcliente eq 4`.
+- `new_codigocliente` → `customerCode`, `name` → `customerName` y
+  `crbbe_nombrepais` → `country`.
+- `new_tipocliente@OData.Community.Display.V1.FormattedValue` → `trim()` →
+  `customerType`, con fallback `''` y sin publicar el valor numérico. El Choice
+  asociado `new_tipoclienteglobal` no se consulta por búsqueda.
+- UI, Application Service y Domain continúan trabajando únicamente con el
+  contrato Customer normalizado; los LogicalNames quedan en el gateway.
+
+### Infraestructura y alcance
+
+- Render continúa como infraestructura transitoria y Azure como siguiente hito
+  de migración, sujeto a prompt independiente.
+- No se modificaron código productivo, filtros, mappings, contratos,
+  autenticación, providers, variables, Vercel, Render ni Dataverse.
+- Sin commit, push ni deploy.
+
 ## 2026-08-14 — PHASE1-029
 
 ### Corregido
@@ -37,8 +110,9 @@
   empresariales 3/0/4.
 - Búsqueda por código, búsqueda por nombre y lectura exacta por código combinan
   su predicado específico mediante AND con el filtro definitivo.
-- `$select` y mapping conservan exclusivamente `new_tipocliente -> customerType`,
-  con fallback `''` para `null` o `undefined`.
+- `$select` conserva `new_tipocliente`; el mapping definitivo de
+  `customerType` desde FormattedValue quedó establecido por PHASE1-029 sin usar
+  el valor numérico.
 
 ### Retirado
 
@@ -52,8 +126,9 @@
 
 - Diagnóstico seguro Phase1-020, incluido
   `DATAVERSE_INVALID_FIELD_OR_FILTER`, sin cambios en el contrato HTTP público.
-- Contrato Customer, MSAL, JWT, Entra, Render, Vercel, variables y
-  `VITE_CUSTOMER_SOURCE=local`.
+- Contrato Customer, MSAL, JWT, Entra, Render, Vercel y variables. En
+  PHASE1-026 `VITE_CUSTOMER_SOURCE=local`; la activación posterior queda
+  registrada por PHASE1-032.
 
 ### Validación
 
@@ -81,7 +156,8 @@
 
 ### Sin cambios
 
-- `VITE_CUSTOMER_SOURCE=local`; no se activa Dataverse en UI.
+- En PHASE1-012 `VITE_CUSTOMER_SOURCE=local`; la activación productiva posterior
+  queda registrada por PHASE1-032.
 - Sin cambios en backend, autenticación, Render, Entra, Dataverse, Maestro Producto, Inventario Cliente, fórmulas o Dashboard.
 - Los harness Phase1-007/Phase1-010B permanecen sin cambios.
 - Sin commit, push ni deploy.
@@ -97,15 +173,18 @@
 ### Seguridad y alcance
 
 - No se almacena payload real del cliente, JWT, headers `Authorization`, secretos ni claims sensibles.
-- `VITE_CUSTOMER_SOURCE=local` permanece vigente; el Customer Provider Dataverse no se activa en UI y el smoke-test harness no se elimina.
+- En ese hito `VITE_CUSTOMER_SOURCE=local` permaneció vigente y el Customer
+  Provider Dataverse no se activó en UI; PHASE1-032 registra la activación
+  productiva posterior. El smoke-test harness no se eliminó.
 - Sin cambios en lógica funcional, backend, autenticación o Dataverse; sin commit, push ni deploy.
 
-### Pendiente
+### Pendientes al cierre de PHASE1-011, cerrados por PHASE1-032
 
-- Activar Customer Provider Dataverse en UI.
-- Completar `customerType` real.
-- Validar búsqueda por nombre y manejo de errores/cero resultados.
-- Mantener Render como backend transitorio y migrar posteriormente a Azure.
+- Customer Provider Dataverse en UI: activado y validado en producción.
+- `customerType`: resuelto por FormattedValue en PHASE1-029.
+- Búsqueda por nombre y manejo de errores/cero resultados: implementados.
+- Render permanece transitorio; solo la migración posterior a Azure continúa
+  pendiente.
 
 ## 2026-08-13 — PHASE1-007
 
@@ -125,7 +204,8 @@
 
 ### Sin cambios
 
-- `VITE_CUSTOMER_SOURCE=local`; no se activa el Provider Dataverse.
+- En PHASE1-007 `VITE_CUSTOMER_SOURCE=local`; la activación posterior del
+  Provider Dataverse queda registrada por PHASE1-032.
 - Sin cambios en backend, infraestructura, UI visible, contratos Customer, AP01, reglas, fórmulas, defaults o fuentes sell-through.
 - Sin client secret frontend, persistencia manual o registro de tokens.
 - Sin deploy, commit, push, merge, tag o cambio de rama.
@@ -148,12 +228,16 @@
 
 ### Sin cambios
 
-- `VITE_CUSTOMER_SOURCE=local`; no se activa Dataverse, no se modifica backend y no cambian contratos Customer ni reglas de negocio.
+- En PHASE1-005 `VITE_CUSTOMER_SOURCE=local`; la activación posterior de
+  Dataverse queda registrada por PHASE1-032. En ese hito no se modificaron
+  backend, contratos Customer ni reglas de negocio.
 - Sin deploy, commit, push o ramas.
 
-### Pendiente operativo
+### Pendiente operativo en PHASE1-005, cerrado por PHASE1-032
 
-- Configurar variables públicas en Vercel y ejecutar smoke test real autorizado con Entra, Render y Dataverse antes de cambiar la fuente Customer.
+- La configuración pública en Vercel, el smoke real autorizado y el cambio de
+  fuente Customer quedaron completados en hitos posteriores y cerrados por
+  PHASE1-032.
 
 ## 2026-08-11 — Prompt Astrid Confirmed Changes
 
@@ -174,10 +258,13 @@
 - Cobertura de Sin ventas, exclusión EOL, Nuevos no presentes, tránsito, reposición, textos/colores Pareto, Customer y formato monetario.
 - Suite frontend: 230/230 aprobadas antes de la validación final de build.
 
-### No implementado
+### Estado posterior de los elementos no implementados en este hito
 
-- Sin origen, nuevos buckets/fases EOL, reposición para productos nuevos, fórmula por Tipo de Cliente y mapping físico de `customerType`.
-- MSAL, Entra, Render, Azure, Dataverse real, commits, push o despliegues.
+- Continúan sin implementar: Sin origen, nuevos buckets/fases EOL, reposición
+  para productos nuevos y fórmula por Tipo de Cliente.
+- Mapping físico de `customerType`, MSAL, Entra, Render y Dataverse real se
+  completaron posteriormente y quedaron cerrados por PHASE1-032. Azure sigue
+  pendiente como migración; este hito no incluyó commit, push ni despliegue.
 
 ## 2026-08-10 — Phase1-004
 
@@ -197,9 +284,11 @@
 - Dependencia backend `jose` 6.2.4, estándar mantenido JWT/JWKS, ESM y sin dependencias transitivas.
 - Suite backend ampliada a 41 pruebas y frontend a 221 pruebas.
 
-### Pendiente operativo
+### Estado posterior del pendiente operativo
 
-- Registrar API/scope en Entra, integrar MSAL, configurar IDs reales y sustituir rate limit in-memory antes de escala horizontal.
+- Registro API/scope en Entra, integración MSAL e IDs reales quedaron cerrados
+  por PHASE1-032. Sustituir el rate limiter in-memory continúa pendiente antes
+  de escala horizontal.
 
 ### Sin cambios
 
@@ -222,9 +311,11 @@
 - App compone el Provider API cuando existe la variable y conserva el fallback local inyectable sin datos.
 - Errores técnicos de búsqueda se sustituyen por un mensaje controlado al usuario.
 
-### Pendiente operativo
+### Pendiente operativo en Phase1-003, cerrado por PHASE1-032
 
-- Configurar Entra/Dataverse/Render/Vercel, desplegar con autorización separada y ejecutar smoke test real.
+- La configuración Entra/Dataverse/Render/Vercel, el despliegue autorizado y la
+  validación real se completaron en hitos posteriores y quedaron cerrados por
+  PHASE1-032.
 
 ### Sin cambios
 
@@ -240,9 +331,11 @@
 - Búsqueda UI por código/nombre con una selección sincronizada que carga código, nombre y país.
 - 23 pruebas nuevas; suite total de 213 pruebas.
 
-### Pendiente de conexión
+### Pendiente de conexión en Phase1-002, cerrado por PHASE1-032
 
-- URL, tabla, campos reales, forma del país, autenticación, permisos y transporte seguro de Dataverse.
+- URL, tabla, campos reales, forma del país, autenticación, permisos y
+  transporte seguro de Dataverse se resolvieron en hitos posteriores y quedaron
+  cerrados por PHASE1-032.
 
 ### Sin cambios
 
