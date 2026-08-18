@@ -112,10 +112,11 @@ export const runProductMasterSmokeTest = async ({
   let endpoint;
   try {
     endpoint = new URL('/api/products/master', normalizeApiBaseUrl(apiBaseUrl));
-    if (typeof brand !== 'string' || !brand.trim() || brand.trim().length > 100) {
+    const normalizedBrand = typeof brand === 'string' ? brand.trim() : '';
+    if (!normalizedBrand || normalizedBrand.length > 100) {
       return createResult({ diagnostic: 'SMOKE_BRAND_REQUIRED' });
     }
-    endpoint.searchParams.set('brand', brand.trim());
+    endpoint.searchParams.set('brand', normalizedBrand);
   } catch {
     return createResult({ diagnostic: 'SMOKE_CONFIGURATION_INVALID' });
   }

@@ -28,7 +28,7 @@ const createResponse = (status, payload) => ({
 });
 
 const createDependencies = ({
-  brand = 'Smoke Brand',
+  brand = 'SKULLCANDY',
   authenticatedAccount = account,
   accessToken = 'delegated-sensitive-token',
   response = createResponse(200, { products: [sensitiveProduct] }),
@@ -51,7 +51,11 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
     const run = vi.fn();
     const logger = { info: vi.fn(), error: vi.fn() };
 
-    await expect(startProductMasterSmokeTest({ search: '', run, logger }))
+    await expect(startProductMasterSmokeTest({
+      search: '?brand=SKULLCANDY',
+      run,
+      logger,
+    }))
       .resolves.toBe(false);
     expect(run).not.toHaveBeenCalled();
     expect(logger.info).not.toHaveBeenCalled();
@@ -62,6 +66,7 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
     expect(isProductMasterSmokeTestRequested('?phase1-042-product-smoke=1')).toBe(true);
     expect(isProductMasterSmokeTestRequested('?phase1-042-product-smoke=0')).toBe(false);
     expect(isProductMasterSmokeTestRequested('?phase1-010b-smoke=1')).toBe(false);
+    expect(isProductMasterSmokeTestRequested('?brand=SKULLCANDY')).toBe(false);
     expect(isProductMasterSmokeTestRequested('')).toBe(false);
   });
 
@@ -90,7 +95,10 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
     expect(dependencies.acquireAccessToken).toHaveBeenCalledOnce();
     const [url, options] = dependencies.fetchImpl.mock.calls[0];
     expect(url.pathname).toBe('/api/products/master');
-    expect(url.searchParams.get('brand')).toBe('Smoke Brand');
+    expect(url.toString()).toBe(
+      'https://product-api.invalid/api/products/master?brand=SKULLCANDY',
+    );
+    expect([...url.searchParams]).toEqual([['brand', 'SKULLCANDY']]);
     expect(options).toEqual(expect.objectContaining({
       method: 'GET',
       headers: {
@@ -115,10 +123,39 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
 
   it('sin brand controlada no consulta la API ni permite una carga global', async () => {
     const dependencies = createDependencies({ brand: '   ' });
-    await expect(runProductMasterSmokeTest(dependencies)).resolves.toEqual(
+    const result = await runProductMasterSmokeTest(dependencies);
+
+    expect(result).toEqual(
+      expect.objectContaining({ diagnostic: 'SMOKE_BRAND_REQUIRED' }),
+    );
+    expect(JSON.stringify(result)).not.toContain('brand');
+    expect(dependencies.initialize).not.toHaveBeenCalled();
+    expect(dependencies.acquireAccessToken).not.toHaveBeenCalled();
+    expect(dependencies.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('aplica trim y URL-encodea brand mediante URLSearchParams', async () => {
+    const dependencies = createDependencies({ brand: '  Skull & Candy/Plus+  ' });
+
+    await runProductMasterSmokeTest(dependencies);
+
+    const [url] = dependencies.fetchImpl.mock.calls[0];
+    expect(url.toString()).toBe(
+      'https://product-api.invalid/api/products/master?brand=Skull+%26+Candy%2FPlus%2B',
+    );
+    expect([...url.searchParams]).toEqual([['brand', 'Skull & Candy/Plus+']]);
+  });
+
+  it('rechaza brand mayor de 100 caracteres antes de autenticación o request', async () => {
+    const dependencies = createDependencies({ brand: 'A'.repeat(101) });
+
+    const result = await runProductMasterSmokeTest(dependencies);
+
+    expect(result).toEqual(
       expect.objectContaining({ diagnostic: 'SMOKE_BRAND_REQUIRED' }),
     );
     expect(dependencies.initialize).not.toHaveBeenCalled();
+    expect(dependencies.acquireAccessToken).not.toHaveBeenCalled();
     expect(dependencies.fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -312,11 +349,11 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
     const run = vi.fn(async () => result);
 
     await expect(startProductMasterSmokeTest({
-      search: '?phase1-042-product-smoke=1&brand=Smoke%20Brand',
+      search: '?phase1-042-product-smoke=1&brand=SKULLCANDY',
       run,
       logger,
     })).resolves.toBe(true);
-    expect(run).toHaveBeenCalledWith({ brand: 'Smoke Brand' });
+    expect(run).toHaveBeenCalledWith({ brand: 'SKULLCANDY' });
     expect(logger.info).toHaveBeenCalledWith(
       'Phase1-042 Real Dataverse Product Master Smoke Test',
       result,

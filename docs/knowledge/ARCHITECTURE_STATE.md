@@ -2,6 +2,21 @@
 
 ## Fase actual
 
+PHASE1-079 queda **PASS — EXISTING PRODUCT MASTER SMOKE REQUIRES BRAND /
+SANITIZED / FRONTEND-ONLY / LOCALLY VALIDATED / NOT DEPLOYED / NOT EXECUTED**.
+El arnés Phase1-042 se activa exclusivamente con
+`?phase1-042-product-smoke=1&brand=<marca>`; lee `brand` mediante
+`URLSearchParams`, aplica `trim()`, exige entre 1 y 100 caracteres y construye
+con `URL.searchParams` únicamente
+`GET /api/products/master?brand=<marca codificada>`. Sin trigger exacto o con
+marca inválida no existe autenticación ni request.
+
+Se preservan MSAL/Bearer, timeout de 35 000 ms, AbortController/cleanup y el
+resultado Product sanitizado. No se registran marca, URL completa, token,
+claims, headers ni Product data. Product Provider normal, backend, Customer,
+Dataverse, mappings, filtros, Brands/groupby, tracing, variables y el smoke
+Phase1-075 permanecen intactos. `VITE_PRODUCT_SOURCE=local` continúa vigente.
+
 PHASE1-077 queda **PASS — SERVER-SIDE BRAND GROUPBY IMPLEMENTED / FILTERED
 PRODUCT MASTER PRESERVED / LOCALLY VALIDATED / NOT DEPLOYED / NOT MEASURED IN
 PRODUCTION**. `GET /api/products/brands` sustituye el recorrido global de
@@ -182,7 +197,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-077 — Optimize Brand Query and Validate Brand-Filtered Product Master.
+PHASE1-079 — Add Brand Parameter to Existing Product Master Smoke.
 
 ## Última auditoría aprobada
 
@@ -205,7 +220,17 @@ optimizar `/brands`, desplegar ni activar Product Dataverse.
 - MSAL frontend: configuración/cliente desacoplados, procesamiento de redirect, cuenta activa y adquisición silenciosa mediante `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`.
 - Authentication Controls: inicio de sesión, identidad discreta y cierre de sesión sin almacenamiento manual de tokens.
 - Real Dataverse Customer Smoke Test: validado end-to-end como PASS mediante el arnés temporal `?phase1-010b-smoke=1`; `CL0000041` produjo `HTTP 200`, exactamente un Customer, JWT aceptado y request Dataverse intentado, sin exponer token o payload Customer. El arnés se conserva temporalmente.
-- Real Dataverse Product Master Smoke Test: el arnés temporal `?phase1-042-product-smoke=1` confirmó llegada a Render, JWT aceptado e intento Dataverse. La evidencia posterior a Phase1-044 confirmó que `productpricelevels` eliminó el 404 y que la consulta anterior con el LogicalName incorrecto `producturl` recibía `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`; Phase1-055 corrigió el gateway sin ejecutar otro smoke. El arnés consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`. Su timeout temporal frontend es 35 000 ms, con AbortController y cleanup, y no configura la aplicación Product normal; puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
+- Real Dataverse Product Master Smoke Test: el arnés temporal
+  `?phase1-042-product-smoke=1&brand=<marca>` confirmó previamente llegada a
+  Render, JWT aceptado e intento Dataverse. Phase1-079 exige ahora una marca
+  trimmed de máximo 100 caracteres y consulta únicamente
+  `GET /api/products/master?brand=<marca codificada>`, con `URLSearchParams` y
+  sin OData libre. Exige sesión/token MSAL y publica solo `{ httpStatus,
+  productsReturned, renderJwtValidation, dataverseRequest, diagnostic,
+  hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel,
+  hasFormattedStatus }`. Su timeout temporal frontend es 35 000 ms, con
+  AbortController y cleanup, y no configura la aplicación Product normal;
+  puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
 - Authenticated Product Brands Smoke Test: arnés temporal
   `?phase1-075-brands-smoke=1` que reutiliza sesión/token MSAL y llama
   directamente `GET /api/products/brands`, sin Product Provider Factory. Su
@@ -313,10 +338,10 @@ Vercel
 Arnés Product ejecutado previamente; Entity Set confirmado y consulta anterior con `producturl` en HTTP 400:
 
 ```text
-Vercel + `?phase1-042-product-smoke=1`
+Vercel + `?phase1-042-product-smoke=1&brand=<marca>`
   -> initializeAuthentication / sesión MSAL existente
     -> getAccessToken / delegated access token
-      -> GET Render `/api/products/master`
+      -> GET Render `/api/products/master?brand=<marca codificada>`
         -> JWT Authenticator / Rate Limiter
           -> Product Service
             -> Product Price Level Gateway
@@ -342,7 +367,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Revisar Phase1-077 y autorizar por separado checkpoint/deploy. Con la versión
+Revisar Phase1-079 y autorizar por separado checkpoint/deploy. Con la versión
 Live y `VITE_PRODUCT_SOURCE=local` aún vigente, ejecutar una única medición
 autenticada de Brands y una única medición Product Master con marca controlada;
 comparar elapsed/conteos y decidir en otro hito si se reducen los timeouts
@@ -360,7 +385,11 @@ mediciones.
 - `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` son únicos por SKU: vacío más valor puede inicializar, pero dos valores no vacíos distintos después de normalizar bloquean con `PRODUCT_MASTER_CONFLICT`; no existe precedencia por fila, comprador, fecha, mayoría ni otro criterio.
 - `level` y `status` Product usan FormattedValue cuando está presente. Sin anotación, solo un valor fuente textual puede usarse como fallback; un Choice numérico nunca se publica como etiqueta.
 - `VITE_PRODUCT_SOURCE` selecciona `local|dataverse`; `local` es el default vigente y Product Dataverse no está activado en producción.
-- El smoke-test Phase1-042 solo puede ejecutarse con `?phase1-042-product-smoke=1`, llama al endpoint Product existente sin parámetros y no consulta mediante Product Provider Factory; su presencia no modifica la fuente global ni el flujo normal.
+- El smoke-test Phase1-042 solo puede ejecutarse con
+  `?phase1-042-product-smoke=1&brand=<marca>`; exige una marca trimmed de 1 a
+  100 caracteres, envía únicamente `brand` mediante `URLSearchParams` al
+  endpoint Product existente y no consulta mediante Product Provider Factory.
+  Su presencia no modifica la fuente global ni el flujo normal.
 - El smoke-test Phase1-075 solo puede ejecutarse con
   `?phase1-075-brands-smoke=1`; llama directamente al endpoint Brands
   existente, usa sesión/token delegado y publica solo metadata allowlisted y
@@ -410,12 +439,12 @@ mediciones.
 
 ## Cantidad de pruebas
 
-Frontend: 381/381 aprobadas en 33 archivos. Backend: 124/124 aprobadas en 10
+Frontend: 383/383 aprobadas en 33 archivos. Backend: 124/124 aprobadas en 10
 archivos.
 
 ## Estado del build
 
-Phase1-077: backend 124/124 y build/syntax PASS; frontend 381/381 en 33
-archivos y build PASS con Vite 5.4.21 y 1.684 módulos transformados. Product
-Dataverse no fue activado y Phase1-077 no se desplegó ni ejecutó contra
-producción.
+Phase1-079: frontend 383/383 en 33 archivos y build PASS con Vite 5.4.21 y
+1.684 módulos transformados. Backend no se ejecutó porque no fue modificado;
+su baseline Phase1-077 permanece en 124/124. Product Dataverse no fue activado
+y Phase1-079 no se desplegó ni ejecutó contra producción.

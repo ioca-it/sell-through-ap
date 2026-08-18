@@ -1,5 +1,32 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-079
+
+### Product Master smoke
+
+- El arnés Phase1-042 existente exige ahora el trigger exacto junto con una
+  `brand` trimmed, no vacía y de máximo 100 caracteres.
+- El request se construye con `URL`/`URLSearchParams` y envía únicamente
+  `GET /api/products/master?brand=<marca codificada>`; no concatena ni expone
+  OData.
+- Marca inválida retorna diagnóstico sanitizado antes de MSAL, token o red;
+  sin trigger exacto no se ejecuta nada.
+
+### Preservado
+
+- MSAL/Bearer, resultado sanitizado, timeout de 35 000 ms,
+  AbortController/cleanup, Product Provider normal y
+  `VITE_PRODUCT_SOURCE=local` permanecen intactos.
+- Sin cambios backend, Customer, Dataverse, mappings, filtros, groupby Brands,
+  tracing, variables ni smoke Phase1-075.
+- Sin commit, push, deploy o smoke productivo.
+
+### Validación
+
+- Frontend 383/383 en 33 archivos; Phase1-042 22 casos y Phase1-075 21 casos.
+- Build PASS con Vite 5.4.21 y 1.684 módulos; `git diff --check` PASS.
+- Backend no ejecutado porque ningún archivo backend fue modificado.
+
 ## 2026-08-18 — PHASE1-077
 
 ### Optimización Brands
