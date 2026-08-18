@@ -1,5 +1,33 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-064
+
+### Implementado
+
+- El timeout default del arnés temporal Product Phase1-042 aumenta de
+  10 000 ms a 35 000 ms para alinearse con la ventana backend Dataverse de
+  30 000 ms y reservar 5 000 ms para completar la respuesta frontend.
+- Se preservan dependency injection, AbortController, `REQUEST_TIMEOUT`
+  sanitizado y cleanup del timer.
+- Los 35 000 ms aplican exclusivamente al smoke temporal activado por
+  `?phase1-042-product-smoke=1`; no configuran la aplicación Product normal.
+
+### Validado
+
+- Timers simulados cubren el default real de 35 000 ms, respuesta antes del
+  límite, timeout inyectado, aborto exacto al vencer, cleanup y sanitización.
+- La suite frontend completa conserva Customer smoke y el flujo normal sin
+  trigger Product.
+
+### Alcance
+
+- Dataverse Client conserva sin cambios su timeout backend temporal de
+  30 000 ms, aplicable únicamente al fetch hacia Dataverse.
+- Sin cambios en Product Gateway, `productpricelevels`, `crbbe_urlproducto`,
+  mappings, filtros, precios, conflictos, `fechaStr`, Customer Master, MSAL,
+  JWT, Product Provider, `VITE_PRODUCT_SOURCE`, variables o infraestructura.
+- Sin commit, push, deploy ni smoke productivo.
+
 ## 2026-08-18 — PHASE1-061
 
 ### Implementado

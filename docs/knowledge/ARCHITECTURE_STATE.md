@@ -2,6 +2,10 @@
 
 ## Fase actual
 
+PHASE1-064 queda **PASS — TEMPORARY PRODUCT SMOKE TIMEOUT ALIGNED / FRONTEND-ONLY / NOT DEPLOYED / NOT EXECUTED / NOT ACTIVATED**. El arnés temporal Phase1-042 eleva exclusivamente su timeout default de **10 000 ms** a **35 000 ms** para permitir que el backend complete su ventana Dataverse temporal de 30 000 ms y disponga de 5 000 ms adicionales para Render, serialización, respuesta HTTP y lectura de `response.json()`.
+
+La ventana se crea inmediatamente antes del único `fetch` Product smoke, conserva dependency injection, pasa el `AbortSignal` al request y limpia siempre el timer. Al vencer continúa abortando el fetch y devolviendo únicamente `REQUEST_TIMEOUT` sanitizado. El cambio no configura la aplicación normal, Product Provider, Product Gateway ni Dataverse Client; el backend conserva 30 000 ms exclusivamente para su fetch hacia Dataverse.
+
 PHASE1-061 queda **PASS — TEMPORARY 30 SECOND DATAVERSE FETCH TIMEOUT / TOKEN BUDGET ISOLATED / PRODUCT AND CUSTOMER REGRESSION COVERED / NOT DEPLOYED / NOT ACTIVATED**. Dataverse Client eleva temporalmente su timeout HTTP de **10 000 ms** a **30 000 ms** para permitir una validación posterior de Product Master contra Dataverse real. No es una optimización definitiva y deberá reevaluarse después de esa validación, junto con consulta/paginación si corresponde mediante autorización separada.
 
 `retrievePage()` adquiere primero el token backend y prepara los headers; solo entonces crea `AbortController` y timer inmediatamente antes de `fetchImpl()`. El `finally` inmediato de fetch limpia el timer antes de clasificar la respuesta, parsear JSON o validar shape. Los 30 000 ms pertenecen exclusivamente al fetch HTTP Dataverse: `getToken()` no consume ese presupuesto y Entra Token Provider conserva su timeout independiente de 10 000 ms. El cliente compartido aplica esta ventana de transporte a Product y Customer sin cambiar sus gateways o contratos.
@@ -28,7 +32,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-061 — Temporarily Increase Dataverse Fetch Timeout.
+PHASE1-064 — Align Product Smoke Test Timeout.
 
 ## Última auditoría aprobada
 
@@ -49,7 +53,7 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - MSAL frontend: configuración/cliente desacoplados, procesamiento de redirect, cuenta activa y adquisición silenciosa mediante `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`.
 - Authentication Controls: inicio de sesión, identidad discreta y cierre de sesión sin almacenamiento manual de tokens.
 - Real Dataverse Customer Smoke Test: validado end-to-end como PASS mediante el arnés temporal `?phase1-010b-smoke=1`; `CL0000041` produjo `HTTP 200`, exactamente un Customer, JWT aceptado y request Dataverse intentado, sin exponer token o payload Customer. El arnés se conserva temporalmente.
-- Real Dataverse Product Master Smoke Test: el arnés temporal `?phase1-042-product-smoke=1` confirmó llegada a Render, JWT aceptado e intento Dataverse. La evidencia posterior a Phase1-044 confirmó que `productpricelevels` eliminó el 404 y que la consulta anterior con el LogicalName incorrecto `producturl` recibía `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`; Phase1-055 corrigió el gateway sin ejecutar otro smoke. El arnés consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`; puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
+- Real Dataverse Product Master Smoke Test: el arnés temporal `?phase1-042-product-smoke=1` confirmó llegada a Render, JWT aceptado e intento Dataverse. La evidencia posterior a Phase1-044 confirmó que `productpricelevels` eliminó el 404 y que la consulta anterior con el LogicalName incorrecto `producturl` recibía `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`; Phase1-055 corrigió el gateway sin ejecutar otro smoke. El arnés consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`. Su timeout temporal frontend es 35 000 ms, con AbortController y cleanup, y no configura la aplicación Product normal; puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
 - Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Product normalizer, Repository y Product Master Application Service: contrato normalizado independiente de la fuente y adaptación hacia Master Parser/Record Assembler que preserva `0` como precio real, `null` como no disponible y `fechaStr` canónico sin perder el día fuente.
@@ -151,7 +155,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Después de revisar Phase1-061, la siguiente acción exacta es autorizar por separado un checkpoint y deploy exclusivamente del backend con el timeout temporal, y una vez Live ejecutar una única revalidación Product autenticada. No debe ejecutarse otro smoke antes de ese deploy. `VITE_PRODUCT_SOURCE=local` debe permanecer vigente; después del resultado se reevaluarán los 30 000 ms y, si corresponde, se definirá en otro hito cualquier optimización de consulta/paginación. La activación normal de Product Dataverse continúa como decisión posterior e independiente.
+Después de revisar Phase1-064, la siguiente acción exacta es autorizar por separado el checkpoint y deploy de los cambios temporales Phase1-061 backend y Phase1-064 frontend; solo cuando ambos estén Live podrá ejecutarse una única revalidación Product autenticada. No debe ejecutarse otro smoke antes de esos deploys. `VITE_PRODUCT_SOURCE=local` debe permanecer vigente; después del resultado se reevaluarán ambos timeouts temporales y, si corresponde, se definirá en otro hito cualquier optimización de consulta/paginación. La activación normal de Product Dataverse continúa como decisión posterior e independiente.
 
 ## Decisiones congeladas
 

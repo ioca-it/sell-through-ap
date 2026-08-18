@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   isProductMasterSmokeTestRequested,
   runProductMasterSmokeTest,
@@ -37,6 +37,11 @@ const createDependencies = ({
   acquireAccessToken: vi.fn(async () => accessToken),
   fetchImpl: vi.fn(async () => response),
   requestTimeoutMs: 1000,
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('Phase1-042 real Dataverse Product Master smoke test', () => {
@@ -104,6 +109,74 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
       hasFormattedLevel: true,
       hasFormattedStatus: true,
     });
+  });
+
+  it('usa 35000 ms por default y limpia el timer si la respuesta llega antes', async () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const dependencies = createDependencies();
+    delete dependencies.requestTimeoutMs;
+
+    const result = await runProductMasterSmokeTest(dependencies);
+    const timeoutId = setTimeoutSpy.mock.results[0].value;
+    const [, options] = dependencies.fetchImpl.mock.calls[0];
+
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 35000);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timeoutId);
+    expect(options.signal.aborted).toBe(false);
+    expect(result).toEqual(expect.objectContaining({
+      httpStatus: 200,
+      diagnostic: null,
+    }));
+
+    await vi.advanceTimersByTimeAsync(35000);
+    expect(options.signal.aborted).toBe(false);
+  });
+
+  it('respeta el timeout inyectado y aborta el fetch exactamente al vencer', async () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    let requestSignal;
+    const timeoutFailure = Object.assign(new Error('sensitive injected timeout detail'), {
+      name: 'AbortError',
+    });
+    const fetchImpl = vi.fn((url, { signal }) => {
+      requestSignal = signal;
+      return new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(timeoutFailure), { once: true });
+      });
+    });
+    const dependencies = createDependencies();
+    dependencies.fetchImpl = fetchImpl;
+
+    const resultPromise = runProductMasterSmokeTest(dependencies);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const timeoutId = setTimeoutSpy.mock.results[0].value;
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(requestSignal.aborted).toBe(false);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(requestSignal.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await resultPromise;
+
+    expect(requestSignal.aborted).toBe(true);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(timeoutId);
+    expect(result).toEqual(expect.objectContaining({
+      httpStatus: null,
+      productsReturned: null,
+      renderJwtValidation: 'not_confirmed',
+      dataverseRequest: 'not_confirmed',
+      diagnostic: 'REQUEST_TIMEOUT',
+    }));
+    expect(JSON.stringify(result)).not.toContain('sensitive');
   });
 
   it('reduce cero productos a conteo y booleanos estructurales falsos', async () => {

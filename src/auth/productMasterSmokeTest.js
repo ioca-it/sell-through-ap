@@ -3,7 +3,8 @@ import { getAccessToken } from './customerApiAccessToken.js';
 
 export const PRODUCT_MASTER_SMOKE_QUERY = 'phase1-042-product-smoke';
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
+// Ventana exclusiva del arnés temporal: no configura el flujo Product normal.
+const DEFAULT_REQUEST_TIMEOUT_MS = 35000;
 const CONSOLE_LABEL = 'Phase1-042 Real Dataverse Product Master Smoke Test';
 
 const configuredApiBaseUrl = () => import.meta.env.VITE_API_BASE_URL;

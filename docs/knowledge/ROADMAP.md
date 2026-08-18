@@ -1,5 +1,27 @@
 # Roadmap aprobado
 
+## Phase1-064 — Align Product Smoke Test Timeout
+
+El arnés temporal Product Phase1-042 queda **TEMPORARY 35 SECOND FRONTEND
+TIMEOUT / BACKEND 30 SECOND TIMEOUT PRESERVED / NOT DEPLOYED / NOT EXECUTED /
+NOT ACTIVATED**. Su timeout default aumenta de 10 000 ms a 35 000 ms para que
+el navegador no aborte mientras Render aún puede esperar hasta 30 000 ms por
+el fetch Dataverse, dejando 5 000 ms para Render, serialización, respuesta HTTP
+y lectura de `response.json()`.
+
+La ventana de 35 000 ms pertenece únicamente al smoke activado mediante
+`?phase1-042-product-smoke=1`; no configura la aplicación Product normal.
+Dependency injection, AbortController, cleanup y `REQUEST_TIMEOUT` sanitizado
+permanecen vigentes. Backend, Dataverse Client, Product Gateway, mappings,
+filtros, precios, conflictos, `fechaStr`, Customer Master, autenticación,
+fuentes y variables no cambian.
+
+Siguiente acción exacta: después de revisión y autorización separada, crear el
+checkpoint y desplegar los cambios temporales Phase1-061 backend y Phase1-064
+frontend. Solo cuando ambos estén Live ejecutar una única revalidación Product
+autenticada, conservando `VITE_PRODUCT_SOURCE=local`; después del resultado,
+reevaluar ambos timeouts temporales mediante otro hito.
+
 ## Phase1-061 — Temporarily Increase Dataverse Fetch Timeout
 
 Dataverse Client queda **TEMPORARY 30 SECOND FETCH TIMEOUT / TOKEN BUDGET
