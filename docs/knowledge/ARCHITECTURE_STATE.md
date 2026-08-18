@@ -2,6 +2,29 @@
 
 ## Fase actual
 
+PHASE1-075 queda **PASS — TEMPORARY AUTHENTICATED PRODUCT BRANDS SMOKE /
+SANITIZED / FRONTEND-ONLY / NOT DEPLOYED / NOT EXECUTED / PRODUCT SOURCE
+UNCHANGED**. El trigger exacto `?phase1-075-brands-smoke=1` reutiliza la sesión
+MSAL y el token delegado para ejecutar exclusivamente
+`GET /api/products/brands` contra la API configurada. Sin ese valor no
+inicializa autenticación, no adquiere token y no genera tráfico. El request es
+directo y no pasa por Product Provider Factory.
+
+El timeout exclusivo del arnés es 35 000 ms, con AbortController, señal en el
+fetch y cleanup. La consola recibe únicamente `httpStatus`,
+`renderJwtValidation`, `dataverseRequest`, `diagnostic` y `brandsReturned`.
+Este último es solo un número: cuenta strings en `brands`; el array, Product
+data, SKU, precios, URLs, tokens, claims, headers, payloads, nextLink y query no
+se publican. Errores HTTP, red, timeout y respuestas inválidas usan la
+taxonomía sanitizada del smoke Product existente.
+
+Phase1-075 no modifica backend ni los eventos
+`PHASE1_066_PRODUCT_REQUEST_TRACE` / `PHASE1_068_PRODUCT_PAGINATION_TRACE`, que
+una futura ejecución única y autorizada deberá provocar con
+`operation=PRODUCT_BRANDS`. `VITE_PRODUCT_SOURCE=local` continúa vigente; el
+Product normal, Product Master smoke y Customer no cambiaron. El arnés debe
+retirarse después del diagnóstico.
+
 PHASE1-073 queda **PASS — PRODUCT BRANDS TRACE ALIGNED / PRODUCT PROVIDER
 TEMPORARY 35 S TIMEOUT / BRANDS QUERY UNCHANGED / NOT DEPLOYED / NOT
 ACTIVATED**. `GET /api/products/brands` crea ahora el mismo contexto efímero y
@@ -138,7 +161,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-073 — Instrument and Align Product Brands Loading.
+PHASE1-075 — Add Authenticated Product Brands Smoke Test.
 
 ## Última auditoría aprobada
 
@@ -162,6 +185,13 @@ optimizar `/brands`, desplegar ni activar Product Dataverse.
 - Authentication Controls: inicio de sesión, identidad discreta y cierre de sesión sin almacenamiento manual de tokens.
 - Real Dataverse Customer Smoke Test: validado end-to-end como PASS mediante el arnés temporal `?phase1-010b-smoke=1`; `CL0000041` produjo `HTTP 200`, exactamente un Customer, JWT aceptado y request Dataverse intentado, sin exponer token o payload Customer. El arnés se conserva temporalmente.
 - Real Dataverse Product Master Smoke Test: el arnés temporal `?phase1-042-product-smoke=1` confirmó llegada a Render, JWT aceptado e intento Dataverse. La evidencia posterior a Phase1-044 confirmó que `productpricelevels` eliminó el 404 y que la consulta anterior con el LogicalName incorrecto `producturl` recibía `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`; Phase1-055 corrigió el gateway sin ejecutar otro smoke. El arnés consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`. Su timeout temporal frontend es 35 000 ms, con AbortController y cleanup, y no configura la aplicación Product normal; puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
+- Authenticated Product Brands Smoke Test: arnés temporal
+  `?phase1-075-brands-smoke=1` que reutiliza sesión/token MSAL y llama
+  directamente `GET /api/products/brands`, sin Product Provider Factory. Su
+  timeout frontend es 35 000 ms con AbortController/cleanup y publica solo
+  status, etapas técnicas, diagnóstico y el conteo numérico de strings; nunca
+  el array de marcas. Está preparado, no desplegado ni ejecutado, y debe
+  retirarse después del diagnóstico.
 - Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
 - Product normalizer, Repository y Product Master Application Service: contratos `loadBrands()` y `loadProducts({ brand })` independientes de la fuente, con marca obligatoria para cargar Product y adaptación hacia Master Parser/Record Assembler que preserva `0`, `null` y `fechaStr`.
@@ -269,14 +299,28 @@ Vercel + `?phase1-042-product-smoke=1`
                 -> resumen sanitizado en consola (sin Product payload)
 ```
 
+Arnés Brands preparado y todavía no ejecutado:
+
+```text
+Vercel + `?phase1-075-brands-smoke=1`
+  -> initializeAuthentication / sesión MSAL existente
+    -> getAccessToken / delegated access token
+      -> GET Render `/api/products/brands`
+        -> JWT Authenticator / Rate Limiter
+          -> Product Service
+            -> Product Price Level Gateway
+              -> Dataverse Client -> `productpricelevels`
+                -> conteo sanitizado en consola (sin array Brands)
+```
+
 Distribution y Pareto permanecen en Application Service. Executive Report consume el DTO de Portfolio Analysis; presentación, narrativas y exportaciones permanecen en `App.jsx` sin acceder directamente a fuentes físicas.
 
 ## Siguiente hito
 
-Después de revisar Phase1-068, la siguiente acción exacta es solicitar
-autorización separada para crear el checkpoint y desplegar exclusivamente la
-instrumentación de paginación. Solo después de quedar Live podrá autorizarse
-una única captura Product autenticada para obtener los conteos reales antes de
+La siguiente acción exacta es solicitar autorización separada para
+checkpoint/deploy de Phase1-075. Solo después de quedar Live podrá ejecutarse
+una única vez `?phase1-075-brands-smoke=1` para capturar el resumen frontend y
+las métricas backend Phase1-066/068 de `operation=PRODUCT_BRANDS` antes de
 decidir cualquier optimización. `VITE_PRODUCT_SOURCE=local` permanece vigente.
 
 ## Decisiones congeladas
@@ -291,6 +335,11 @@ decidir cualquier optimización. `VITE_PRODUCT_SOURCE=local` permanece vigente.
 - `level` y `status` Product usan FormattedValue cuando está presente. Sin anotación, solo un valor fuente textual puede usarse como fallback; un Choice numérico nunca se publica como etiqueta.
 - `VITE_PRODUCT_SOURCE` selecciona `local|dataverse`; `local` es el default vigente y Product Dataverse no está activado en producción.
 - El smoke-test Phase1-042 solo puede ejecutarse con `?phase1-042-product-smoke=1`, llama al endpoint Product existente sin parámetros y no consulta mediante Product Provider Factory; su presencia no modifica la fuente global ni el flujo normal.
+- El smoke-test Phase1-075 solo puede ejecutarse con
+  `?phase1-075-brands-smoke=1`; llama directamente al endpoint Brands
+  existente, usa sesión/token delegado y publica solo metadata allowlisted y
+  conteo. No consulta mediante Product Provider Factory, no modifica la fuente
+  global y debe retirarse después del diagnóstico.
 - Phase1-055 retiró por completo los diagnósticos temporales Product Phase1-046/048/050/052 después de corregir el LogicalName anterior incorrecto `producturl` por `crbbe_urlproducto`; solo permanece el diagnóstico general sanitizado Phase1-020.
 - Account Customer Gateway encapsula `new_tipocliente@OData.Community.Display.V1.FormattedValue` y expone su etiqueta únicamente como `customerType`, con fallback vacío cuando la anotación falta, es `null` o `undefined`; el valor numérico `new_tipocliente` nunca sustituye la etiqueta.
 - Toda consulta Customer a `accounts` usa en Account Customer Gateway el filtro fijo confirmado `customertypecode eq 3 and statecode eq 0 and crbbe_estadodelcliente eq 4`. Las tres reglas siguen siendo obligatorias y no amplían el `$select`, el mapping ni el contrato Customer.
@@ -331,15 +380,17 @@ decidir cualquier optimización. `VITE_PRODUCT_SOURCE=local` permanece vigente.
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Treinta y dos archivos de pruebas frontend y diez archivos de pruebas backend.
+- Treinta y tres archivos de pruebas frontend y diez archivos de pruebas backend.
 
 ## Cantidad de pruebas
 
-Frontend: 344/344 aprobadas en 32 archivos. Backend: 111/111 aprobadas en 10 archivos.
+Frontend: 381/381 aprobadas en 33 archivos. Backend: última validación vigente
+121/121 en 10 archivos; Phase1-075 no modificó ni reejecutó backend.
 
 ## Estado del build
 
-Phase1-068: pruebas focalizadas 71/71, backend 111/111 y frontend 344/344 en
-32 archivos; build frontend aprobado con Vite 5.4.21 y 1 683 módulos
-transformados; backend syntax check aprobado. Product Dataverse no fue activado
-y Phase1-068 no se desplegó ni ejecutó contra producción.
+Phase1-075: smokes focalizados 49/49 y frontend completo 381/381 en 33
+archivos; build frontend aprobado con Vite 5.4.21 y 1 684 módulos
+transformados. Backend no se ejecutó porque ningún archivo backend fue
+afectado. Product Dataverse no fue activado y Phase1-075 no se desplegó ni
+ejecutó contra producción.

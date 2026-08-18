@@ -1,5 +1,27 @@
 # Roadmap aprobado
 
+## Phase1-075 — Add Authenticated Product Brands Smoke Test
+
+El hito queda **PASS — TEMPORARY AUTHENTICATED BRANDS SMOKE / SANITIZED /
+FRONTEND-ONLY / NOT DEPLOYED / NOT EXECUTED / PRODUCT SOURCE UNCHANGED**. El
+trigger exacto `?phase1-075-brands-smoke=1` exige sesión MSAL, adquiere token
+delegado y llama directamente `GET /api/products/brands`, sin Product Provider
+Factory ni cambio de `VITE_PRODUCT_SOURCE=local`.
+
+El arnés usa 35 000 ms, AbortController y cleanup. Publica únicamente status,
+clasificación JWT/Dataverse, diagnóstico sanitizado y `brandsReturned` como
+número; nunca el array de marcas, Product data, credenciales, identidad, URL,
+headers, payload, nextLink o query. Sin trigger exacto no inicializa el smoke
+ni genera tráfico. Product Master smoke, Product normal y Customer no cambian.
+
+Una ejecución posterior autorizada deberá provocar las trazas Phase1-066/068
+con `operation=PRODUCT_BRANDS` y permitir capturar páginas, registros y tiempos
+solo en backend. El arnés debe retirarse después del diagnóstico.
+
+Siguiente acción exacta: solicitar autorización separada para checkpoint/deploy
+y, solo cuando esté Live, ejecutar una única vez el trigger Phase1-075 para
+capturar evidencia sanitizada antes de decidir cualquier optimización.
+
 ## Phase1-073 — Instrument and Align Product Brands Loading
 
 El hito queda **PASS — BRANDS TRACE ALIGNED / PRODUCT PROVIDER TEMPORARY 35 S /

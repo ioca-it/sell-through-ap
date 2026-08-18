@@ -5,6 +5,7 @@ import {
   isAuthenticatedApiSmokeTestRequested,
   runAuthenticatedApiSmokeTest,
 } from './auth/authenticatedApiSmokeTest.js';
+import { startProductBrandsSmokeTest } from './auth/productBrandsSmokeTest.js';
 import { startProductMasterSmokeTest } from './auth/productMasterSmokeTest.js';
 
 // Arnés temporal Phase1-010B: sólo se ejecuta al abrir la aplicación con
@@ -20,6 +21,10 @@ if (isAuthenticatedApiSmokeTestRequested()) {
 // Arnés temporal Phase1-042: el trigger Product es independiente del Provider
 // global y sólo publica el resumen sanitizado construido por el smoke-test.
 void startProductMasterSmokeTest();
+
+// Arnés temporal Phase1-075: consulta Brands de forma autenticada y directa,
+// sin pasar por Product Provider Factory ni cambiar la fuente Product normal.
+void startProductBrandsSmokeTest();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

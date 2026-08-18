@@ -1,5 +1,35 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-075
+
+### Implementado
+
+- Arnés frontend temporal activado exclusivamente por
+  `?phase1-075-brands-smoke=1`; sin el valor exacto no inicializa MSAL, no
+  adquiere token ni llama la API.
+- Reutiliza sesión MSAL y token delegado para un GET directo a
+  `/api/products/brands`, sin Product Provider Factory ni activación global.
+- Timeout exclusivo de 35 000 ms con AbortController, señal y cleanup.
+
+### Sanitización y preservado
+
+- Consola limitada a `httpStatus`, `renderJwtValidation`, `dataverseRequest`,
+  `diagnostic` y `brandsReturned`; el conteo nunca conserva el array Brands.
+- Sin marcas, Product data, SKU, precios, URL/query/nextLink, tokens, claims,
+  Authorization, headers, payload, cuenta, PII o errores originales.
+- Backend, endpoint, contratos, query, tracing Phase1-066/068, paginación,
+  filtros, mappings, timeouts, Product normal, Customer y
+  `VITE_PRODUCT_SOURCE=local` permanecen sin cambios.
+- Arnés preparado, no desplegado ni ejecutado; debe retirarse tras el
+  diagnóstico autorizado.
+
+### Validación
+
+- Smokes focalizados: 49/49 PASS; frontend completo: 381/381 en 33 archivos.
+- Build frontend: PASS con 1 684 módulos. Backend no aplicó por ausencia de
+  cambios.
+- Sin commit, push, deploy, smoke productivo, variables ni cambios externos.
+
 ## 2026-08-18 — PHASE1-073
 
 ### Instrumentación y timeout
