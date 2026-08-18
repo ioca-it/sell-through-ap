@@ -259,7 +259,7 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
   }
 
   return Object.freeze({
-    async loadProducts() {
+    async loadProducts({ productTrace } = {}) {
       const rows = await dataverseClient.retrieveAll({
         entitySet: PRODUCT_SOURCE.entitySet,
         select: Object.freeze(Object.values(PRODUCT_SOURCE.fields)),
@@ -271,6 +271,7 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
           PRODUCT_SOURCE.fields.creationDate,
         ].map((field) => `${field} asc`).join(','),
         includeAnnotations: Object.freeze([DATAVERSE_FORMATTED_VALUE_ANNOTATION]),
+        productTrace,
       });
       return consolidateProductPriceLevelRows(rows);
     },

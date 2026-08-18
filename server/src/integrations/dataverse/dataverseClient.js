@@ -4,6 +4,11 @@ import {
   emitDataverseDiagnostic,
   inspectDataverseHttpFailure,
 } from './dataverseDiagnostics.js';
+import {
+  PRODUCT_TRACE_COMPONENTS,
+  PRODUCT_TRACE_RESULTS,
+  PRODUCT_TRACE_STAGES,
+} from '../../observability/productRequestTrace.js';
 
 export const DATAVERSE_FORMATTED_VALUE_ANNOTATION =
   'OData.Community.Display.V1.FormattedValue';
@@ -172,14 +177,29 @@ export const createDataverseClient = ({
     return url;
   };
 
-  const retrievePage = async ({ url, includeAnnotations }) => {
+  const retrievePage = async ({ url, includeAnnotations, productTrace }) => {
     let token;
+    productTrace?.checkpoint({
+      component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+      stage: PRODUCT_TRACE_STAGES.TOKEN_REQUEST_STARTED,
+      result: PRODUCT_TRACE_RESULTS.REACHED,
+    });
     try {
       token = await tokenProvider.getToken();
     } catch (error) {
+      productTrace?.checkpoint({
+        component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+        stage: PRODUCT_TRACE_STAGES.TOKEN_ACQUIRED,
+        result: PRODUCT_TRACE_RESULTS.FAIL,
+      });
       if (error?.statusCode === 502) throw error;
       throw new DataverseRequestError();
     }
+    productTrace?.checkpoint({
+      component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+      stage: PRODUCT_TRACE_STAGES.TOKEN_ACQUIRED,
+      result: PRODUCT_TRACE_RESULTS.PASS,
+    });
 
     let requestHeaders;
     try {
@@ -201,13 +221,28 @@ export const createDataverseClient = ({
       controller.abort();
     }, timeoutMs);
     let response;
+    productTrace?.checkpoint({
+      component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+      stage: PRODUCT_TRACE_STAGES.FETCH_STARTED,
+      result: PRODUCT_TRACE_RESULTS.REACHED,
+    });
     try {
       response = await fetchImpl(url, {
         method: 'GET',
         headers: requestHeaders,
         signal: controller.signal,
       });
+      productTrace?.checkpoint({
+        component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+        stage: PRODUCT_TRACE_STAGES.FETCH_COMPLETED,
+        result: PRODUCT_TRACE_RESULTS.PASS,
+      });
     } catch (error) {
+      productTrace?.checkpoint({
+        component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+        stage: PRODUCT_TRACE_STAGES.FETCH_COMPLETED,
+        result: PRODUCT_TRACE_RESULTS.FAIL,
+      });
       emitDataverseDiagnostic(
         createNetworkDiagnostic({
           error,
@@ -271,6 +306,7 @@ export const createDataverseClient = ({
     const page = await retrievePage({
       url: createQueryUrl(query),
       includeAnnotations: query.includeAnnotations,
+      productTrace: query.productTrace,
     });
     return page.value;
   };
@@ -285,6 +321,7 @@ export const createDataverseClient = ({
       const page = await retrievePage({
         url,
         includeAnnotations: query.includeAnnotations,
+        productTrace: query.productTrace,
       });
       rows.push(...page.value);
       url = page.nextLink ? validateNextLink(page.nextLink) : null;

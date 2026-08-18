@@ -1,5 +1,37 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-066
+
+### Implementado
+
+- Contexto temporal por `GET /api/products/master` con `traceId` generado por
+  `randomUUID()` y elapsed monotónico desde `performance.now()`.
+- Ocho checkpoints allowlisted en los puntos reales de Product API,
+  autenticación, Product Service, token/fetch Dataverse y `finish` HTTP.
+- Propagación interna explícita Product Route → Service → Gateway → Dataverse
+  Client, sin crear logging general en el cliente compartido.
+
+### Seguridad y validación
+
+- Eventos limitados a componente, diagnóstico, stage, elapsed entero,
+  resultado y `traceId`; sin request, headers, identidad, URL/query, payload,
+  error original, PII o datos comerciales.
+- Pruebas dedicadas cubren orden completo, correlación intra-request,
+  separación entre requests, respuesta realmente finalizada, fallo de fetch
+  complementario a `DATAVERSE_NETWORK_ERROR` y ausencia total en Customer.
+- Focalizadas 86/86, backend 110/110, frontend 344/344 y ambos builds
+  aprobados.
+
+### Temporalidad y alcance
+
+- La instrumentación debe retirarse al identificar la causa raíz y no intenta
+  corregir el timeout.
+- Sin cambios funcionales, contratos, autenticación, CORS, paginación,
+  mappings, filtros, precios, conflictos, fuentes o variables.
+- Smoke frontend 35 000 ms y fetch Dataverse 30 000 ms permanecen intactos;
+  Product Dataverse no se activa como fuente normal.
+- Sin commit, push, deploy, smoke productivo ni cambios externos.
+
 ## 2026-08-18 — PHASE1-064
 
 ### Implementado

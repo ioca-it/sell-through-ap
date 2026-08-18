@@ -4,7 +4,13 @@ const writeJson = (response, statusCode, payload) => {
   response.end(JSON.stringify(payload));
 };
 
-export const handleProductRoutes = async ({ request, response, url, productService }) => {
+export const handleProductRoutes = async ({
+  request,
+  response,
+  url,
+  productService,
+  productTrace,
+}) => {
   if (url.pathname !== '/api/products/master') return false;
   if (request.method !== 'GET') {
     writeJson(response, 405, {
@@ -19,7 +25,7 @@ export const handleProductRoutes = async ({ request, response, url, productServi
     error.statusCode = 400;
     throw error;
   }
-  const products = await productService.loadMaster();
+  const products = await productService.loadMaster({ productTrace });
   writeJson(response, 200, { products });
   return true;
 };

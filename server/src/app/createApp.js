@@ -5,6 +5,12 @@ import { createDataverseClient } from '../integrations/dataverse/dataverseClient
 import { createProductPriceLevelGateway } from '../integrations/dataverse/productPriceLevelGateway.js';
 import { createCustomerService } from '../modules/customers/customerService.js';
 import { createProductService } from '../modules/products/productService.js';
+import {
+  createProductRequestTrace,
+  PRODUCT_TRACE_COMPONENTS,
+  PRODUCT_TRACE_RESULTS,
+  PRODUCT_TRACE_STAGES,
+} from '../observability/productRequestTrace.js';
 import { handleCustomerRoutes } from '../routes/customerRoutes.js';
 import { handleProductRoutes } from '../routes/productRoutes.js';
 import { createRateLimiter } from '../security/rateLimiter.js';
@@ -33,12 +39,26 @@ const applyCors = ({ request, response, allowedOrigins }) => {
   return true;
 };
 
+const isProductMasterGet = (request) => request.method === 'GET'
+  && typeof request.url === 'string'
+  && (request.url === '/api/products/master'
+    || request.url.startsWith('/api/products/master?'));
+
+const startProductTrace = (factory) => {
+  try {
+    return factory();
+  } catch {
+    return undefined;
+  }
+};
+
 export const createApp = ({
   customerService,
   productService,
   allowedOrigins,
   authenticator,
   rateLimiter,
+  productTraceFactory = createProductRequestTrace,
 } = {}) => {
   if (!customerService || !Array.isArray(allowedOrigins) || allowedOrigins.includes('*')
     || typeof authenticator?.authenticate !== 'function'
@@ -47,6 +67,22 @@ export const createApp = ({
   }
 
   return async (request, response) => {
+    const productTrace = isProductMasterGet(request)
+      ? startProductTrace(productTraceFactory)
+      : undefined;
+    productTrace?.checkpoint({
+      component: PRODUCT_TRACE_COMPONENTS.API,
+      stage: PRODUCT_TRACE_STAGES.REQUEST_RECEIVED,
+      result: PRODUCT_TRACE_RESULTS.REACHED,
+    });
+    if (productTrace && typeof response.once === 'function') {
+      response.once('finish', () => productTrace.checkpoint({
+        component: PRODUCT_TRACE_COMPONENTS.API,
+        stage: PRODUCT_TRACE_STAGES.RESPONSE_SENT,
+        result: PRODUCT_TRACE_RESULTS.REACHED,
+      }));
+    }
+
     response.setHeader('Cache-Control', 'no-store');
     response.setHeader('X-Content-Type-Options', 'nosniff');
     if (!applyCors({ request, response, allowedOrigins })) return;
@@ -84,6 +120,11 @@ export const createApp = ({
         }
 
         const principal = await authenticator.authenticate(request);
+        productTrace?.checkpoint({
+          component: PRODUCT_TRACE_COMPONENTS.API,
+          stage: PRODUCT_TRACE_STAGES.AUTH_VALIDATED,
+          result: PRODUCT_TRACE_RESULTS.PASS,
+        });
         if (principal.subject) {
           const identityRateLimit = await rateLimiter.check({
             identity: principal.subject,
@@ -113,6 +154,7 @@ export const createApp = ({
         response,
         url,
         productService,
+        productTrace,
       });
       if (!handled && !productHandled) {
         writeJson(response, 404, { error: { code: 'NOT_FOUND', message: 'Ruta no encontrada.' } });

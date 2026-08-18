@@ -2,6 +2,27 @@
 
 ## Fase actual
 
+PHASE1-066 queda **PASS — TEMPORARY PRODUCT REQUEST TRACE IMPLEMENTED /
+SANITIZED / PRODUCT-ONLY / NOT DEPLOYED / NOT EXECUTED IN PRODUCTION / NOT
+ACTIVATED**. `GET /api/products/master` genera un `traceId` aleatorio mediante
+`randomUUID()` y lo propaga solo por argumentos internos desde Product API
+hasta Product Service, Product Price Level Gateway y Dataverse Client. Ocho
+checkpoints permiten distinguir recepción, JWT validado, inicio del servicio,
+adquisición del token, fetch Dataverse y `finish` de la respuesta HTTP.
+
+Cada evento `PHASE1_066_PRODUCT_REQUEST_TRACE` queda limitado a `component`,
+`diagnosticId`, `stage`, `elapsedMs`, `result` y `traceId`; no recibe request,
+identidad, headers, URL/query, payload, error ni dato comercial. Customer no
+crea el contexto y el cliente compartido solo emite checkpoints cuando Product
+lo propaga explícitamente. La observabilidad `DATAVERSE_*`, `NETWORK_*` e
+`invalid_response` permanece intacta y complementaria.
+
+La instrumentación es temporal, no corrige todavía el timeout y debe retirarse
+al identificar la causa raíz. Product Dataverse continúa sin activarse como
+fuente normal. La evidencia de entrada confirma que producción conserva el
+smoke frontend temporal de 35 000 ms y el fetch Dataverse de 30 000 ms; este
+hito no modifica ninguno.
+
 PHASE1-064 queda **PASS — TEMPORARY PRODUCT SMOKE TIMEOUT ALIGNED / FRONTEND-ONLY / NOT DEPLOYED / NOT EXECUTED / NOT ACTIVATED**. El arnés temporal Phase1-042 eleva exclusivamente su timeout default de **10 000 ms** a **35 000 ms** para permitir que el backend complete su ventana Dataverse temporal de 30 000 ms y disponga de 5 000 ms adicionales para Render, serialización, respuesta HTTP y lectura de `response.json()`.
 
 La ventana se crea inmediatamente antes del único `fetch` Product smoke, conserva dependency injection, pasa el `AbortSignal` al request y limpia siempre el timer. Al vencer continúa abortando el fetch y devolviendo únicamente `REQUEST_TIMEOUT` sanitizado. El cambio no configura la aplicación normal, Product Provider, Product Gateway ni Dataverse Client; el backend conserva 30 000 ms exclusivamente para su fetch hacia Dataverse.
@@ -32,7 +53,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-064 — Align Product Smoke Test Timeout.
+PHASE1-066 — Trace Product Request Execution Path.
 
 ## Última auditoría aprobada
 
@@ -64,6 +85,10 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Diagnóstico seguro Dataverse Phase1-020/057/059/061: clasifica fallos HTTP/OData, respuesta inválida y red; para red añade solo categoría de transporte, timeout configurado y tres booleanos de estado seguros, nunca error/payload/URL/query/credenciales/PII.
+- Trace temporal Product Phase1-066: correlaciona exclusivamente un
+  `GET /api/products/master` entre API, autenticación, Product Service y
+  Dataverse Client mediante UUID efímero y eventos allowlisted; no modifica
+  contratos ni habilita logging general para Customer.
 - Diagnósticos temporales Product Phase1-046 y Phase1-048/050/052: retirados del gateway, Dataverse Client, runtime y pruebas después de confirmar `crbbe_urlproducto`; no quedan probes, consultas de metadata, guards one-shot ni observabilidad temporal Product.
 - Diagnósticos temporales Customer Phase1-022/024: retirados del runtime, Dataverse Client y pruebas después de confirmar los nombres productivos; no quedan probes, consultas de metadata ni estado one-shot.
 - Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais`, `new_tipocliente` y su propiedad FormattedValue; normaliza los cuatro campos Customer, obtiene `customerType` exclusivamente desde la etiqueta Choice y aplica los LogicalNames confirmados `customertypecode`, `statecode` y `crbbe_estadodelcliente` con valores empresariales 3/0/4.
@@ -155,7 +180,11 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Después de revisar Phase1-064, la siguiente acción exacta es autorizar por separado el checkpoint y deploy de los cambios temporales Phase1-061 backend y Phase1-064 frontend; solo cuando ambos estén Live podrá ejecutarse una única revalidación Product autenticada. No debe ejecutarse otro smoke antes de esos deploys. `VITE_PRODUCT_SOURCE=local` debe permanecer vigente; después del resultado se reevaluarán ambos timeouts temporales y, si corresponde, se definirá en otro hito cualquier optimización de consulta/paginación. La activación normal de Product Dataverse continúa como decisión posterior e independiente.
+Después de revisar Phase1-066, la siguiente acción exacta es solicitar
+autorización separada para crear el checkpoint y desplegar exclusivamente esta
+instrumentación temporal. No debe ejecutarse smoke productivo ni activarse
+Product Dataverse como parte de esa solicitud. `VITE_PRODUCT_SOURCE=local`
+permanece vigente.
 
 ## Decisiones congeladas
 

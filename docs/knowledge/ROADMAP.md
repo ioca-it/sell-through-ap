@@ -1,5 +1,28 @@
 # Roadmap aprobado
 
+## Phase1-066 — Trace Product Request Execution Path
+
+Product API queda **TEMPORARY REQUEST TRACE IMPLEMENTED / SANITIZED /
+PRODUCT-ONLY / NOT DEPLOYED / NOT EXECUTED IN PRODUCTION / NOT ACTIVATED**. Un
+UUID aleatorio y efímero correlaciona los checkpoints reales de recepción,
+autenticación, Product Service, token/fetch Dataverse y envío de respuesta para
+`GET /api/products/master`.
+
+Los eventos contienen solo componente, identificador diagnóstico, stage,
+elapsed entero, resultado técnico y `traceId`. El contexto se propaga de forma
+explícita; Customer Master no lo crea y el Dataverse Client compartido no se
+convierte en logging general. Los diagnósticos Dataverse existentes continúan
+intactos y complementarios.
+
+No cambia comportamiento funcional ni los timeouts temporales de 35 000 ms
+frontend / 30 000 ms fetch Dataverse. Product Dataverse continúa sin activarse
+como fuente normal y la instrumentación debe retirarse al determinar la causa
+raíz.
+
+Siguiente acción exacta: solicitar autorización separada para crear el
+checkpoint y desplegar exclusivamente esta instrumentación temporal, sin
+ejecutar todavía smoke productivo ni activar Product Dataverse.
+
 ## Phase1-064 — Align Product Smoke Test Timeout
 
 El arnés temporal Product Phase1-042 queda **TEMPORARY 35 SECOND FRONTEND
