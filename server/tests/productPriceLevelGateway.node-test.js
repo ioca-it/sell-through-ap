@@ -144,6 +144,12 @@ test('gateway consulta productpricelevels con ambas compañías en backend', asy
     'crbbe_origen',
     'crbbe_companiacompradora',
   ]);
+  assert.equal(
+    calls[0].orderBy,
+    'crbbe_sku asc,crbbe_origen asc,crbbe_companiacompradora asc,createdon asc',
+  );
+  assert.equal(Object.hasOwn(calls[0], 'top'), false);
+  assert.equal(Object.hasOwn(calls[0], 'maxPageSize'), false);
   assert.equal(calls[0].select.includes('producturl'), false);
 });
 

@@ -1,5 +1,30 @@
 # Roadmap aprobado
 
+## Phase1-068 — Diagnose Product Dataverse Multi-Page Latency
+
+El diagnóstico queda **PASS — MULTI-PAGE ROOT CAUSE PROVEN / TEMPORARY
+PAGINATION TRACE ADDED / SANITIZED / PRODUCT-ONLY / NOT DEPLOYED / NOT EXECUTED
+/ NOT ACTIVATED**. Una única llamada Product Gateway a `retrieveAll()` sigue
+secuencialmente los `@odata.nextLink` y explica los cinco fetch del mismo
+`traceId`; no hay retries, consultas independientes ni llamadas Gateway
+repetidas.
+
+La consulta no cambia: conserva Entity Set, trece campos, filtro, orden y
+FormattedValue, sin `$top` ni `odata.maxpagesize`. Los fetch aportados acumulan
+51.534 s y promedian 10.307 s. `getToken()` se invoca por página, pero el
+proveedor reutiliza token válido en cache y no demuestra OAuth de red por
+página.
+
+`PHASE1_068_PRODUCT_PAGINATION_TRACE` añade únicamente elapsed, número de
+página, tiempo de fetch, conteos, booleano de next link y totales finales bajo
+el `traceId` Product. No registra filas, valores, URL/query/next link,
+credenciales o identidad; Customer queda excluido.
+
+Siguiente acción exacta: después de revisión y autorización separada, crear el
+checkpoint y desplegar solo esta instrumentación backend. Una captura Product
+autenticada posterior deberá medir páginas/registros reales antes de autorizar
+cualquier ajuste de page size, query, token o timeout.
+
 ## Phase1-066 — Trace Product Request Execution Path
 
 Product API queda **TEMPORARY REQUEST TRACE IMPLEMENTED / SANITIZED /

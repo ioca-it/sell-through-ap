@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 export const PRODUCT_TRACE_DIAGNOSTIC_ID = 'PHASE1_066_PRODUCT_REQUEST_TRACE';
+export const PRODUCT_PAGINATION_DIAGNOSTIC_ID =
+  'PHASE1_068_PRODUCT_PAGINATION_TRACE';
 
 export const PRODUCT_TRACE_COMPONENTS = Object.freeze({
   API: 'ProductApi',
@@ -26,9 +28,16 @@ export const PRODUCT_TRACE_RESULTS = Object.freeze({
   FAIL: 'FAIL',
 });
 
+export const PRODUCT_PAGINATION_STAGES = Object.freeze({
+  PAGE_FETCH_STARTED: 'PRODUCT_PAGE_FETCH_STARTED',
+  PAGE_FETCH_COMPLETED: 'PRODUCT_PAGE_FETCH_COMPLETED',
+  PAGINATION_COMPLETED: 'PRODUCT_PAGINATION_COMPLETED',
+});
+
 const ALLOWED_COMPONENTS = new Set(Object.values(PRODUCT_TRACE_COMPONENTS));
 const ALLOWED_STAGES = new Set(Object.values(PRODUCT_TRACE_STAGES));
 const ALLOWED_RESULTS = new Set(Object.values(PRODUCT_TRACE_RESULTS));
+const ALLOWED_PAGINATION_STAGES = new Set(Object.values(PRODUCT_PAGINATION_STAGES));
 const SAFE_TRACE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const defaultLogger = (event) => console.info(JSON.stringify(event));
@@ -46,6 +55,10 @@ const sanitizeElapsedMs = (startMs, now) => {
   const elapsed = readClock(now) - startMs;
   return Math.max(0, Math.trunc(Number.isFinite(elapsed) ? elapsed : 0));
 };
+
+const isNonNegativeInteger = (value) => Number.isInteger(value) && value >= 0;
+
+const isPositiveInteger = (value) => Number.isInteger(value) && value > 0;
 
 // Contexto efímero y allowlisted: no recibe request, identidad, query ni payload.
 export const createProductRequestTrace = ({
@@ -83,6 +96,75 @@ export const createProductRequestTrace = ({
         logger(event);
       } catch {
         // La trazabilidad temporal nunca altera el flujo funcional observado.
+      }
+      return true;
+    },
+    paginationCheckpoint({
+      stage,
+      pageNumber,
+      fetchElapsedMs,
+      recordsReturned,
+      hasNextLink,
+      cumulativeRecords,
+      totalPages,
+      totalRecords,
+      totalFetchElapsedMs,
+    } = {}) {
+      if (!ALLOWED_PAGINATION_STAGES.has(stage)) return false;
+
+      let event;
+      if (stage === PRODUCT_PAGINATION_STAGES.PAGE_FETCH_STARTED) {
+        if (!isPositiveInteger(pageNumber)) return false;
+        event = Object.freeze({
+          component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+          diagnosticId: PRODUCT_PAGINATION_DIAGNOSTIC_ID,
+          stage,
+          elapsedMs: sanitizeElapsedMs(startMs, now),
+          traceId,
+          pageNumber,
+        });
+      } else if (stage === PRODUCT_PAGINATION_STAGES.PAGE_FETCH_COMPLETED) {
+        if (!isPositiveInteger(pageNumber)
+          || !isNonNegativeInteger(fetchElapsedMs)
+          || !isNonNegativeInteger(recordsReturned)
+          || typeof hasNextLink !== 'boolean'
+          || !isNonNegativeInteger(cumulativeRecords)) {
+          return false;
+        }
+        event = Object.freeze({
+          component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+          diagnosticId: PRODUCT_PAGINATION_DIAGNOSTIC_ID,
+          stage,
+          elapsedMs: sanitizeElapsedMs(startMs, now),
+          traceId,
+          pageNumber,
+          fetchElapsedMs,
+          recordsReturned,
+          hasNextLink,
+          cumulativeRecords,
+        });
+      } else {
+        if (!isNonNegativeInteger(totalPages)
+          || !isNonNegativeInteger(totalRecords)
+          || !isNonNegativeInteger(totalFetchElapsedMs)) {
+          return false;
+        }
+        event = Object.freeze({
+          component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+          diagnosticId: PRODUCT_PAGINATION_DIAGNOSTIC_ID,
+          stage,
+          elapsedMs: sanitizeElapsedMs(startMs, now),
+          traceId,
+          totalPages,
+          totalRecords,
+          totalFetchElapsedMs,
+        });
+      }
+
+      try {
+        logger(event);
+      } catch {
+        // El diagnóstico de paginación tampoco altera la recuperación Product.
       }
       return true;
     },

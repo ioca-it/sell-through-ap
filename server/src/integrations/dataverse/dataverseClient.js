@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import {
   createDataverseInvalidResponseDiagnostic,
   createDataverseNetworkDiagnostic,
@@ -5,6 +6,7 @@ import {
   inspectDataverseHttpFailure,
 } from './dataverseDiagnostics.js';
 import {
+  PRODUCT_PAGINATION_STAGES,
   PRODUCT_TRACE_COMPONENTS,
   PRODUCT_TRACE_RESULTS,
   PRODUCT_TRACE_STAGES,
@@ -115,6 +117,11 @@ const createInvalidResponseDiagnostic = ({ response, payload, parseSuccess }) =>
   ...readInvalidResponseMetadata({ response, payload, parseSuccess }),
 });
 
+const readElapsedMs = (startedAt) => Math.max(
+  0,
+  Math.trunc(performance.now() - startedAt),
+);
+
 export class DataverseRequestError extends Error {
   constructor(message = 'No fue posible consultar Dataverse.') {
     super(message);
@@ -177,7 +184,12 @@ export const createDataverseClient = ({
     return url;
   };
 
-  const retrievePage = async ({ url, includeAnnotations, productTrace }) => {
+  const retrievePage = async ({
+    url,
+    includeAnnotations,
+    productTrace,
+    pageNumber,
+  }) => {
     let token;
     productTrace?.checkpoint({
       component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
@@ -221,17 +233,24 @@ export const createDataverseClient = ({
       controller.abort();
     }, timeoutMs);
     let response;
+    productTrace?.paginationCheckpoint?.({
+      stage: PRODUCT_PAGINATION_STAGES.PAGE_FETCH_STARTED,
+      pageNumber,
+    });
     productTrace?.checkpoint({
       component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
       stage: PRODUCT_TRACE_STAGES.FETCH_STARTED,
       result: PRODUCT_TRACE_RESULTS.REACHED,
     });
+    const fetchStartedAt = performance.now();
+    let fetchElapsedMs = 0;
     try {
       response = await fetchImpl(url, {
         method: 'GET',
         headers: requestHeaders,
         signal: controller.signal,
       });
+      fetchElapsedMs = readElapsedMs(fetchStartedAt);
       productTrace?.checkpoint({
         component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
         stage: PRODUCT_TRACE_STAGES.FETCH_COMPLETED,
@@ -291,6 +310,7 @@ export const createDataverseClient = ({
       nextLink: typeof payload['@odata.nextLink'] === 'string'
         ? payload['@odata.nextLink']
         : null,
+      fetchElapsedMs,
     };
   };
 
@@ -315,6 +335,7 @@ export const createDataverseClient = ({
     const rows = [];
     let url = createQueryUrl(query);
     let pageCount = 0;
+    let totalFetchElapsedMs = 0;
     while (url) {
       pageCount += 1;
       if (pageCount > 1000) throw new DataverseRequestError();
@@ -322,10 +343,26 @@ export const createDataverseClient = ({
         url,
         includeAnnotations: query.includeAnnotations,
         productTrace: query.productTrace,
+        pageNumber: pageCount,
       });
       rows.push(...page.value);
+      totalFetchElapsedMs += page.fetchElapsedMs;
+      query.productTrace?.paginationCheckpoint?.({
+        stage: PRODUCT_PAGINATION_STAGES.PAGE_FETCH_COMPLETED,
+        pageNumber: pageCount,
+        fetchElapsedMs: page.fetchElapsedMs,
+        recordsReturned: page.value.length,
+        hasNextLink: Boolean(page.nextLink),
+        cumulativeRecords: rows.length,
+      });
       url = page.nextLink ? validateNextLink(page.nextLink) : null;
     }
+    query.productTrace?.paginationCheckpoint?.({
+      stage: PRODUCT_PAGINATION_STAGES.PAGINATION_COMPLETED,
+      totalPages: pageCount,
+      totalRecords: rows.length,
+      totalFetchElapsedMs,
+    });
     return rows;
   };
 

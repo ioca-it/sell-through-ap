@@ -1,5 +1,37 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-068
+
+### Diagnóstico
+
+- Demostrado que los cinco fetch Product del mismo `traceId` son páginas
+  secuenciales de una única llamada `retrieveAll()` gobernada por
+  `@odata.nextLink`; no son retries, consultas Gateway independientes ni
+  llamadas múltiples al servicio.
+- Los fetch aportados suman 51.534 s, promedian 10.307 s y dominan cerca del
+  94.5 % del tiempo conocido hasta el último fetch.
+- Confirmada la consulta vigente sin `$top` ni `odata.maxpagesize`; Dataverse
+  controla el tamaño efectivo de página.
+- Confirmado `getToken()` por página con cache/expiración y deduplicación
+  interna de Entra Token Provider; no implica OAuth de red por página.
+
+### Instrumentación y seguridad
+
+- Añadido `PHASE1_068_PRODUCT_PAGINATION_TRACE` al contexto Product temporal
+  para correlacionar página, tiempos, conteos, next-link booleano y totales.
+- Esquemas cerrados sin filas, SKU, nombres, precios, URLs, next link, query,
+  payload, headers, tokens, identidad, PII, secretos o stacks; Customer no
+  genera el diagnóstico y no se envía al frontend.
+
+### Validación y alcance
+
+- Focalizadas 71/71, backend 111/111, frontend 344/344 en 32 archivos y ambos
+  builds aprobados.
+- Sin cambios en consulta, page size, timeouts, mappings, filtros, contratos,
+  precios, consolidación, Customer, auth, CORS, frontend, variables o fuente
+  Product normal.
+- Sin commit, push, deploy, smoke productivo ni cambios externos.
+
 ## 2026-08-18 — PHASE1-066
 
 ### Implementado

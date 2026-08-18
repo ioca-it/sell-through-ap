@@ -2,6 +2,33 @@
 
 ## Fase actual
 
+PHASE1-068 queda **PASS — PRODUCT MULTI-PAGE ROOT CAUSE PROVEN / TEMPORARY
+PAGINATION TRACE ADDED / SANITIZED / PRODUCT-ONLY / NOT DEPLOYED / NOT EXECUTED
+/ NOT ACTIVATED**. Los cinco ciclos secuenciales aportados bajo un mismo
+`traceId` nacen de una única llamada Gateway a `retrieveAll()`: su `while
+(url)` ejecuta una página mediante `retrievePage()`, acumula `value` y continúa
+exclusivamente con el `@odata.nextLink` validado del mismo origen/path. Product
+no usa `retrieveMultiple()`, no contiene retries y no repite el Gateway.
+
+Los cinco fetch acumulan 51.534 s, promedian 10.307 s y representan cerca del
+94.5 % de los 54.531 s conocidos hasta el último fetch. La consulta conserva
+`productpricelevels`, sus trece campos, el filtro de dos compañías y el orden
+vigente; no define `$top` ni `odata.maxpagesize`. `Prefer` contiene únicamente
+FormattedValue, por lo que Dataverse decide el tamaño efectivo de página.
+
+Cada página sí llama `getToken()`, pero Entra Token Provider reutiliza
+`cachedToken` hasta `validUntil` y comparte `pendingToken`: los checkpoints
+Phase1-066 no demuestran una solicitud OAuth de red por página. La etapa no es
+material frente a los 8.639–11.231 s de cada fetch con la evidencia disponible.
+
+Como el código no revela registros reales por página, el contexto temporal
+Product incorpora `PHASE1_068_PRODUCT_PAGINATION_TRACE`: inicio de página,
+final con número/tiempo/conteos/next-link booleano/acumulado y resumen con
+páginas/registros/fetch total. Los esquemas son allowlisted, no reciben datos,
+URLs/query/next link/identidad/credenciales y Customer no los genera. No se
+envían al frontend. Timeouts, consulta, reglas y fuente normal permanecen sin
+cambios.
+
 PHASE1-066 queda **PASS — TEMPORARY PRODUCT REQUEST TRACE IMPLEMENTED /
 SANITIZED / PRODUCT-ONLY / NOT DEPLOYED / NOT EXECUTED IN PRODUCTION / NOT
 ACTIVATED**. `GET /api/products/master` genera un `traceId` aleatorio mediante
@@ -53,7 +80,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-066 — Trace Product Request Execution Path.
+PHASE1-068 — Diagnose Product Dataverse Multi-Page Latency.
 
 ## Última auditoría aprobada
 
@@ -89,6 +116,10 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
   `GET /api/products/master` entre API, autenticación, Product Service y
   Dataverse Client mediante UUID efímero y eventos allowlisted; no modifica
   contratos ni habilita logging general para Customer.
+- Diagnóstico temporal Product Phase1-068: demuestra que los múltiples fetch
+  son páginas secuenciales de `retrieveAll()` y registra solo número de página,
+  elapsed/fetch elapsed, conteos y presencia booleana de next link, más totales
+  finales; no registra el enlace, query, filas ni datos Product/Customer.
 - Diagnósticos temporales Product Phase1-046 y Phase1-048/050/052: retirados del gateway, Dataverse Client, runtime y pruebas después de confirmar `crbbe_urlproducto`; no quedan probes, consultas de metadata, guards one-shot ni observabilidad temporal Product.
 - Diagnósticos temporales Customer Phase1-022/024: retirados del runtime, Dataverse Client y pruebas después de confirmar los nombres productivos; no quedan probes, consultas de metadata ni estado one-shot.
 - Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais`, `new_tipocliente` y su propiedad FormattedValue; normaliza los cuatro campos Customer, obtiene `customerType` exclusivamente desde la etiqueta Choice y aplica los LogicalNames confirmados `customertypecode`, `statecode` y `crbbe_estadodelcliente` con valores empresariales 3/0/4.
@@ -180,11 +211,11 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Después de revisar Phase1-066, la siguiente acción exacta es solicitar
-autorización separada para crear el checkpoint y desplegar exclusivamente esta
-instrumentación temporal. No debe ejecutarse smoke productivo ni activarse
-Product Dataverse como parte de esa solicitud. `VITE_PRODUCT_SOURCE=local`
-permanece vigente.
+Después de revisar Phase1-068, la siguiente acción exacta es solicitar
+autorización separada para crear el checkpoint y desplegar exclusivamente la
+instrumentación de paginación. Solo después de quedar Live podrá autorizarse
+una única captura Product autenticada para obtener los conteos reales antes de
+decidir cualquier optimización. `VITE_PRODUCT_SOURCE=local` permanece vigente.
 
 ## Decisiones congeladas
 
@@ -242,8 +273,11 @@ permanece vigente.
 
 ## Cantidad de pruebas
 
-Frontend: 342/342 aprobadas en 32 archivos. Backend: 90/90 aprobadas en 10 archivos.
+Frontend: 344/344 aprobadas en 32 archivos. Backend: 111/111 aprobadas en 10 archivos.
 
 ## Estado del build
 
-Phase1-055: pruebas focalizadas Product/Dataverse 46/46, backend 90/90 y frontend 342/342 en 32 archivos; build frontend aprobado con Vite 5.4.21 y 1683 módulos transformados; backend syntax check aprobado. Phase1-032 permanece como último cierre productivo de Maestro Cliente; Product Dataverse no fue activado y la corrección Phase1-055 no se desplegó ni ejecutó contra producción.
+Phase1-068: pruebas focalizadas 71/71, backend 111/111 y frontend 344/344 en
+32 archivos; build frontend aprobado con Vite 5.4.21 y 1 683 módulos
+transformados; backend syntax check aprobado. Product Dataverse no fue activado
+y Phase1-068 no se desplegó ni ejecutó contra producción.

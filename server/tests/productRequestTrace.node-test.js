@@ -10,6 +10,8 @@ import { createProductPriceLevelGateway } from '../src/integrations/dataverse/pr
 import { createProductService } from '../src/modules/products/productService.js';
 import {
   createProductRequestTrace,
+  PRODUCT_PAGINATION_DIAGNOSTIC_ID,
+  PRODUCT_PAGINATION_STAGES,
   PRODUCT_TRACE_DIAGNOSTIC_ID,
   PRODUCT_TRACE_STAGES,
 } from '../src/observability/productRequestTrace.js';
@@ -98,12 +100,15 @@ test('reconstruye en orden el flujo Product completo con un traceId efímero por
   });
 
   assert.deepEqual(authenticationSnapshots[0], [PRODUCT_TRACE_STAGES.REQUEST_RECEIVED]);
-  const traceIds = [...new Set(events.map(({ traceId }) => traceId))];
+  const phase066Events = events.filter(({ diagnosticId }) => (
+    diagnosticId === PRODUCT_TRACE_DIAGNOSTIC_ID
+  ));
+  const traceIds = [...new Set(phase066Events.map(({ traceId }) => traceId))];
   assert.deepEqual(traceIds, ['phase1-066-trace-1', 'phase1-066-trace-2']);
 
   const expectedStages = Object.values(PRODUCT_TRACE_STAGES);
   traceIds.forEach((traceId) => {
-    const requestEvents = events.filter((event) => event.traceId === traceId);
+    const requestEvents = phase066Events.filter((event) => event.traceId === traceId);
     assert.deepEqual(requestEvents.map(({ stage }) => stage), expectedStages);
     assert.equal(requestEvents.every((event) => (
       event.diagnosticId === PRODUCT_TRACE_DIAGNOSTIC_ID
@@ -113,7 +118,7 @@ test('reconstruye en orden el flujo Product completo con un traceId efímero por
     )), true);
   });
 
-  events.forEach((event) => {
+  phase066Events.forEach((event) => {
     assert.deepEqual(Object.keys(event), [
       'component',
       'diagnosticId',
@@ -126,6 +131,143 @@ test('reconstruye en orden el flujo Product completo con un traceId efímero por
   assert.doesNotMatch(
     JSON.stringify(events),
     /sensitive-browser-jwt|sensitive-dataverse-token|test-user|Authorization|Bearer/i,
+  );
+});
+
+test('correlaciona y contabiliza cada página Product sin registrar contenido sensible', async () => {
+  const events = [];
+  const productTrace = createTraceFactory(events)();
+  let tokenCalls = 0;
+  let fetchCalls = 0;
+  const dataverseClient = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: {
+      getToken: async () => {
+        tokenCalls += 1;
+        return 'sensitive-dataverse-token';
+      },
+    },
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) {
+        return new Response(JSON.stringify({
+          value: [
+            { crbbe_sku: 'SKU-SENSIBLE-1', amount: 25 },
+            { crbbe_sku: 'SKU-SENSIBLE-2', amount: 18 },
+          ],
+          '@odata.nextLink': 'https://organization.crm.dynamics.com/api/data/v9.2/productpricelevels?$skiptoken=query-sensitive-1',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (fetchCalls === 2) {
+        return new Response(JSON.stringify({
+          value: [{
+            crbbe_nombreproducto: 'Producto Sensible',
+            crbbe_urlproducto: 'https://products.invalid/sensitive',
+            customerId: 'customer-sensitive',
+          }],
+          '@odata.nextLink': 'https://organization.crm.dynamics.com/api/data/v9.2/productpricelevels?$skiptoken=query-sensitive-2',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ value: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+  });
+
+  const rows = await dataverseClient.retrieveAll({
+    entitySet: 'productpricelevels',
+    productTrace,
+  });
+  assert.equal(rows.length, 3);
+  assert.equal(tokenCalls, 3);
+  assert.equal(fetchCalls, 3);
+
+  const paginationEvents = events.filter(({ diagnosticId }) => (
+    diagnosticId === PRODUCT_PAGINATION_DIAGNOSTIC_ID
+  ));
+  const startedEvents = paginationEvents.filter(({ stage }) => (
+    stage === PRODUCT_PAGINATION_STAGES.PAGE_FETCH_STARTED
+  ));
+  const completedEvents = paginationEvents.filter(({ stage }) => (
+    stage === PRODUCT_PAGINATION_STAGES.PAGE_FETCH_COMPLETED
+  ));
+  const [summaryEvent] = paginationEvents.filter(({ stage }) => (
+    stage === PRODUCT_PAGINATION_STAGES.PAGINATION_COMPLETED
+  ));
+
+  assert.deepEqual(startedEvents.map(({ pageNumber }) => pageNumber), [1, 2, 3]);
+  startedEvents.forEach((event) => {
+    assert.deepEqual(Object.keys(event), [
+      'component',
+      'diagnosticId',
+      'stage',
+      'elapsedMs',
+      'traceId',
+      'pageNumber',
+    ]);
+  });
+  assert.deepEqual(completedEvents.map((event) => ({
+    traceId: event.traceId,
+    pageNumber: event.pageNumber,
+    recordsReturned: event.recordsReturned,
+    hasNextLink: event.hasNextLink,
+    cumulativeRecords: event.cumulativeRecords,
+  })), [
+    {
+      traceId: 'phase1-066-trace-1',
+      pageNumber: 1,
+      recordsReturned: 2,
+      hasNextLink: true,
+      cumulativeRecords: 2,
+    },
+    {
+      traceId: 'phase1-066-trace-1',
+      pageNumber: 2,
+      recordsReturned: 1,
+      hasNextLink: true,
+      cumulativeRecords: 3,
+    },
+    {
+      traceId: 'phase1-066-trace-1',
+      pageNumber: 3,
+      recordsReturned: 0,
+      hasNextLink: false,
+      cumulativeRecords: 3,
+    },
+  ]);
+  completedEvents.forEach((event) => {
+    assert.deepEqual(Object.keys(event), [
+      'component',
+      'diagnosticId',
+      'stage',
+      'elapsedMs',
+      'traceId',
+      'pageNumber',
+      'fetchElapsedMs',
+      'recordsReturned',
+      'hasNextLink',
+      'cumulativeRecords',
+    ]);
+    assert.equal(Number.isInteger(event.fetchElapsedMs), true);
+    assert.equal(event.fetchElapsedMs >= 0, true);
+  });
+  assert.deepEqual(summaryEvent, {
+    component: 'DataverseClient',
+    diagnosticId: PRODUCT_PAGINATION_DIAGNOSTIC_ID,
+    stage: PRODUCT_PAGINATION_STAGES.PAGINATION_COMPLETED,
+    elapsedMs: summaryEvent.elapsedMs,
+    traceId: 'phase1-066-trace-1',
+    totalPages: 3,
+    totalRecords: 3,
+    totalFetchElapsedMs: completedEvents.reduce(
+      (total, event) => total + event.fetchElapsedMs,
+      0,
+    ),
+  });
+  assert.doesNotMatch(
+    JSON.stringify(paginationEvents),
+    /SKU-SENSIBLE|Producto Sensible|products\.invalid|query-sensitive|customer-sensitive|amount|crbbe_|@odata\.nextLink|access-token|Authorization|Bearer/i,
   );
 });
 
