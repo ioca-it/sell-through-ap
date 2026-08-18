@@ -30,6 +30,9 @@ vi.mock('react', async (importOriginal) => {
 });
 
 import App from '../App.jsx';
+import { createProductMasterService } from '../application/productMasterService.js';
+import { createProductProvider } from '../providers/productProviderFactory.js';
+import { createProductRepository } from '../repositories/productRepository.js';
 
 const customer = Object.freeze({
   customerCode: 'UI-001',
@@ -67,6 +70,18 @@ const findElement = (node, predicate) => {
   if (typeof node !== 'object' || !node.props) return null;
   if (predicate(node)) return node;
   return findElement(node.props.children, predicate);
+};
+
+const findElements = (node, predicate, matches = []) => {
+  if (node === null || node === undefined || typeof node === 'boolean') return matches;
+  if (Array.isArray(node)) {
+    node.forEach((child) => findElements(child, predicate, matches));
+    return matches;
+  }
+  if (typeof node !== 'object' || !node.props) return matches;
+  if (predicate(node)) matches.push(node);
+  findElements(node.props.children, predicate, matches);
+  return matches;
 };
 
 const textContent = (node) => {
@@ -159,6 +174,7 @@ describe('Pre-filtro Marca en Configuración', () => {
 
     expect(brandInput(tree).props.value).toBe('SKULLCANDY');
     expect(textContent(tree)).toContain('Marca seleccionada: SKULLCANDY');
+    expect(productMasterService.loadProducts).toHaveBeenCalledWith({ brand: 'SKULLCANDY' });
   });
 
   it('permite selección por teclado', async () => {
@@ -243,12 +259,96 @@ describe('Pre-filtro Marca en Configuración', () => {
     );
   });
 
-  it('mantiene el flujo local disponible sin exigir la selección UI', () => {
-    const tree = renderApp({ productSource: 'local' });
+  it('invalida A inmediatamente e ignora su respuesta si B ya fue seleccionada', async () => {
+    const brandA = createDeferred();
+    const brandB = createDeferred();
+    productMasterService.loadProducts.mockImplementation(({ brand }) => (
+      brand === 'ANKER' ? brandA.promise : brandB.promise
+    ));
+    let tree = await loadBrandOptions();
+
+    brandOption(tree, 'ANKER').props.onClick();
+    tree = renderDataverseApp();
+    expect(textContent(tree)).toContain('Cargando Maestro Producto');
+
+    brandInput(tree).props.onChange({ target: { value: 'SKULL' } });
+    tree = renderDataverseApp();
+    brandOption(tree, 'SKULLCANDY').props.onClick();
+    tree = renderDataverseApp();
+    expect(productMasterService.loadProducts.mock.calls).toEqual([
+      [{ brand: 'ANKER' }],
+      [{ brand: 'SKULLCANDY' }],
+    ]);
+
+    brandA.resolve([{ sku: 'A-1' }]);
+    await Promise.resolve();
+    tree = renderDataverseApp();
+    expect(textContent(tree)).toContain('Cargando Maestro Producto');
+    expect(textContent(tree)).not.toContain('Maestro Producto listo');
+
+    brandB.resolve([{ sku: 'B-1' }]);
+    await vi.waitFor(() => {
+      tree = renderDataverseApp();
+      expect(textContent(tree)).toContain('Maestro Producto listo');
+    });
+    expect(brandInput(tree).props.value).toBe('SKULLCANDY');
+  });
+
+  it('recorre Factory Dataverse, Repository y Service hasta mostrar las 33 marcas', async () => {
+    const brands = [
+      ...Array.from({ length: 32 }, (_, index) => `MARCA-${String(index + 1).padStart(2, '0')}`),
+      'SKULLCANDY',
+    ];
+    const fetchImpl = vi.fn(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => (
+        url.pathname === '/api/products/brands' ? { brands } : { products: [] }
+      ),
+    }));
+    const integratedProductService = createProductMasterService({
+      repository: createProductRepository({
+        provider: createProductProvider({
+          source: 'dataverse',
+          apiBaseUrl: 'https://backend.invalid',
+          fetchImpl,
+          getAccessToken: async () => 'delegated-token',
+        }),
+      }),
+    });
+    const renderIntegratedApp = () => renderApp({
+      productSource: 'dataverse',
+      productMasterService: integratedProductService,
+    });
+    let tree = renderIntegratedApp();
+
+    brandInput(tree).props.onFocus();
+    await vi.waitFor(() => {
+      tree = renderIntegratedApp();
+      expect(findElements(tree, (node) => node.props?.role === 'option')).toHaveLength(33);
+    });
+    expect(brandOption(tree, 'SKULLCANDY')).not.toBeNull();
+    expect(fetchImpl.mock.calls[0][0].pathname).toBe('/api/products/brands');
+
+    brandOption(tree, 'SKULLCANDY').props.onClick();
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+    expect(fetchImpl.mock.calls[1][0].pathname).toBe('/api/products/master');
+    expect(fetchImpl.mock.calls[1][0].searchParams.get('brand')).toBe('SKULLCANDY');
+  });
+
+  it('mantiene el flujo local de marcas disponible sin exigir la selección UI', async () => {
+    let tree = renderApp({ productSource: 'local' });
     expect(brandInput(tree)).not.toBeNull();
     expect(textContent(tree)).toContain(
       'La selección se aplicará al Product Provider cuando corresponda.',
     );
+    brandInput(tree).props.onFocus();
+    await vi.waitFor(() => {
+      tree = renderApp({ productSource: 'local' });
+      expect(brandOption(tree, 'ANKER')).not.toBeNull();
+    });
+    brandOption(tree, 'ANKER').props.onClick();
+    expect(productMasterService.loadProducts).not.toHaveBeenCalled();
   });
 });
 

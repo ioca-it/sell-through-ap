@@ -1,5 +1,26 @@
 # Roadmap aprobado
 
+## Phase1-081 — Activate Real Dataverse Brand-to-Product Configuration Flow
+
+El hito queda **PASS — NORMAL DATAVERSE PRODUCT FLOW READY / EXTERNAL SOURCE
+ACTIVATION PENDING / LOCALLY VALIDATED / NOT DEPLOYED**. Se confirmó que
+`VITE_PRODUCT_SOURCE=local` hacía que la Factory eligiera el Provider local y
+por eso el ComboBox normal no consultaba `/api/products/brands`. La cadena
+Application Service → Repository → Factory → Dataverse Product Provider ya
+entrega las 33 marcas al ComboBox cuando la fuente es `dataverse`.
+
+La selección explícita precarga Product Master con una única marca, reutiliza
+la solicitud pendiente y conserva el dataset identificado por esa marca. El
+cambio A→B vacía A de inmediato y descarta respuestas obsoletas; sin marca no
+hay request, carga global ni fallback. Local, Customer, mappings, seguridad y
+timeout Product de 35 s permanecen sin cambios; no aplicaron cambios backend.
+
+Siguiente acción exacta: después del checkpoint autorizado, establecer
+externamente `VITE_PRODUCT_SOURCE=dataverse` en Vercel y reconstruir/desplegar
+el frontend para que la variable build-time sea efectiva; luego validar en la
+presentación normal Configuración → Marca → Product Master, sin crear otro
+smoke.
+
 ## Phase1-077 — Optimize Brand Query and Validate Brand-Filtered Product Master
 
 El hito queda **PASS — SERVER-SIDE BRAND GROUPBY / FILTERED PRODUCT MASTER

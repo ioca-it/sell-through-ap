@@ -53,6 +53,18 @@ describe('DataverseProductProvider vía backend portable', () => {
     );
   });
 
+  it('codifica brand como único parámetro funcional del Product Master', async () => {
+    const { provider, fetchImpl } = createProvider({ payload: { products: [] } });
+    const brand = 'A&B / Audio';
+
+    await expect(provider.loadProducts({ brand })).resolves.toEqual([]);
+
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url.searchParams.get('brand')).toBe(brand);
+    expect(url.search).toBe(`?brand=${encodeURIComponent(brand)}`);
+    expect([...url.searchParams.keys()]).toEqual(['brand']);
+  });
+
   it('descarta campos extra y conserva URLs/fechas vacías controladas', async () => {
     const { provider } = createProvider({
       payload: { products: [{ ...apiProduct, imageUrl: null, productUrl: undefined, extra: 'x' }] },

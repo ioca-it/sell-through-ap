@@ -433,6 +433,14 @@ export default function App({
     message: '',
   });
   const [brandLoadRequest] = useState({ id: 0, pending: false, loaded: false });
+  const [productLoadState, setProductLoadState] = useState({
+    status: 'idle',
+    brand: '',
+    products: [],
+    message: '',
+  });
+  // Mantiene una sola carga por marca y permite ignorar respuestas A después de seleccionar B.
+  const [productLoadRequest] = useState({ id: 0, brand: '', promise: null });
   
   const updateConfig = (campo, valor) => {
     setConfig(prev => ({ ...prev, [campo]: valor }));
@@ -604,24 +612,78 @@ export default function App({
     }
   };
 
+  const clearProductDataset = () => {
+    productLoadRequest.id += 1;
+    productLoadRequest.brand = '';
+    productLoadRequest.promise = null;
+    setProductLoadState({ status: 'idle', brand: '', products: [], message: '' });
+  };
+
+  const loadSelectedBrandProducts = (brand) => {
+    if (productLoadState.status === 'ready' && productLoadState.brand === brand) {
+      return Promise.resolve(productLoadState.products);
+    }
+    if (productLoadRequest.promise && productLoadRequest.brand === brand) {
+      return productLoadRequest.promise;
+    }
+
+    const requestId = productLoadRequest.id + 1;
+    productLoadRequest.id = requestId;
+    productLoadRequest.brand = brand;
+    setProductLoadState({ status: 'loading', brand, products: [], message: '' });
+
+    const pending = (async () => {
+      try {
+        const products = await productMasterService.loadProducts({ brand });
+        if (productLoadRequest.id !== requestId) return null;
+        setProductLoadState({ status: 'ready', brand, products, message: '' });
+        return products;
+      } catch (productError) {
+        if (productLoadRequest.id !== requestId) return null;
+        setProductLoadState({
+          status: 'error',
+          brand,
+          products: [],
+          message: getProductMasterErrorMessage(productError),
+        });
+        throw productError;
+      } finally {
+        if (productLoadRequest.id === requestId) {
+          productLoadRequest.promise = null;
+        }
+      }
+    })();
+    productLoadRequest.promise = pending;
+    return pending;
+  };
+
   const updateBrandSearch = (value) => {
     setBrandSearch(value);
     setBrandOptionsOpen(true);
     setBrandActiveIndex(-1);
     if (value !== selectedBrand) {
-      if (selectedBrand) setResultados(null);
+      if (selectedBrand) {
+        setResultados(null);
+        clearProductDataset();
+      }
       setSelectedBrand('');
     }
     void loadBrands();
   };
 
   const selectBrand = (brand) => {
-    if (brand !== selectedBrand) setResultados(null);
+    if (brand !== selectedBrand) {
+      setResultados(null);
+      clearProductDataset();
+    }
     setSelectedBrand(brand);
     setBrandSearch(brand);
     setBrandOptionsOpen(false);
     setBrandActiveIndex(-1);
     setError(null);
+    if (productBrandRequired) {
+      void loadSelectedBrandProducts(brand).catch(() => {});
+    }
   };
 
   const handleBrandKeyDown = (event) => {
@@ -719,7 +781,8 @@ export default function App({
           return;
         }
         try {
-          normalizedProducts = await productMasterService.loadProducts({ brand: selectedBrand });
+          normalizedProducts = await loadSelectedBrandProducts(selectedBrand);
+          if (normalizedProducts === null) return;
         } catch (productError) {
           setError(getProductMasterErrorMessage(productError));
           return;
@@ -1526,6 +1589,22 @@ export default function App({
                       ? 'Selecciona una marca antes de cargar el Maestro Producto.'
                       : 'La selección se aplicará al Product Provider cuando corresponda.'}
                 </div>
+                {productBrandRequired && selectedBrand
+                  && productLoadState.brand === selectedBrand && (
+                    <div
+                      role="status"
+                      className="text-[10px] mt-1"
+                      style={{ color: productLoadState.status === 'error' ? '#991b1b' : '#57534e' }}
+                    >
+                      {productLoadState.status === 'loading' && 'Cargando Maestro Producto de la marca seleccionada…'}
+                      {productLoadState.status === 'ready' && (
+                        productLoadState.products.length > 0
+                          ? 'Maestro Producto listo para la marca seleccionada.'
+                          : 'No se encontraron productos para la marca seleccionada.'
+                      )}
+                      {productLoadState.status === 'error' && productLoadState.message}
+                    </div>
+                )}
               </div>
 
               {/* Periodo y fechas */}

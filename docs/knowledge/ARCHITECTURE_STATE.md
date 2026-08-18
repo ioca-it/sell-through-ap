@@ -2,6 +2,29 @@
 
 ## Fase actual
 
+PHASE1-081 queda **PASS — REAL DATAVERSE BRAND-TO-PRODUCT FLOW READY /
+FRONTEND ACTIVATION PENDING / LOCALLY VALIDATED / NOT DEPLOYED**. La causa del
+ComboBox vacío era la selección efectiva `VITE_PRODUCT_SOURCE=local` (también
+default cuando falta la variable): la Factory construía `LocalProductProvider`
+y la cadena normal nunca alcanzaba `DataverseProductProvider` ni
+`GET /api/products/brands`. No existía un bypass UI ni un error del endpoint.
+
+Con fuente `dataverse`, el flujo normal queda `App -> Product Application
+Service -> Repository -> Provider Factory -> DataverseProductProvider ->
+/api/products/brands`; las 33 marcas pueden llegar al ComboBox sin límites ni
+transformaciones físicas. Seleccionar una marca inicia inmediatamente
+`loadProducts({ brand })`, conserva una sola solicitud pendiente por marca y
+usa exclusivamente `/api/products/master?brand=<marca codificada>`.
+
+El dataset Product queda asociado a la marca seleccionada. A→B invalida y
+vacía A antes de iniciar B; una respuesta tardía de A se descarta y no puede
+alimentar el análisis. Sin marca no se carga Product Master y no existe carga
+global o fallback. `VITE_PRODUCT_SOURCE` conserva `local|dataverse`; no se
+modificó la variable externa y producción requiere todavía activarla y
+reconstruir el frontend. Customer, Provider local, mappings Product,
+MSAL/Bearer, AbortController y timeout Product de 35 000 ms permanecen
+intactos. No hubo cambios backend.
+
 PHASE1-079 queda **PASS — EXISTING PRODUCT MASTER SMOKE REQUIRES BRAND /
 SANITIZED / FRONTEND-ONLY / LOCALLY VALIDATED / NOT DEPLOYED / NOT EXECUTED**.
 El arnés Phase1-042 se activa exclusivamente con

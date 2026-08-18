@@ -1,5 +1,33 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-081
+
+### Flujo real Product por marca
+
+- Confirmado en código que `VITE_PRODUCT_SOURCE=local`/ausente seleccionaba
+  `LocalProductProvider`; por ello el flujo normal no llegaba a
+  `/api/products/brands` aunque el endpoint Dataverse estuviera operativo.
+- Con fuente `dataverse`, las marcas recorren App → Application Service →
+  Repository → Factory → Dataverse Provider → API y llegan al ComboBox.
+- Seleccionar marca precarga `loadProducts({ brand })`; el Provider envía solo
+  `/api/products/master?brand=<marca codificada>`.
+- A→B vacía inmediatamente el dataset A, inicia B y descarta cualquier
+  respuesta tardía de A. Sin marca no existe Product Master global o fallback.
+
+### Preservado
+
+- `VITE_PRODUCT_SOURCE=local|dataverse` sin hardcode ni cambio externo; Provider
+  local, Customer, Product mappings, MSAL/Bearer, AbortController y timeout de
+  35 000 ms intactos.
+- Sin cambios backend, smokes nuevos, cache, persistencia, Dataverse, Entra,
+  Render, Vercel, commit, push o deploy.
+
+### Validación
+
+- Frontend 386/386 PASS en 33 archivos; build PASS con Vite 5.4.21 y 1.684
+  módulos.
+- Backend no ejecutado porque ningún archivo backend fue modificado.
+
 ## 2026-08-18 — PHASE1-079
 
 ### Product Master smoke
