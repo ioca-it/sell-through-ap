@@ -1,5 +1,38 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-070
+
+### Implementado
+
+- ComboBox Marca en Configuración con búsqueda local sobre el catálogo,
+  selección explícita, teclado, loading, cero resultados, error sanitizado y
+  deduplicación de la solicitud pendiente.
+- `GET /api/products/brands` autenticado y cerrado; devuelve `{ brands: [] }`
+  desde una proyección Dataverse limitada a marca/compañía, con filtro de los
+  dos compradores, `trim()`, exclusión de vacíos, deduplicación exacta y orden
+  determinístico.
+- `GET /api/products/master?brand=...` exige marca string trimmed, no vacía y
+  de máximo 100 caracteres. El Gateway escapa el literal OData y combina marca
+  + compradores antes de `retrieveAll()`; sin marca no consulta Dataverse.
+- Product Provider local y Dataverse, Repository y Application Service exponen
+  paridad para lista de marcas y Maestro filtrado. Cambiar la marca invalida los
+  resultados anteriores y la siguiente carga usa solo la nueva selección.
+
+### Preservado
+
+- Entity Set `productpricelevels`, mappings, `$orderby`, FormattedValue,
+  consolidación, conflictos, `0`/`null`, `fechaStr`, Customer Master, CORS,
+  JWT, rate limiting y fuente Product normal `local`.
+- Trazas `PHASE1_066_PRODUCT_REQUEST_TRACE` y
+  `PHASE1_068_PRODUCT_PAGINATION_TRACE`, timeout fetch 30 000 ms y timeout smoke
+  35 000 ms.
+- Sin commit, push, deploy, smoke productivo, variables ni cambios externos.
+
+### Validación
+
+- Backend completo: 119/119; frontend completo: 356/356 en 32 archivos.
+- Builds backend/frontend y `git diff --check`: PASS.
+
 ## 2026-08-18 — PHASE1-068
 
 ### Diagnóstico

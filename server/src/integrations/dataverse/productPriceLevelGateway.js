@@ -38,6 +38,11 @@ const normalizeText = (value) => (
   value === null || value === undefined ? '' : String(value).trim()
 );
 
+const compareBrands = (left, right) => (
+  left.localeCompare(right, 'es', { sensitivity: 'variant' })
+  || (left < right ? -1 : left > right ? 1 : 0)
+);
+
 const normalizeDate = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const date = new Date(value);
@@ -247,6 +252,20 @@ export const consolidateProductPriceLevelRows = (rows) => {
     .map((product) => Object.freeze(product));
 };
 
+export const extractProductBrands = (rows) => {
+  if (!Array.isArray(rows)) {
+    throw new Error('ProductPriceLevelGateway: Dataverse debe devolver un arreglo.');
+  }
+
+  const brands = new Set();
+  rows.forEach((row) => {
+    const buyerCompany = normalizeText(row?.[PRODUCT_SOURCE.fields.buyerCompany]);
+    const brand = normalizeText(row?.[PRODUCT_SOURCE.fields.brand]);
+    if (ALLOWED_BUYER_COMPANY_SET.has(buyerCompany) && brand) brands.add(brand);
+  });
+  return Object.freeze([...brands].sort(compareBrands));
+};
+
 const PRODUCT_COMPANY_FILTER = `(${ALLOWED_BUYER_COMPANIES
   .map((company) => (
     `${PRODUCT_SOURCE.fields.buyerCompany} eq ${quoteODataString(company)}`
@@ -259,11 +278,28 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
   }
 
   return Object.freeze({
-    async loadProducts({ productTrace } = {}) {
+    async loadBrands() {
+      // La lista usa una proyección estrecha y paginación encapsulada; no carga
+      // ni consolida el contrato Product completo para descubrir las marcas.
+      const rows = await dataverseClient.retrieveAll({
+        entitySet: PRODUCT_SOURCE.entitySet,
+        select: Object.freeze([
+          PRODUCT_SOURCE.fields.brand,
+          PRODUCT_SOURCE.fields.buyerCompany,
+        ]),
+        filter: PRODUCT_COMPANY_FILTER,
+      });
+      return extractProductBrands(rows);
+    },
+
+    async loadProducts({ brand, productTrace } = {}) {
+      // Brand llega normalizada por Product Service. Incluirla aquí antes de
+      // retrieveAll evita que la paginación recupere el Product Master global.
+      const brandFilter = `${PRODUCT_SOURCE.fields.brand} eq ${quoteODataString(brand)}`;
       const rows = await dataverseClient.retrieveAll({
         entitySet: PRODUCT_SOURCE.entitySet,
         select: Object.freeze(Object.values(PRODUCT_SOURCE.fields)),
-        filter: PRODUCT_COMPANY_FILTER,
+        filter: `${PRODUCT_COMPANY_FILTER} and ${brandFilter}`,
         orderBy: [
           PRODUCT_SOURCE.fields.sku,
           PRODUCT_SOURCE.fields.origin,
@@ -273,7 +309,12 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
         includeAnnotations: Object.freeze([DATAVERSE_FORMATTED_VALUE_ANNOTATION]),
         productTrace,
       });
-      return consolidateProductPriceLevelRows(rows);
+      // Defensa de contrato ante una respuesta upstream que no respete el
+      // predicado; el ahorro de red proviene del filtro OData anterior.
+      const matchingRows = rows.filter((row) => (
+        normalizeText(row?.[PRODUCT_SOURCE.fields.brand]) === brand
+      ));
+      return consolidateProductPriceLevelRows(matchingRows);
     },
   });
 };

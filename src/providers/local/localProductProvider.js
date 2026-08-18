@@ -2,7 +2,11 @@
 // adapta su salida al contrato Product normalizado.
 
 import { parseMaster } from '../../domain/parser/masterParser.js';
-import { masterRecordToProduct } from '../../domain/product/product.js';
+import {
+  masterRecordToProduct,
+  normalizeProductBrands,
+  requireProductBrand,
+} from '../../domain/product/product.js';
 
 export class LocalProductMasterError extends Error {
   constructor(message) {
@@ -17,12 +21,21 @@ export const createLocalProductProvider = ({ rawMaster = '' } = {}) => {
     throw new Error('LocalProductProvider: "rawMaster" debe ser string.');
   }
 
+  const readProducts = () => {
+    if (!rawMaster.trim()) return [];
+    const { masterBySku, error } = parseMaster(rawMaster);
+    if (error) throw new LocalProductMasterError(error);
+    return Object.values(masterBySku).map(masterRecordToProduct);
+  };
+
   return Object.freeze({
-    async loadProducts() {
-      if (!rawMaster.trim()) return [];
-      const { masterBySku, error } = parseMaster(rawMaster);
-      if (error) throw new LocalProductMasterError(error);
-      return Object.values(masterBySku).map(masterRecordToProduct);
+    async loadBrands() {
+      return normalizeProductBrands(readProducts().map(({ brand }) => brand));
+    },
+
+    async loadProducts({ brand } = {}) {
+      const selectedBrand = requireProductBrand(brand);
+      return readProducts().filter((product) => product.brand === selectedBrand);
     },
   });
 };

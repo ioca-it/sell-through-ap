@@ -14,19 +14,30 @@ const LOAD_ERROR_MESSAGES = Object.freeze({
   PRODUCT_REQUEST_TIMEOUT: 'La consulta del Maestro Producto tardó demasiado. Intenta nuevamente.',
   PRODUCT_INVALID_RESPONSE: DEFAULT_LOAD_ERROR_MESSAGE,
   PRODUCT_MASTER_CONFLICT: 'El Maestro Producto contiene precios duplicados en conflicto. Requiere definición funcional.',
+  PRODUCT_BRAND_REQUIRED: 'Selecciona una marca antes de cargar el Maestro Producto.',
 });
 
 export const getProductMasterErrorMessage = (error) => (
   LOAD_ERROR_MESSAGES[error?.code] ?? error?.message ?? DEFAULT_LOAD_ERROR_MESSAGE
 );
 
+export const getProductBrandErrorMessage = (error) => (
+  LOAD_ERROR_MESSAGES[error?.code]
+  ?? 'No fue posible cargar las marcas del Maestro Producto. Intenta nuevamente.'
+);
+
 export const createProductMasterService = ({ repository } = {}) => {
-  if (!repository || typeof repository.getProducts !== 'function') {
+  if (!repository || typeof repository.getBrands !== 'function'
+    || typeof repository.getProducts !== 'function') {
     throw new Error('ProductMasterService: Repository inválido.');
   }
   return Object.freeze({
-    loadProducts() {
-      return repository.getProducts();
+    loadBrands() {
+      return repository.getBrands();
+    },
+
+    loadProducts({ brand } = {}) {
+      return repository.getProducts({ brand });
     },
   });
 };

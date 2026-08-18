@@ -7,6 +7,35 @@ const normalizeText = (value) => (
   value === null || value === undefined ? '' : String(value).trim()
 );
 
+export const PRODUCT_BRAND_MAX_LENGTH = 100;
+
+export const normalizeProductBrand = (value) => (
+  typeof value === 'string' ? value.trim() : ''
+);
+
+export const requireProductBrand = (value) => {
+  const brand = normalizeProductBrand(value);
+  if (!brand || brand.length > PRODUCT_BRAND_MAX_LENGTH) {
+    const error = new Error('Selecciona una marca válida antes de cargar el Maestro Producto.');
+    error.code = 'PRODUCT_BRAND_REQUIRED';
+    throw error;
+  }
+  return brand;
+};
+
+export const normalizeProductBrands = (values) => {
+  if (!Array.isArray(values)) return [];
+  const brands = new Set();
+  values.forEach((value) => {
+    const brand = normalizeProductBrand(value);
+    if (brand && brand.length <= PRODUCT_BRAND_MAX_LENGTH) brands.add(brand);
+  });
+  return [...brands].sort((left, right) => (
+    left.localeCompare(right, 'es', { sensitivity: 'variant' })
+    || (left < right ? -1 : left > right ? 1 : 0)
+  ));
+};
+
 const normalizeDate = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);

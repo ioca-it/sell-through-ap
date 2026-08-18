@@ -2,6 +2,7 @@ import { initializeAuthentication } from './authenticationService.js';
 import { getAccessToken } from './customerApiAccessToken.js';
 
 export const PRODUCT_MASTER_SMOKE_QUERY = 'phase1-042-product-smoke';
+export const PRODUCT_MASTER_SMOKE_BRAND_QUERY = 'brand';
 
 // Ventana exclusiva del arnés temporal: no configura el flujo Product normal.
 const DEFAULT_REQUEST_TIMEOUT_MS = 35000;
@@ -95,6 +96,7 @@ export const isProductMasterSmokeTestRequested = (
 ) => new URLSearchParams(search).get(PRODUCT_MASTER_SMOKE_QUERY) === '1';
 
 export const runProductMasterSmokeTest = async ({
+  brand,
   apiBaseUrl = configuredApiBaseUrl(),
   initialize = initializeAuthentication,
   acquireAccessToken = getAccessToken,
@@ -110,6 +112,10 @@ export const runProductMasterSmokeTest = async ({
   let endpoint;
   try {
     endpoint = new URL('/api/products/master', normalizeApiBaseUrl(apiBaseUrl));
+    if (typeof brand !== 'string' || !brand.trim() || brand.trim().length > 100) {
+      return createResult({ diagnostic: 'SMOKE_BRAND_REQUIRED' });
+    }
+    endpoint.searchParams.set('brand', brand.trim());
   } catch {
     return createResult({ diagnostic: 'SMOKE_CONFIGURATION_INVALID' });
   }
@@ -178,7 +184,8 @@ export const startProductMasterSmokeTest = async ({
 } = {}) => {
   if (!isProductMasterSmokeTestRequested(search)) return false;
   try {
-    const result = await run();
+    const brand = new URLSearchParams(search).get(PRODUCT_MASTER_SMOKE_BRAND_QUERY);
+    const result = await run({ brand });
     logger?.info?.(CONSOLE_LABEL, result);
     return true;
   } catch {

@@ -1,7 +1,11 @@
 // Frontera frontend de Maestro Producto: consume el endpoint funcional del
 // backend portable y nunca construye ni acepta consultas OData.
 
-import { normalizeProduct } from '../../domain/product/product.js';
+import {
+  normalizeProduct,
+  normalizeProductBrands,
+  requireProductBrand,
+} from '../../domain/product/product.js';
 import { createAuthenticatedApiClient } from './authenticatedApiClient.js';
 
 const PUBLIC_ERROR_MESSAGE = 'No fue posible consultar el Maestro Producto.';
@@ -56,8 +60,20 @@ export const createDataverseProductProvider = ({
   });
 
   return Object.freeze({
-    async loadProducts() {
-      const payload = await apiClient.getJson('/api/products/master');
+    async loadBrands() {
+      const payload = await apiClient.getJson('/api/products/brands');
+      if (!Array.isArray(payload?.brands)
+        || payload.brands.some((brand) => typeof brand !== 'string')) {
+        throw new ProductApiError(PRODUCT_API_ERROR_CODES.INVALID_RESPONSE);
+      }
+      return normalizeProductBrands(payload.brands);
+    },
+
+    async loadProducts({ brand } = {}) {
+      const selectedBrand = requireProductBrand(brand);
+      const payload = await apiClient.getJson(
+        `/api/products/master?brand=${encodeURIComponent(selectedBrand)}`,
+      );
       if (!Array.isArray(payload?.products)) {
         throw new ProductApiError(PRODUCT_API_ERROR_CODES.INVALID_RESPONSE);
       }

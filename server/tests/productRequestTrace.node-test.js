@@ -90,7 +90,7 @@ test('reconstruye en orden el flujo Product completo con un traceId efímero por
 
   await withServer(app, async (baseUrl) => {
     for (let requestNumber = 0; requestNumber < 2; requestNumber += 1) {
-      const response = await fetch(`${baseUrl}/api/products/master`, {
+      const response = await fetch(`${baseUrl}/api/products/master?brand=Skullcandy`, {
         headers: { Authorization: 'Bearer sensitive-browser-jwt' },
       });
       assert.equal(response.status, 200);
@@ -278,7 +278,10 @@ test('emite PRODUCT_RESPONSE_SENT solo después de finalizar la respuesta Produc
     resolveProducts = resolve;
   });
   const productService = createProductService({
-    productGateway: { loadProducts: async () => productsPending },
+    productGateway: {
+      loadBrands: async () => [],
+      loadProducts: async () => productsPending,
+    },
   });
   const app = createProductApp({
     productService,
@@ -286,7 +289,7 @@ test('emite PRODUCT_RESPONSE_SENT solo después de finalizar la respuesta Produc
   });
 
   await withServer(app, async (baseUrl) => {
-    const responsePending = fetch(`${baseUrl}/api/products/master`);
+    const responsePending = fetch(`${baseUrl}/api/products/master?brand=Skullcandy`);
     await nextTurn();
     assert.equal(
       events.some(({ stage }) => stage === PRODUCT_TRACE_STAGES.RESPONSE_SENT),

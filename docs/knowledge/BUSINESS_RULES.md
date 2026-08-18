@@ -26,7 +26,10 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
   real, mientras una entrada vacía o inválida queda en `null` como precio no
   disponible.
 - El contrato incorpora `creationDate`; el origen local reconoce el encabezado normalizado `creationDate` y conserva `null` cuando falta o no puede interpretarse.
-- La alternativa Dataverse usa exclusivamente `productpricelevel` filtrado en backend por comprador `IOCA USA INC` o `SAND SPORTS, CORP.`; no descarga compañías ajenas para filtrarlas en React.
+- La alternativa Dataverse usa exclusivamente `productpricelevels`, filtrado en backend por comprador `IOCA USA INC` o `SAND SPORTS, CORP.` y por la marca seleccionada; no descarga compañías o marcas ajenas para filtrarlas en React.
+- `brand` es obligatoria para Product Master Dataverse: debe ser string, aplicar `trim()`, no quedar vacía y no superar 100 caracteres. Sin valor válido no se consulta Dataverse ni se ejecuta una carga global.
+- El filtro de marca se construye con escape OData backend y se incorpora antes de `retrieveAll()`; el endpoint frontend no acepta `$filter`, `$select`, `$orderby`, `$top` u OData libre.
+- La lista de marcas procede de registros de las dos compañías autorizadas, excluye null/vacío/solo espacios, deduplica valores exactos después de `trim()` y ordena de forma determinística sin aliases ni combinación de marcas diferentes.
 - Dataverse consolida por SKU: origen `USA` alimenta `priceUSA` y origen `CHINA`
   alimenta `priceChina`; sin fila del origen, o con `amount null|undefined`, el
   precio correspondiente queda en `null`. Un `amount = 0` se conserva como

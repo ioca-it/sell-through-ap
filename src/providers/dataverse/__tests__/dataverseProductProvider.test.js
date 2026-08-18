@@ -35,7 +35,7 @@ const createProvider = ({ ok = true, status = 200, payload = { products: [apiPro
 describe('DataverseProductProvider vía backend portable', () => {
   it('carga el endpoint Product específico sin OData ni nombres Dataverse', async () => {
     const { provider, fetchImpl } = createProvider();
-    const products = await provider.loadProducts();
+    const products = await provider.loadProducts({ brand: 'Marca' });
     expect(products).toEqual([{
       ...apiProduct,
       discontinuationDate: new Date(apiProduct.discontinuationDate),
@@ -45,7 +45,7 @@ describe('DataverseProductProvider vía backend portable', () => {
 
     const [url, options] = fetchImpl.mock.calls[0];
     expect(url.pathname).toBe('/api/products/master');
-    expect(url.search).toBe('');
+    expect(url.searchParams.get('brand')).toBe('Marca');
     expect(options.headers.Authorization).toBe('Bearer delegated-token');
     expect(`${url.href}${JSON.stringify(options)}`).not.toMatch(
       /\$filter|\$select|\$orderby|productpricelevel|crbbe_|amount/,
@@ -56,30 +56,49 @@ describe('DataverseProductProvider vía backend portable', () => {
     const { provider } = createProvider({
       payload: { products: [{ ...apiProduct, imageUrl: null, productUrl: undefined, extra: 'x' }] },
     });
-    await expect(provider.loadProducts()).resolves.toEqual([
+    await expect(provider.loadProducts({ brand: 'Marca' })).resolves.toEqual([
       expect.objectContaining({ imageUrl: '', productUrl: '' }),
     ]);
-    expect(Object.keys((await provider.loadProducts())[0])).not.toContain('extra');
+    expect(Object.keys((await provider.loadProducts({ brand: 'Marca' }))[0])).not.toContain('extra');
   });
 
   it('preserva precios null y cero sin aplicar fallback', async () => {
     const { provider } = createProvider({
       payload: { products: [{ ...apiProduct, priceUSA: 0, priceChina: null }] },
     });
-    await expect(provider.loadProducts()).resolves.toEqual([
+    await expect(provider.loadProducts({ brand: 'Marca' })).resolves.toEqual([
       expect.objectContaining({ priceUSA: 0, priceChina: null }),
     ]);
   });
 
   it('clasifica conflicto 409 sin seleccionar un precio', async () => {
     const { provider } = createProvider({ ok: false, status: 409 });
-    await expect(provider.loadProducts()).rejects.toEqual(expect.objectContaining({
+    await expect(provider.loadProducts({ brand: 'Marca' })).rejects.toEqual(expect.objectContaining({
       code: PRODUCT_API_ERROR_CODES.MASTER_CONFLICT,
     }));
   });
 
   it('rechaza respuesta inválida', async () => {
     const { provider } = createProvider({ payload: { value: [apiProduct] } });
-    await expect(provider.loadProducts()).rejects.toBeInstanceOf(ProductApiError);
+    await expect(provider.loadProducts({ brand: 'Marca' })).rejects.toBeInstanceOf(ProductApiError);
+  });
+
+  it('carga marcas desde el endpoint funcional, normaliza y no envía OData', async () => {
+    const { provider, fetchImpl } = createProvider({
+      payload: { brands: [' SKULLCANDY ', 'ANKER', 'SKULLCANDY'] },
+    });
+    await expect(provider.loadBrands()).resolves.toEqual(['ANKER', 'SKULLCANDY']);
+    const [url] = fetchImpl.mock.calls[0];
+    expect(url.pathname).toBe('/api/products/brands');
+    expect(url.search).toBe('');
+    expect(url.href).not.toMatch(/\$filter|\$select|crbbe_/);
+  });
+
+  it('no consulta Product Master cuando brand no es válida', async () => {
+    const { provider, fetchImpl } = createProvider();
+    await expect(provider.loadProducts()).rejects.toEqual(expect.objectContaining({
+      code: 'PRODUCT_BRAND_REQUIRED',
+    }));
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

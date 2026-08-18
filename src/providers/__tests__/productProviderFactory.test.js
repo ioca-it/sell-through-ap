@@ -5,9 +5,10 @@ describe('productProviderFactory', () => {
   it('mantiene local como fallback y procesa el Maestro existente', async () => {
     const provider = createProductProvider({
       source: '',
-      rawMaster: 'SKU\tMODELO\tUSA\nLOCAL-1\tProducto\t20',
+      rawMaster: 'MARCA\tSKU\tMODELO\tUSA\nMARCA\tLOCAL-1\tProducto\t20',
     });
-    await expect(provider.loadProducts()).resolves.toEqual([
+    await expect(provider.loadBrands()).resolves.toEqual(['MARCA']);
+    await expect(provider.loadProducts({ brand: 'MARCA' })).resolves.toEqual([
       expect.objectContaining({ sku: 'LOCAL-1', priceUSA: 20 }),
     ]);
   });
@@ -20,7 +21,7 @@ describe('productProviderFactory', () => {
       fetchImpl,
       getAccessToken: async () => 'token',
     });
-    await expect(provider.loadProducts()).resolves.toEqual([]);
+    await expect(provider.loadProducts({ brand: 'MARCA' })).resolves.toEqual([]);
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 

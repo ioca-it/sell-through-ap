@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   consolidateProductPriceLevelRows,
   createProductPriceLevelGateway,
+  extractProductBrands,
   mapProductPriceLevelRow,
   ProductMasterConflictError,
 } from '../src/integrations/dataverse/productPriceLevelGateway.js';
@@ -111,7 +112,7 @@ test('fallback de level/status no inventa etiquetas para Choice numérico', () =
   assert.equal(mapProductPriceLevelRow(textFields).status, 'EOL');
 });
 
-test('gateway consulta productpricelevels con ambas compañías en backend', async () => {
+test('gateway consulta productpricelevels con ambas compañías y marca antes de paginar', async () => {
   const calls = [];
   const gateway = createProductPriceLevelGateway({
     dataverseClient: {
@@ -122,11 +123,11 @@ test('gateway consulta productpricelevels con ambas compañías en backend', asy
     },
   });
 
-  assert.deepEqual(await gateway.loadProducts(), [expectedProduct]);
+  assert.deepEqual(await gateway.loadProducts({ brand: 'Skullcandy' }), [expectedProduct]);
   assert.equal(calls[0].entitySet, 'productpricelevels');
   assert.equal(
     calls[0].filter,
-    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.')",
+    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombremarca eq 'Skullcandy'",
   );
   assert.deepEqual(calls[0].includeAnnotations, [FORMATTED]);
   assert.deepEqual(calls[0].select, [
@@ -164,9 +165,77 @@ test('no reintroduce productpricelevel como Entity Set runtime del gateway', asy
     },
   });
 
-  await gateway.loadProducts();
+  await gateway.loadProducts({ brand: 'Skullcandy' });
   assert.notEqual(runtimeEntitySet, 'productpricelevel');
   assert.equal(runtimeEntitySet, 'productpricelevels');
+});
+
+test('lista marcas con proyección mínima, filtro de compradores y retrieveAll', async () => {
+  const calls = [];
+  const gateway = createProductPriceLevelGateway({
+    dataverseClient: {
+      retrieveAll: async (query) => {
+        calls.push(query);
+        return [
+          rawRow({ crbbe_nombremarca: ' ANKER ' }),
+          rawRow({ crbbe_nombremarca: 'SKULLCANDY' }),
+        ];
+      },
+    },
+  });
+
+  assert.deepEqual(await gateway.loadBrands(), ['ANKER', 'SKULLCANDY']);
+  assert.deepEqual(calls, [{
+    entitySet: 'productpricelevels',
+    select: ['crbbe_nombremarca', 'crbbe_companiacompradora'],
+    filter: "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.')",
+  }]);
+});
+
+test('marcas aplica trim, exclusión de vacíos, deduplicación exacta y orden estable', () => {
+  assert.deepEqual(extractProductBrands([
+    rawRow({ crbbe_nombremarca: ' SKULLCANDY ' }),
+    rawRow({ crbbe_nombremarca: 'ANKER' }),
+    rawRow({ crbbe_nombremarca: 'ANKER ' }),
+    rawRow({ crbbe_nombremarca: null }),
+    rawRow({ crbbe_nombremarca: undefined }),
+    rawRow({ crbbe_nombremarca: '   ' }),
+    rawRow({ crbbe_nombremarca: 'OTRA', crbbe_companiacompradora: 'OTRA COMPAÑIA' }),
+  ]), ['ANKER', 'SKULLCANDY']);
+});
+
+test('escapa brand OData y aplica el filtro en la llamada inicial a retrieveAll', async () => {
+  let query;
+  const gateway = createProductPriceLevelGateway({
+    dataverseClient: {
+      retrieveAll: async (receivedQuery) => {
+        query = receivedQuery;
+        return [];
+      },
+    },
+  });
+
+  await gateway.loadProducts({ brand: "O'Brien" });
+  assert.equal(
+    query.filter,
+    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombremarca eq 'O''Brien'",
+  );
+});
+
+test('la defensa backend no mezcla registros de otra marca', async () => {
+  const gateway = createProductPriceLevelGateway({
+    dataverseClient: {
+      retrieveAll: async () => [
+        rawRow({ crbbe_sku: 'A-1', crbbe_nombremarca: 'Skullcandy' }),
+        rawRow({ crbbe_sku: 'B-1', crbbe_nombremarca: 'Anker' }),
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    (await gateway.loadProducts({ brand: 'Skullcandy' })).map(({ sku }) => sku),
+    ['A-1'],
+  );
 });
 
 test('incluye IOCA y SAND, y excluye otras compañías en la defensa backend', () => {

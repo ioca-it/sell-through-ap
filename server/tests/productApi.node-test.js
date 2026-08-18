@@ -54,14 +54,15 @@ const withServer = async (app, assertion) => {
 test('expone únicamente la carga funcional de Maestro Producto', async () => {
   let calls = 0;
   const app = createTestApp({
-    loadMaster: async () => {
+    loadMaster: async ({ brand }) => {
       calls += 1;
+      assert.equal(brand, 'Marca');
       return [product];
     },
   });
 
   await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/products/master`);
+    const response = await fetch(`${baseUrl}/api/products/master?brand=Marca`);
     assert.equal(response.status, 200);
     assert.deepEqual((await response.json()).products, [product]);
   });
@@ -102,7 +103,7 @@ test('flujo Product procesa el contrato estándar Dataverse 200 hasta la API', a
   const app = createTestApp(productService);
 
   await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/products/master`);
+    const response = await fetch(`${baseUrl}/api/products/master?brand=Marca`);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { products: [product] });
   });
@@ -113,7 +114,7 @@ test('preserva null y cero en el contrato HTTP Product', async () => {
   const app = createTestApp({ loadMaster: async () => [prices] });
 
   await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/products/master`);
+    const response = await fetch(`${baseUrl}/api/products/master?brand=Marca`);
     assert.equal(response.status, 200);
     assert.deepEqual((await response.json()).products, [prices]);
   });
@@ -123,11 +124,90 @@ test('rechaza OData y cualquier parámetro arbitrario del frontend', async () =>
   const app = createTestApp({ loadMaster: async () => [product] });
   await withServer(app, async (baseUrl) => {
     for (const query of [
-      '%24filter=crbbe_origen%20eq%20USA',
-      '%24select=amount',
-      'company=IOCA',
+      'brand=Marca&%24filter=crbbe_origen%20eq%20USA',
+      'brand=Marca&%24select=amount',
+      'brand=Marca&%24orderby=createdon',
+      'brand=Marca&%24top=10',
+      'brand=Marca&company=IOCA',
     ]) {
       const response = await fetch(`${baseUrl}/api/products/master?${query}`);
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error.code, 'INVALID_PRODUCT_REQUEST');
+    }
+  });
+});
+
+test('Product Master requiere una única brand válida y nunca llama el servicio sin ella', async () => {
+  let calls = 0;
+  const app = createTestApp(createProductService({
+    productGateway: {
+      loadBrands: async () => [],
+      loadProducts: async () => {
+        calls += 1;
+        return [product];
+      },
+    },
+  }));
+  await withServer(app, async (baseUrl) => {
+    for (const query of ['', '?brand=', '?brand=%20%20', '?brand=Marca&brand=Otra']) {
+      const response = await fetch(`${baseUrl}/api/products/master${query}`);
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error.code, 'INVALID_PRODUCT_REQUEST');
+    }
+  });
+  assert.equal(calls, 0);
+});
+
+test('Product Service valida tipo, trim y longitud de brand antes del Gateway', async () => {
+  const calls = [];
+  const service = createProductService({
+    productGateway: {
+      loadBrands: async () => [],
+      loadProducts: async (input) => {
+        calls.push(input);
+        return [];
+      },
+    },
+  });
+
+  assert.throws(() => service.loadMaster({ brand: null }), /debe ser texto/);
+  assert.throws(() => service.loadMaster({ brand: '   ' }), /es requerida/);
+  assert.throws(() => service.loadMaster({ brand: 'A'.repeat(101) }), /demasiado larga/);
+  await service.loadMaster({ brand: '  Skullcandy  ' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].brand, 'Skullcandy');
+});
+
+test('GET brands autenticado publica solo el contrato funcional', async () => {
+  let authentications = 0;
+  const app = createApp({
+    customerService: { search: async () => [], getByCode: async () => null },
+    productService: {
+      listBrands: async () => ['ANKER', 'SKULLCANDY'],
+      loadMaster: async () => [],
+    },
+    allowedOrigins: ['http://localhost:5173'],
+    authenticator: {
+      authenticate: async () => {
+        authentications += 1;
+        return { subject: 'test-user' };
+      },
+    },
+    rateLimiter: { check: async () => ({ allowed: true, retryAfterSeconds: 0 }) },
+  });
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/products/brands`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { brands: ['ANKER', 'SKULLCANDY'] });
+  });
+  assert.equal(authentications, 1);
+});
+
+test('GET brands rechaza OData y parámetros desconocidos', async () => {
+  const app = createTestApp({ listBrands: async () => ['ANKER'], loadMaster: async () => [] });
+  await withServer(app, async (baseUrl) => {
+    for (const query of ['%24filter=x', '%24select=x', 'q=ANKER']) {
+      const response = await fetch(`${baseUrl}/api/products/brands?${query}`);
       assert.equal(response.status, 400);
       assert.equal((await response.json()).error.code, 'INVALID_PRODUCT_REQUEST');
     }
@@ -149,7 +229,7 @@ test('protege Product API con el mismo autenticador y rate limiter', async () =>
     rateLimiter: { check: async () => ({ allowed: true, retryAfterSeconds: 0 }) },
   });
   await withServer(app, async (baseUrl) => {
-    assert.equal((await fetch(`${baseUrl}/api/products/master`)).status, 200);
+    assert.equal((await fetch(`${baseUrl}/api/products/master?brand=Marca`)).status, 200);
   });
   assert.equal(authentications, 1);
 });
@@ -168,7 +248,7 @@ test('publica PRODUCT_MASTER_CONFLICT estable sin detalles internos del atributo
     },
   });
   await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/products/master`);
+    const response = await fetch(`${baseUrl}/api/products/master?brand=Marca`);
     assert.equal(response.status, 409);
     const payload = await response.json();
     assert.deepEqual(payload, {
@@ -189,7 +269,7 @@ test('mantiene el HTTP público sanitizado ante el fallo Dataverse Product', asy
     },
   });
   await withServer(app, async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/api/products/master`);
+    const response = await fetch(`${baseUrl}/api/products/master?brand=Marca`);
     assert.equal(response.status, 502);
     const payload = await response.json();
     assert.deepEqual(payload, {

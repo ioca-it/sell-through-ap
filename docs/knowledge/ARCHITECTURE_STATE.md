@@ -2,6 +2,34 @@
 
 ## Fase actual
 
+PHASE1-070 queda **PASS — PRODUCT BRAND PREFILTER IMPLEMENTED / GLOBAL PRODUCT
+LOAD BLOCKED / LOCAL PARITY PRESERVED / NOT DEPLOYED / NOT ACTIVATED**. La UI
+de Configuración mantiene `selectedCustomer` y `selectedBrand` separados y
+consulta marcas mediante Application Service → Repository → Product Provider.
+El Provider Dataverse consume exclusivamente `GET /api/products/brands`; el
+backend obtiene la lista desde `productpricelevels` con una proyección limitada
+a `crbbe_nombremarca` y `crbbe_companiacompradora`, aplica el filtro empresarial
+de compradores antes de `retrieveAll()`, normaliza con `trim()`, excluye vacíos,
+deduplica exactamente y ordena de forma determinística. No usa el Product
+Master completo ni su consolidación para construir la lista.
+
+`GET /api/products/master?brand=<brand>` exige un único `brand` string, trimmed,
+no vacío y de máximo 100 caracteres; parámetros desconocidos, duplicados y
+OData libre se rechazan. Product Service valida antes del Gateway y este añade
+`crbbe_nombremarca eq '<valor escapado>'` al filtro de compradores antes de la
+primera llamada `retrieveAll()`. Sin marca no existe consulta Dataverse ni
+fallback global. El Provider local expone la misma lista normalizada y filtra
+su Product Master por la marca seleccionada.
+
+El ComboBox Marca carga una sola vez bajo demanda, deduplica la solicitud
+pendiente, filtra la lista de marcas para búsqueda local, ofrece estados de
+loading/cero/error sanitizado y selección por mouse o teclado. Cambiar o editar
+la marca limpia resultados dependientes; la siguiente carga envía solo
+`{ brand }`. `VITE_PRODUCT_SOURCE=local` sigue siendo el default y Product
+Dataverse no se activó. `PHASE1_066_PRODUCT_REQUEST_TRACE`,
+`PHASE1_068_PRODUCT_PAGINATION_TRACE`, el fetch backend de 30 000 ms y el smoke
+frontend de 35 000 ms permanecen intactos.
+
 PHASE1-068 queda **PASS — PRODUCT MULTI-PAGE ROOT CAUSE PROVEN / TEMPORARY
 PAGINATION TRACE ADDED / SANITIZED / PRODUCT-ONLY / NOT DEPLOYED / NOT EXECUTED
 / NOT ACTIVATED**. Los cinco ciclos secuenciales aportados bajo un mismo
@@ -80,7 +108,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-068 — Diagnose Product Dataverse Multi-Page Latency.
+PHASE1-070 — Add Product Brand Prefilter.
 
 ## Última auditoría aprobada
 
@@ -104,11 +132,11 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - Real Dataverse Product Master Smoke Test: el arnés temporal `?phase1-042-product-smoke=1` confirmó llegada a Render, JWT aceptado e intento Dataverse. La evidencia posterior a Phase1-044 confirmó que `productpricelevels` eliminó el 404 y que la consulta anterior con el LogicalName incorrecto `producturl` recibía `HTTP 400 / DATAVERSE_INVALID_FIELD_OR_FILTER`; Phase1-055 corrigió el gateway sin ejecutar otro smoke. El arnés consulta únicamente `GET /api/products/master`, exige sesión/token MSAL y publica solo `{ httpStatus, productsReturned, renderJwtValidation, dataverseRequest, diagnostic, hasPriceUSA, hasPriceChina, hasNullPrice, hasFormattedLevel, hasFormattedStatus }`. Su timeout temporal frontend es 35 000 ms, con AbortController y cleanup, y no configura la aplicación Product normal; puede retirarse eliminando su módulo, prueba y llamada aislada en `main.jsx`.
 - Customer Provider Factory: selecciona `local` o `dataverse` mediante `VITE_CUSTOMER_SOURCE` y rechaza valores no soportados.
 - Local Customer Provider: alternativa temporal con cinco fixtures ficticios normalizados e inyección opcional para pruebas.
-- Product normalizer, Repository y Product Master Application Service: contrato normalizado independiente de la fuente y adaptación hacia Master Parser/Record Assembler que preserva `0` como precio real, `null` como no disponible y `fechaStr` canónico sin perder el día fuente.
+- Product normalizer, Repository y Product Master Application Service: contratos `loadBrands()` y `loadProducts({ brand })` independientes de la fuente, con marca obligatoria para cargar Product y adaptación hacia Master Parser/Record Assembler que preserva `0`, `null` y `fechaStr`.
 - Product Provider Factory: selecciona `local` o `dataverse` mediante `VITE_PRODUCT_SOURCE`; `local` continúa como default y reutiliza `masterParser.js` sin duplicar sus reglas.
-- Dataverse Product Provider frontend: consume únicamente `GET /api/products/master` mediante el transporte HTTP autenticado compartido; no construye OData ni conoce `productpricelevels` o sus LogicalNames.
-- Product Price Level Gateway backend: encapsula `crbbe_urlproducto` → `productUrl`, los demás mappings, filtro de compañías, paginación, FormattedValue, consolidación USA/CHINA, nulabilidad de precios ausentes y detección determinística de conflictos de precio o de cualquiera de los nueve atributos únicos por SKU.
-- Product Service/API: endpoint funcional cerrado, protegido por el JWT/rate limiter existentes y compuesto con el Dataverse Client/OAuth y el diagnóstico general sanitizado ya implementados.
+- Dataverse Product Provider frontend: consume `GET /api/products/brands` y `GET /api/products/master?brand=...` mediante el transporte autenticado; solo conoce el contrato funcional `brand` y nunca OData o LogicalNames.
+- Product Price Level Gateway backend: encapsula `crbbe_nombremarca` → `brand`, la proyección de marcas, `crbbe_urlproducto` → `productUrl`, los demás mappings y el filtro compradores + marca aplicado antes de paginar, además de FormattedValue, consolidación y conflictos vigentes.
+- Product Service/API: endpoints funcionales cerrados de marcas y Maestro filtrado, `brand` obligatoria de máximo 100 caracteres, JWT/CORS/rate limiter compartidos y rechazo de parámetros/OData no autorizados.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Diagnóstico seguro Dataverse Phase1-020/057/059/061: clasifica fallos HTTP/OData, respuesta inválida y red; para red añade solo categoría de transporte, timeout configurado y tres booleanos de estado seguros, nunca error/payload/URL/query/credenciales/PII.

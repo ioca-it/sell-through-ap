@@ -1,5 +1,29 @@
 # Roadmap aprobado
 
+## Phase1-070 — Add Product Brand Prefilter
+
+El hito queda **PASS — PRODUCT BRAND PREFILTER IMPLEMENTED / GLOBAL LOAD
+BLOCKED / LOCAL PARITY / NOT DEPLOYED / NOT ACTIVATED**. Configuración incorpora
+un ComboBox Marca searchable y accesible, con carga bajo demanda, selección
+explícita y estados sanitizados. Customer y Brand conservan estados separados;
+un cambio de marca invalida resultados Product anteriores.
+
+La API añade `GET /api/products/brands` y cambia Maestro a
+`GET /api/products/master?brand=<brand>`. La lista Dataverse usa solo marca y
+compañía compradora, pagina dentro del backend, normaliza/deduplica/ordena y no
+ejecuta la consolidación Product. La carga Product combina el filtro vigente de
+`IOCA USA INC`/`SAND SPORTS, CORP.` con `crbbe_nombremarca` escapado antes de
+`retrieveAll()`. Sin una marca válida responde 400 y no consulta Dataverse.
+
+La fuente local ofrece los mismos contratos `loadBrands()` y
+`loadProducts({ brand })`. Product Dataverse continúa sin activarse; no se
+cambian `$orderby`, timeouts, variables, infraestructura ni trazas temporales.
+
+Siguiente acción: revisar el hito y autorizar por separado cualquier checkpoint,
+deploy o smoke controlado para comparar las páginas/registros de una marca con
+la evidencia global anterior. Mantener `VITE_PRODUCT_SOURCE=local` hasta una
+activación explícita posterior.
+
 ## Phase1-068 — Diagnose Product Dataverse Multi-Page Latency
 
 El diagnóstico queda **PASS — MULTI-PAGE ROOT CAUSE PROVEN / TEMPORARY

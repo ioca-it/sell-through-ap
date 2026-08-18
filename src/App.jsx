@@ -26,6 +26,7 @@ import { createCustomerRepository } from './repositories/customerRepository.js';
 import { createCustomerProvider } from './providers/customerProviderFactory.js';
 import {
   createProductMasterService,
+  getProductBrandErrorMessage,
   getProductMasterErrorMessage,
 } from './application/productMasterService.js';
 import { createProductRepository } from './repositories/productRepository.js';
@@ -422,6 +423,16 @@ export default function App({
   });
   // No participa del render: el id invalida A→B→A y pendingKey deduplica el request activo.
   const [customerSearchRequest] = useState({ id: 0, pendingKey: null });
+  const [selectedBrand, setSelectedBrand] = useState('');
+  const [brandSearch, setBrandSearch] = useState('');
+  const [brandOptionsOpen, setBrandOptionsOpen] = useState(false);
+  const [brandActiveIndex, setBrandActiveIndex] = useState(-1);
+  const [brandLoadState, setBrandLoadState] = useState({
+    status: 'idle',
+    brands: [],
+    message: '',
+  });
+  const [brandLoadRequest] = useState({ id: 0, pending: false, loaded: false });
   
   const updateConfig = (campo, valor) => {
     setConfig(prev => ({ ...prev, [campo]: valor }));
@@ -560,11 +571,140 @@ export default function App({
       </div>
     );
   };
+
+  const visibleBrands = brandLoadState.brands.filter((brand) => (
+    !brandSearch.trim()
+    || brand.toLocaleLowerCase().includes(brandSearch.trim().toLocaleLowerCase())
+  ));
+
+  const loadBrands = async () => {
+    if (brandLoadRequest.pending || brandLoadRequest.loaded) return;
+    const requestId = brandLoadRequest.id + 1;
+    brandLoadRequest.id = requestId;
+    brandLoadRequest.pending = true;
+    setBrandLoadState({ status: 'loading', brands: [], message: '' });
+    try {
+      const brands = await productMasterService.loadBrands();
+      if (brandLoadRequest.id !== requestId) return;
+      brandLoadRequest.loaded = true;
+      setBrandLoadState({
+        status: 'ready',
+        brands,
+        message: brands.length === 0 ? 'No se encontraron marcas.' : '',
+      });
+    } catch (brandError) {
+      if (brandLoadRequest.id !== requestId) return;
+      setBrandLoadState({
+        status: 'error',
+        brands: [],
+        message: getProductBrandErrorMessage(brandError),
+      });
+    } finally {
+      if (brandLoadRequest.id === requestId) brandLoadRequest.pending = false;
+    }
+  };
+
+  const updateBrandSearch = (value) => {
+    setBrandSearch(value);
+    setBrandOptionsOpen(true);
+    setBrandActiveIndex(-1);
+    if (value !== selectedBrand) {
+      if (selectedBrand) setResultados(null);
+      setSelectedBrand('');
+    }
+    void loadBrands();
+  };
+
+  const selectBrand = (brand) => {
+    if (brand !== selectedBrand) setResultados(null);
+    setSelectedBrand(brand);
+    setBrandSearch(brand);
+    setBrandOptionsOpen(false);
+    setBrandActiveIndex(-1);
+    setError(null);
+  };
+
+  const handleBrandKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setBrandOptionsOpen(false);
+      setBrandActiveIndex(-1);
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setBrandOptionsOpen(true);
+      void loadBrands();
+      if (visibleBrands.length === 0) return;
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      setBrandActiveIndex((current) => (
+        (current + direction + visibleBrands.length) % visibleBrands.length
+      ));
+      return;
+    }
+    if (event.key === 'Enter' && brandOptionsOpen
+      && brandActiveIndex >= 0 && visibleBrands[brandActiveIndex]) {
+      event.preventDefault();
+      selectBrand(visibleBrands[brandActiveIndex]);
+    }
+  };
+
+  const renderBrandOptions = () => {
+    if (!brandOptionsOpen) return null;
+    if (brandLoadState.status === 'loading') {
+      return <div className="mt-1 px-3 py-2 border text-xs text-stone-500">Cargando marcas…</div>;
+    }
+    if (brandLoadState.status === 'error' || brandLoadState.message) {
+      return (
+        <div
+          className="mt-1 px-3 py-2 border text-xs"
+          style={{ color: brandLoadState.status === 'error' ? '#991b1b' : '#57534e' }}
+        >
+          {brandLoadState.message}
+        </div>
+      );
+    }
+    if (visibleBrands.length === 0 && brandLoadState.status === 'ready') {
+      return <div className="mt-1 px-3 py-2 border text-xs text-stone-500">No hay marcas que coincidan.</div>;
+    }
+    if (visibleBrands.length === 0) return null;
+    return (
+      <div
+        id="product-brand-options"
+        role="listbox"
+        className="mt-1 border bg-white shadow-sm max-h-48 overflow-y-auto"
+        style={{ borderColor: '#e5e0d5' }}
+      >
+        {visibleBrands.map((brand, index) => (
+          <button
+            id={`product-brand-option-${index}`}
+            key={brand}
+            type="button"
+            role="option"
+            aria-selected={brand === selectedBrand}
+            onClick={() => selectBrand(brand)}
+            className="w-full px-3 py-2 text-left text-xs border-b last:border-b-0 hover:bg-stone-50"
+            style={{
+              borderColor: '#e5e0d5',
+              background: index === brandActiveIndex ? '#faf8f3' : '#ffffff',
+            }}
+          >
+            {brand}
+          </button>
+        ))}
+      </div>
+    );
+  };
   
   // Validaciones para habilitar navegación
-  const configCompleta = config.codigoCliente.trim() !== '' && config.nombreCliente.trim() !== '';
+  const customerConfigurationComplete = config.codigoCliente.trim() !== ''
+    && config.nombreCliente.trim() !== '';
+  const productBrandRequired = productSource === PRODUCT_SOURCES.DATAVERSE;
+  const configCompleta = customerConfigurationComplete
+    && (!productBrandRequired || selectedBrand !== '');
   const dataCargada = (
-    productSource === PRODUCT_SOURCES.DATAVERSE || rawMaestro.trim() !== ''
+    (productSource === PRODUCT_SOURCES.DATAVERSE
+      ? selectedBrand !== ''
+      : rawMaestro.trim() !== '')
   ) && rawInventario.trim() !== '';
   const productosReposicionSugerida = resultados?.recs
     ?.filter((record) => record.reposicionSugerida > 0) ?? [];
@@ -574,8 +714,12 @@ export default function App({
     try {
       let normalizedProducts;
       if (productSource === PRODUCT_SOURCES.DATAVERSE) {
+        if (!selectedBrand) {
+          setError('Selecciona una marca antes de cargar el Maestro Producto.');
+          return;
+        }
         try {
-          normalizedProducts = await productMasterService.loadProducts();
+          normalizedProducts = await productMasterService.loadProducts({ brand: selectedBrand });
         } catch (productError) {
           setError(getProductMasterErrorMessage(productError));
           return;
@@ -1345,6 +1489,45 @@ export default function App({
                   style={{ borderColor: '#e5e0d5', background: '#f5f5f4' }} />
               </div>
 
+              {/* La selección permanece separada de Customer y del Configuration Center. */}
+              <div className="md:col-span-2 mt-2">
+                <div className="text-[11px] uppercase tracking-wider font-bold mb-3" style={{ color: '#7f1d1d' }}>
+                  Maestro de Productos
+                </div>
+                <label className="block text-xs font-bold mb-1.5" htmlFor="product-brand-search" style={{ color: '#0a2540' }}>
+                  Marca {productBrandRequired && <span className="text-red-700">*</span>}
+                </label>
+                <input
+                  id="product-brand-search"
+                  type="search"
+                  value={brandSearch}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={brandOptionsOpen && visibleBrands.length > 0}
+                  aria-controls="product-brand-options"
+                  aria-activedescendant={brandActiveIndex >= 0
+                    ? `product-brand-option-${brandActiveIndex}`
+                    : undefined}
+                  onFocus={() => {
+                    setBrandOptionsOpen(true);
+                    void loadBrands();
+                  }}
+                  onChange={(event) => updateBrandSearch(event.target.value)}
+                  onKeyDown={handleBrandKeyDown}
+                  placeholder="Buscar y seleccionar marca"
+                  className="w-full px-3 py-2 border text-sm"
+                  style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}
+                />
+                {renderBrandOptions()}
+                <div className="text-[10px] text-stone-500 mt-1">
+                  {selectedBrand
+                    ? <>Marca seleccionada: <strong>{selectedBrand}</strong>.</>
+                    : productBrandRequired
+                      ? 'Selecciona una marca antes de cargar el Maestro Producto.'
+                      : 'La selección se aplicará al Product Provider cuando corresponda.'}
+                </div>
+              </div>
+
               {/* Periodo y fechas */}
               <div className="md:col-span-2 mt-2">
                 <div className="text-[11px] uppercase tracking-wider font-bold mb-3" style={{ color: '#7f1d1d' }}>
@@ -1455,7 +1638,11 @@ export default function App({
               <div className="text-xs text-stone-600">
                 {configCompleta 
                   ? <span style={{ color: '#065f46' }}><CheckCircle2 className="w-3.5 h-3.5 inline" /> Configuración completa — listo para cargar información</span>
-                  : <span style={{ color: '#92400e' }}>Completa código y nombre del cliente para continuar</span>}
+                  : <span style={{ color: '#92400e' }}>
+                    {!customerConfigurationComplete
+                      ? 'Completa código y nombre del cliente para continuar'
+                      : 'Selecciona una marca antes de cargar el Maestro Producto'}
+                  </span>}
               </div>
               <button onClick={() => setActiveTab('carga')}
                 disabled={!configCompleta}
@@ -1536,9 +1723,20 @@ export default function App({
               </span>
             </div>
 
+            {productBrandRequired && !selectedBrand && (
+              <div role="status" className="w-full px-3 py-2 text-xs border" style={{ borderColor: '#f59e0b', color: '#92400e', background: '#fffbeb' }}>
+                Selecciona una marca en Configuración antes de cargar el Maestro Producto y ejecutar el análisis.
+              </div>
+            )}
+
             <button onClick={procesar}
-              className="px-6 py-2.5 text-sm font-bold flex items-center gap-2 shadow-sm hover:opacity-90"
-              style={{ background: '#d4af37', color: '#0a2540' }}>
+              disabled={!dataCargada}
+              className="px-6 py-2.5 text-sm font-bold flex items-center gap-2 shadow-sm hover:opacity-90 disabled:opacity-50"
+              style={{
+                background: dataCargada ? '#d4af37' : '#cbd5e1',
+                color: dataCargada ? '#0a2540' : '#666',
+                cursor: dataCargada ? 'pointer' : 'not-allowed',
+              }}>
               <Calculator className="w-4 h-4" />
               Calcular y ver dashboard
             </button>

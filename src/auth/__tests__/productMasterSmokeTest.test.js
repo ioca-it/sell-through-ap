@@ -28,10 +28,12 @@ const createResponse = (status, payload) => ({
 });
 
 const createDependencies = ({
+  brand = 'Smoke Brand',
   authenticatedAccount = account,
   accessToken = 'delegated-sensitive-token',
   response = createResponse(200, { products: [sensitiveProduct] }),
 } = {}) => ({
+  brand,
   apiBaseUrl,
   initialize: vi.fn(async () => authenticatedAccount),
   acquireAccessToken: vi.fn(async () => accessToken),
@@ -88,7 +90,7 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
     expect(dependencies.acquireAccessToken).toHaveBeenCalledOnce();
     const [url, options] = dependencies.fetchImpl.mock.calls[0];
     expect(url.pathname).toBe('/api/products/master');
-    expect(url.search).toBe('');
+    expect(url.searchParams.get('brand')).toBe('Smoke Brand');
     expect(options).toEqual(expect.objectContaining({
       method: 'GET',
       headers: {
@@ -109,6 +111,15 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
       hasFormattedLevel: true,
       hasFormattedStatus: true,
     });
+  });
+
+  it('sin brand controlada no consulta la API ni permite una carga global', async () => {
+    const dependencies = createDependencies({ brand: '   ' });
+    await expect(runProductMasterSmokeTest(dependencies)).resolves.toEqual(
+      expect.objectContaining({ diagnostic: 'SMOKE_BRAND_REQUIRED' }),
+    );
+    expect(dependencies.initialize).not.toHaveBeenCalled();
+    expect(dependencies.fetchImpl).not.toHaveBeenCalled();
   });
 
   it('usa 35000 ms por default y limpia el timer si la respuesta llega antes', async () => {
@@ -301,11 +312,11 @@ describe('Phase1-042 real Dataverse Product Master smoke test', () => {
     const run = vi.fn(async () => result);
 
     await expect(startProductMasterSmokeTest({
-      search: '?phase1-042-product-smoke=1',
+      search: '?phase1-042-product-smoke=1&brand=Smoke%20Brand',
       run,
       logger,
     })).resolves.toBe(true);
-    expect(run).toHaveBeenCalledOnce();
+    expect(run).toHaveBeenCalledWith({ brand: 'Smoke Brand' });
     expect(logger.info).toHaveBeenCalledWith(
       'Phase1-042 Real Dataverse Product Master Smoke Test',
       result,
