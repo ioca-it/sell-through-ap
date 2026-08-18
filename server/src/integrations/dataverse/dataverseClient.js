@@ -123,7 +123,7 @@ export const createDataverseClient = ({
   baseUrl,
   tokenProvider,
   fetchImpl = globalThis.fetch,
-  timeoutMs = 10000,
+  timeoutMs = 30000,
   diagnosticLogger,
 } = {}) => {
   const baseUrlConfigured = typeof baseUrl === 'string' && baseUrl.trim() !== '';
@@ -173,92 +173,90 @@ export const createDataverseClient = ({
   };
 
   const retrievePage = async ({ url, includeAnnotations }) => {
+    let token;
+    try {
+      token = await tokenProvider.getToken();
+    } catch (error) {
+      if (error?.statusCode === 502) throw error;
+      throw new DataverseRequestError();
+    }
+
+    let requestHeaders;
+    try {
+      requestHeaders = {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        'OData-MaxVersion': '4.0',
+        'OData-Version': '4.0',
+        ...createPreferHeader(includeAnnotations),
+      };
+    } catch {
+      throw new DataverseRequestError();
+    }
+
     const controller = new AbortController();
     let timeoutTriggered = false;
     const timeout = setTimeout(() => {
       timeoutTriggered = true;
       controller.abort();
     }, timeoutMs);
+    let response;
     try {
-      let token;
-      try {
-        token = await tokenProvider.getToken();
-      } catch (error) {
-        if (error?.statusCode === 502) throw error;
-        throw new DataverseRequestError();
-      }
-
-      let requestHeaders;
-      try {
-        requestHeaders = {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-          'OData-MaxVersion': '4.0',
-          'OData-Version': '4.0',
-          ...createPreferHeader(includeAnnotations),
-        };
-      } catch {
-        throw new DataverseRequestError();
-      }
-
-      let response;
-      try {
-        response = await fetchImpl(url, {
-          method: 'GET',
-          headers: requestHeaders,
-          signal: controller.signal,
-        });
-      } catch (error) {
-        emitDataverseDiagnostic(
-          createNetworkDiagnostic({
-            error,
-            timeoutTriggered,
-            timeoutConfiguredMs: timeoutMs,
-            tokenAcquired: true,
-            baseUrlConfigured,
-            baseUrlProtocolValid,
-          }),
-          diagnosticLogger,
-        );
-        throw new DataverseRequestError();
-      }
-
-      if (!response.ok) {
-        const diagnostic = await inspectDataverseHttpFailure(response);
-        emitDataverseDiagnostic(diagnostic, diagnosticLogger);
-        throw new DataverseRequestError();
-      }
-
-      let payload;
-      try {
-        payload = await response.json();
-      } catch {
-        emitDataverseDiagnostic(
-          createInvalidResponseDiagnostic({
-            response,
-            payload: undefined,
-            parseSuccess: false,
-          }),
-          diagnosticLogger,
-        );
-        throw new DataverseRequestError();
-      }
-      if (!Array.isArray(payload?.value)) {
-        emitDataverseDiagnostic(
-          createInvalidResponseDiagnostic({ response, payload, parseSuccess: true }),
-          diagnosticLogger,
-        );
-        throw new DataverseRequestError();
-      }
-      return {
-        value: payload.value,
-        nextLink: typeof payload['@odata.nextLink'] === 'string'
-          ? payload['@odata.nextLink']
-          : null,
-      };
+      response = await fetchImpl(url, {
+        method: 'GET',
+        headers: requestHeaders,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      emitDataverseDiagnostic(
+        createNetworkDiagnostic({
+          error,
+          timeoutTriggered,
+          timeoutConfiguredMs: timeoutMs,
+          tokenAcquired: true,
+          baseUrlConfigured,
+          baseUrlProtocolValid,
+        }),
+        diagnosticLogger,
+      );
+      throw new DataverseRequestError();
     } finally {
       clearTimeout(timeout);
     }
+
+    if (!response.ok) {
+      const diagnostic = await inspectDataverseHttpFailure(response);
+      emitDataverseDiagnostic(diagnostic, diagnosticLogger);
+      throw new DataverseRequestError();
+    }
+
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      emitDataverseDiagnostic(
+        createInvalidResponseDiagnostic({
+          response,
+          payload: undefined,
+          parseSuccess: false,
+        }),
+        diagnosticLogger,
+      );
+      throw new DataverseRequestError();
+    }
+    if (!Array.isArray(payload?.value)) {
+      emitDataverseDiagnostic(
+        createInvalidResponseDiagnostic({ response, payload, parseSuccess: true }),
+        diagnosticLogger,
+      );
+      throw new DataverseRequestError();
+    }
+    return {
+      value: payload.value,
+      nextLink: typeof payload['@odata.nextLink'] === 'string'
+        ? payload['@odata.nextLink']
+        : null,
+    };
   };
 
   const validateNextLink = (nextLink) => {

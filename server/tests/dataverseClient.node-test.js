@@ -13,7 +13,7 @@ const jsonResponse = (payload, { contentType = 'application/json; charset=utf-8'
   })
 );
 
-const expectedNetworkDiagnostic = (networkCategory, timeoutConfiguredMs = 10000) => ({
+const expectedNetworkDiagnostic = (networkCategory, timeoutConfiguredMs = 30000) => ({
   component: 'DataverseClient',
   diagnosticId: 'DATAVERSE_NETWORK_ERROR',
   operation: 'retrieveMultiple',
@@ -25,6 +25,52 @@ const expectedNetworkDiagnostic = (networkCategory, timeoutConfiguredMs = 10000)
   baseUrlConfigured: true,
   baseUrlProtocolValid: true,
 });
+
+const installFakeTimers = (t, onSchedule) => {
+  let currentTime = 0;
+  let nextHandle = 1;
+  const timers = new Map();
+
+  t.mock.method(globalThis, 'setTimeout', (callback, delay = 0) => {
+    const handle = nextHandle;
+    nextHandle += 1;
+    const normalizedDelay = Number(delay);
+    timers.set(handle, {
+      callback,
+      dueAt: currentTime + normalizedDelay,
+      handle,
+    });
+    onSchedule?.(normalizedDelay);
+    return handle;
+  });
+  t.mock.method(globalThis, 'clearTimeout', (handle) => {
+    timers.delete(handle);
+  });
+
+  return Object.freeze({
+    advanceBy(milliseconds) {
+      const targetTime = currentTime + milliseconds;
+      while (true) {
+        const nextTimer = [...timers.values()]
+          .filter((timer) => timer.dueAt <= targetTime)
+          .sort((left, right) => left.dueAt - right.dueAt || left.handle - right.handle)[0];
+        if (!nextTimer) break;
+        currentTime = nextTimer.dueAt;
+        timers.delete(nextTimer.handle);
+        nextTimer.callback();
+      }
+      currentTime = targetTime;
+    },
+    pendingCount() {
+      return timers.size;
+    },
+  });
+};
+
+const flushMicrotasks = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
 test('centraliza token, headers OData y parámetros internos', async () => {
   const sequence = [];
@@ -296,12 +342,84 @@ test('clasifica fetch TypeError como NETWORK_FETCH_FAILED', async () => {
   assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_FETCH_FAILED')]);
 });
 
-test('cancela por timeout y clasifica NETWORK_TIMEOUT', async () => {
-  const events = [];
+test('configura 30000 ms y crea el timer inmediatamente antes de fetch', async (t) => {
+  const sequence = [];
+  const timers = installFakeTimers(t, (delay) => sequence.push(`timer:${delay}`));
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: {
+      getToken: async () => {
+        sequence.push('token');
+        return 'access-token';
+      },
+    },
+    fetchImpl: async () => {
+      sequence.push('fetch');
+      return jsonResponse({ value: [] });
+    },
+  });
+
+  assert.deepEqual(await client.retrieveMultiple({ entitySet: 'accounts' }), []);
+  assert.deepEqual(sequence, ['token', 'timer:30000', 'fetch']);
+  assert.equal(timers.pendingCount(), 0);
+});
+
+test('getToken no consume el presupuesto temporal exclusivo de fetch', async (t) => {
+  const timers = installFakeTimers(t);
+  let resolveToken;
+  let fetchCalled = false;
+  const tokenPending = new Promise((resolve) => {
+    resolveToken = resolve;
+  });
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => tokenPending },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return jsonResponse({ value: [] });
+    },
+  });
+
+  const request = client.retrieveMultiple({ entitySet: 'accounts' });
+  await flushMicrotasks();
+  timers.advanceBy(30001);
+  assert.equal(timers.pendingCount(), 0);
+  assert.equal(fetchCalled, false);
+
+  resolveToken('access-token');
+  assert.deepEqual(await request, []);
+  assert.equal(fetchCalled, true);
+  assert.equal(timers.pendingCount(), 0);
+});
+
+test('permite un fetch que completa antes de 30000 ms y limpia el timer', async (t) => {
+  const timers = installFakeTimers(t);
+  let resolveFetch;
+  const fetchPending = new Promise((resolve) => {
+    resolveFetch = resolve;
+  });
   const client = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',
     tokenProvider: { getToken: async () => 'access-token' },
-    timeoutMs: 1,
+    fetchImpl: async () => fetchPending,
+  });
+
+  const request = client.retrieveMultiple({ entitySet: 'accounts' });
+  await flushMicrotasks();
+  assert.equal(timers.pendingCount(), 1);
+  timers.advanceBy(29999);
+  resolveFetch(jsonResponse({ value: [{ id: 1 }] }));
+
+  assert.deepEqual(await request, [{ id: 1 }]);
+  assert.equal(timers.pendingCount(), 0);
+});
+
+test('cancela un fetch que supera 30000 ms y clasifica NETWORK_TIMEOUT', async (t) => {
+  const events = [];
+  const timers = installFakeTimers(t);
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
     diagnosticLogger: (event) => events.push(event),
     fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
       options.signal.addEventListener('abort', () => {
@@ -312,12 +430,16 @@ test('cancela por timeout y clasifica NETWORK_TIMEOUT', async () => {
     }),
   });
 
+  const request = client.retrieveMultiple({ entitySet: 'accounts' });
+  await flushMicrotasks();
+  timers.advanceBy(30001);
   await assert.rejects(
-    client.retrieveMultiple({ entitySet: 'accounts' }),
+    request,
     (error) => error instanceof DataverseRequestError
       && error.message === 'No fue posible consultar Dataverse.',
   );
-  assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_TIMEOUT', 1)]);
+  assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_TIMEOUT')]);
+  assert.equal(timers.pendingCount(), 0);
 });
 
 test('clasifica AbortError no disparado por el timer como NETWORK_ABORTED', async () => {
@@ -379,8 +501,9 @@ test('clasifica un rechazo fetch sin señales conocidas como NETWORK_UNKNOWN', a
   assert.deepEqual(events, [expectedNetworkDiagnostic('NETWORK_UNKNOWN')]);
 });
 
-test('fallo de token no ejecuta fetch ni se clasifica como red Dataverse', async () => {
+test('fallo de token no crea timer, ejecuta fetch ni se clasifica como red Dataverse', async (t) => {
   const events = [];
+  const timers = installFakeTimers(t);
   let fetchCalled = false;
   const tokenError = new Error('token sensible');
   tokenError.statusCode = 502;
@@ -399,6 +522,7 @@ test('fallo de token no ejecuta fetch ni se clasifica como red Dataverse', async
     (error) => error === tokenError,
   );
   assert.equal(fetchCalled, false);
+  assert.equal(timers.pendingCount(), 0);
   assert.deepEqual(events, []);
 });
 

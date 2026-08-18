@@ -2,9 +2,15 @@
 
 ## Fase actual
 
+PHASE1-061 queda **PASS — TEMPORARY 30 SECOND DATAVERSE FETCH TIMEOUT / TOKEN BUDGET ISOLATED / PRODUCT AND CUSTOMER REGRESSION COVERED / NOT DEPLOYED / NOT ACTIVATED**. Dataverse Client eleva temporalmente su timeout HTTP de **10 000 ms** a **30 000 ms** para permitir una validación posterior de Product Master contra Dataverse real. No es una optimización definitiva y deberá reevaluarse después de esa validación, junto con consulta/paginación si corresponde mediante autorización separada.
+
+`retrievePage()` adquiere primero el token backend y prepara los headers; solo entonces crea `AbortController` y timer inmediatamente antes de `fetchImpl()`. El `finally` inmediato de fetch limpia el timer antes de clasificar la respuesta, parsear JSON o validar shape. Los 30 000 ms pertenecen exclusivamente al fetch HTTP Dataverse: `getToken()` no consume ese presupuesto y Entra Token Provider conserva su timeout independiente de 10 000 ms. El cliente compartido aplica esta ventana de transporte a Product y Customer sin cambiar sus gateways o contratos.
+
+Se preservan `NETWORK_TIMEOUT`, `NETWORK_ABORTED`, `NETWORK_FETCH_FAILED`, `NETWORK_INVALID_URL`, `NETWORK_UNKNOWN` y los indicadores `timeoutConfiguredMs`, `tokenAcquired`, `baseUrlConfigured`, `baseUrlProtocolValid`. También permanece intacta la observabilidad Phase1-057 para HTTP 200 inválido: `parseSuccess`, `hasValueArray`, `hasNextLink`, `bodyType` y `contentTypeValid`. Timers simulados cubren la frontera 29 999/30 000 ms, cleanup, fallo de token y regresión Product/Customer sin esperas reales.
+
 PHASE1-059 queda **PASS — NETWORK CATCH ISOLATED / SAFE TRANSPORT CLASSIFICATION ADDED / PHASE1-057 TRANSPORT REGRESSION DISCARDED / PRODUCTIVE CAUSE PENDING / NOT DEPLOYED / NOT ACTIVATED**. El `DATAVERSE_NETWORK_ERROR` previo nacía en el catch amplio de `retrievePage` después de asignar `dataverseRequestStarted=true`: agrupaba cualquier excepción posterior a `getToken()`, incluidos rechazo de `fetch`, aborto/timeout y construcción inválida de headers. La frontera queda explícita: solo una excepción lanzada por `fetchImpl` emite ahora el diagnóstico de red y se reduce a `NETWORK_TIMEOUT`, `NETWORK_ABORTED`, `NETWORK_FETCH_FAILED`, `NETWORK_INVALID_URL` o `NETWORK_UNKNOWN` usando únicamente tipo, nombre, código seguro y el estado interno del timer.
 
-El evento de red conserva el contrato público genérico y añade exclusivamente `networkCategory`, `timeoutConfiguredMs`, `tokenAcquired`, `baseUrlConfigured` y `baseUrlProtocolValid`; no incorpora error original, message, stack, URL, host, query, Entity Set, filtros, tokens, Authorization, secretos, tenant, client id, SKU, Product data o payload. Las pruebas demuestran el orden token → fetch y que un fallo de token no ejecuta fetch ni se clasifica como red Dataverse. El timeout Dataverse Client permanece en **10 000 ms**, se inicia antes de solicitar el token y aborta mediante el mismo `AbortController` entregado a fetch; el Entra Token Provider mantiene su timeout independiente de 10 000 ms. El único Dataverse Client compartido por Product y Customer aplica la misma ventana a ambos gateways. Un timeout puede explicar técnicamente una ejecución sin `Response`, pero la evidencia productiva disponible todavía no demuestra esa categoría.
+El evento de red conserva el contrato público genérico y añade exclusivamente `networkCategory`, `timeoutConfiguredMs`, `tokenAcquired`, `baseUrlConfigured` y `baseUrlProtocolValid`; no incorpora error original, message, stack, URL, host, query, Entity Set, filtros, tokens, Authorization, secretos, tenant, client id, SKU, Product data o payload. Las pruebas demuestran el orden token → fetch y que un fallo de token no ejecuta fetch ni se clasifica como red Dataverse. En Phase1-059, antes del ajuste temporal Phase1-061, el timeout Dataverse Client permanecía en **10 000 ms** y se iniciaba antes de solicitar el token; el Entra Token Provider ya mantenía su timeout independiente de 10 000 ms. El único Dataverse Client compartido por Product y Customer aplica la misma ventana a ambos gateways. Un timeout podía explicar técnicamente una ejecución sin `Response`, pero la evidencia productiva disponible todavía no demostraba esa categoría.
 
 La comparación de `791c8b7^` con Phase1-057 (`791c8b7`) confirma que ese hito no cambió fetch, AbortController, headers ni las condiciones funcionales de parse/aceptación: solo añadió metadata derivada después de una respuesta inválida. Por ello Phase1-057 **no introdujo una regresión de transporte** capaz de explicar HTTP 200 → network error. La causa productiva concreta queda pendiente de una ejecución posterior y autorizada con la nueva clasificación; no se asume una caída de Dataverse.
 
@@ -22,7 +28,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-059 — Diagnose Render to Dataverse Network Failure.
+PHASE1-061 — Temporarily Increase Dataverse Fetch Timeout.
 
 ## Última auditoría aprobada
 
@@ -53,7 +59,7 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - Product Service/API: endpoint funcional cerrado, protegido por el JWT/rate limiter existentes y compuesto con el Dataverse Client/OAuth y el diagnóstico general sanitizado ya implementados.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
-- Diagnóstico seguro Dataverse Phase1-020/057/059: clasifica fallos HTTP/OData, respuesta inválida y red; para red añade solo categoría de transporte, timeout configurado y tres booleanos de estado seguros, nunca error/payload/URL/query/credenciales/PII.
+- Diagnóstico seguro Dataverse Phase1-020/057/059/061: clasifica fallos HTTP/OData, respuesta inválida y red; para red añade solo categoría de transporte, timeout configurado y tres booleanos de estado seguros, nunca error/payload/URL/query/credenciales/PII.
 - Diagnósticos temporales Product Phase1-046 y Phase1-048/050/052: retirados del gateway, Dataverse Client, runtime y pruebas después de confirmar `crbbe_urlproducto`; no quedan probes, consultas de metadata, guards one-shot ni observabilidad temporal Product.
 - Diagnósticos temporales Customer Phase1-022/024: retirados del runtime, Dataverse Client y pruebas después de confirmar los nombres productivos; no quedan probes, consultas de metadata ni estado one-shot.
 - Account Customer Gateway: único módulo productivo que conoce `accounts`, `new_codigocliente`, `name`, `crbbe_nombrepais`, `new_tipocliente` y su propiedad FormattedValue; normaliza los cuatro campos Customer, obtiene `customerType` exclusivamente desde la etiqueta Choice y aplica los LogicalNames confirmados `customertypecode`, `statecode` y `crbbe_estadodelcliente` con valores empresariales 3/0/4.
@@ -145,7 +151,7 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-Después de revisar Phase1-059, la siguiente acción exacta es autorizar por separado un checkpoint y deploy exclusivamente del backend instrumentado y, una vez Live, una única revalidación Product autenticada para capturar `networkCategory` y los cuatro indicadores seguros. No debe ejecutarse otra prueba productiva antes de ese deploy. `VITE_PRODUCT_SOURCE=local` debe permanecer vigente y la activación normal de Product Dataverse continúa como decisión posterior e independiente.
+Después de revisar Phase1-061, la siguiente acción exacta es autorizar por separado un checkpoint y deploy exclusivamente del backend con el timeout temporal, y una vez Live ejecutar una única revalidación Product autenticada. No debe ejecutarse otro smoke antes de ese deploy. `VITE_PRODUCT_SOURCE=local` debe permanecer vigente; después del resultado se reevaluarán los 30 000 ms y, si corresponde, se definirá en otro hito cualquier optimización de consulta/paginación. La activación normal de Product Dataverse continúa como decisión posterior e independiente.
 
 ## Decisiones congeladas
 

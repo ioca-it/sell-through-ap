@@ -1,5 +1,26 @@
 # Roadmap aprobado
 
+## Phase1-061 — Temporarily Increase Dataverse Fetch Timeout
+
+Dataverse Client queda **TEMPORARY 30 SECOND FETCH TIMEOUT / TOKEN BUDGET
+ISOLATED / NOT DEPLOYED / NOT ACTIVATED**. El timeout HTTP aumenta de 10 000 ms
+a 30 000 ms únicamente para permitir una validación posterior de Product
+Master contra Dataverse real. `getToken()` y headers preceden al
+AbortController/timer; estos abarcan solo `fetchImpl()` y se limpian antes de
+procesar la respuesta. El timeout independiente de Entra Token Provider
+permanece en 10 000 ms.
+
+Clasificación, observabilidad Phase1-057/059, Product/Customer contracts,
+gateways, mappings, filtros, fuentes y autenticación permanecen sin cambios.
+Los 30 000 ms son temporales y deberán reevaluarse después de la validación;
+cualquier optimización de consulta/paginación requiere otro hito autorizado.
+
+Siguiente acción exacta: después de revisión y autorización separada, crear el
+checkpoint, desplegar exclusivamente el backend con Phase1-061 y ejecutar una
+única revalidación Product autenticada. Mantener
+`VITE_PRODUCT_SOURCE=local`; no activar Product Dataverse ni iniciar otra
+optimización durante este hito.
+
 ## Phase1-059 — Diagnose Render to Dataverse Network Failure
 
 Dataverse Client queda **NETWORK CATCH ISOLATED / SAFE TRANSPORT CLASSIFICATION
@@ -10,9 +31,10 @@ mantienen fronteras separadas. La señal se limita a cinco categorías seguras,
 timeout configurado y estado booleano de token/base URL, sin error crudo ni
 datos sensibles.
 
-El timeout se conserva en 10 000 ms y sigue compartido por las consultas
-Product/Customer. La comparación Git confirma que Phase1-057 no modificó el
-transporte y no introdujo la transición observada de HTTP 200 a fallo de red.
+En Phase1-059, antes del ajuste temporal Phase1-061, el timeout se conservaba
+en 10 000 ms y seguía compartido por las consultas Product/Customer. La
+comparación Git confirma que Phase1-057 no modificó el transporte y no
+introdujo la transición observada de HTTP 200 a fallo de red.
 No se cambia lógica Product, mappings, filtros, fuentes, autenticación,
 variables ni infraestructura.
 

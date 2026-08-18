@@ -1,5 +1,38 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-061
+
+### Implementado
+
+- Dataverse Client aumenta temporalmente su timeout HTTP default de 10 000 ms
+  a 30 000 ms para permitir una validación posterior de Product Master contra
+  Dataverse real.
+- `getToken()` y la preparación de headers ocurren antes de crear
+  AbortController/timer; el `finally` inmediato de fetch limpia el timer antes
+  del procesamiento HTTP/JSON/shape. El presupuesto corresponde solo a
+  `fetchImpl()`.
+- Entra Token Provider conserva su timeout independiente de 10 000 ms.
+
+### Validado
+
+- Timers simulados cubren default 30 000, orden token → timer → fetch, token
+  fuera del presupuesto, fetch a 29 999 ms, timeout al superar 30 000 ms,
+  cleanup y fallo de token sin falso diagnóstico de red.
+- Se preservan las cinco categorías de red, los cuatro indicadores seguros y
+  la observabilidad `invalid_response` Phase1-057.
+- Backend 106/106, frontend 342/342 y ambos builds aprobados; Product API y
+  Customer Master no presentan regresión.
+
+### Temporalidad y alcance
+
+- Los 30 000 ms no constituyen una optimización definitiva; deberán
+  reevaluarse después de validar Product Master y de definir por separado
+  cualquier optimización de consulta/paginación.
+- Sin cambios en Entity Set, mappings, filtros, consolidación/pivot, precios
+  nullable, conflictos, FormattedValue, `fechaStr`, contratos, frontend,
+  autenticación, variables o infraestructura.
+- Sin commit, push, deploy ni smoke productivo.
+
 ## 2026-08-17 — PHASE1-059
 
 ### Diagnosticado

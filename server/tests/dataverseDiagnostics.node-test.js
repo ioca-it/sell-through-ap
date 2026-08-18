@@ -119,7 +119,7 @@ test('clasifica fallos de transporte sin registrar el error o stack', async () =
     failureType: 'network',
     structuredErrorMetadata: false,
     networkCategory: 'NETWORK_FETCH_FAILED',
-    timeoutConfiguredMs: 10000,
+    timeoutConfiguredMs: 30000,
     tokenAcquired: true,
     baseUrlConfigured: true,
     baseUrlProtocolValid: true,
