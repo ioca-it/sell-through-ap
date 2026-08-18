@@ -26,7 +26,7 @@ export const handleProductRoutes = async ({
       error.statusCode = 400;
       throw error;
     }
-    const brands = await productService.listBrands();
+    const brands = await productService.listBrands({ productTrace });
     writeJson(response, 200, { brands });
     return true;
   }

@@ -189,7 +189,24 @@ test('lista marcas con proyección mínima, filtro de compradores y retrieveAll'
     entitySet: 'productpricelevels',
     select: ['crbbe_nombremarca', 'crbbe_companiacompradora'],
     filter: "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.')",
+    productTrace: undefined,
   }]);
+});
+
+test('propaga el mismo contexto Product desde loadBrands hasta retrieveAll', async () => {
+  const productTrace = Object.freeze({ checkpoint() {}, paginationCheckpoint() {} });
+  let receivedTrace;
+  const gateway = createProductPriceLevelGateway({
+    dataverseClient: {
+      retrieveAll: async (query) => {
+        receivedTrace = query.productTrace;
+        return [];
+      },
+    },
+  });
+
+  await gateway.loadBrands({ productTrace });
+  assert.equal(receivedTrace, productTrace);
 });
 
 test('marcas aplica trim, exclusión de vacíos, deduplicación exacta y orden estable', () => {

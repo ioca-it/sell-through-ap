@@ -1,5 +1,33 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-073
+
+### Instrumentación y timeout
+
+- Extendido el contexto temporal Product Phase1-066/068 a
+  `GET /api/products/brands` mediante la misma propagación Route → Service →
+  Gateway → Dataverse Client.
+- Añadida clasificación técnica allowlisted `PRODUCT_MASTER|PRODUCT_BRANDS` a
+  eventos de request y paginación, sin exponerla al frontend.
+- Dataverse Product Provider cambia temporalmente su default de 10 000 a
+  35 000 ms para Brands y Maestro filtrado. Customer conserva 10 000 ms,
+  backend 30 000 ms y smoke Product 35 000 ms.
+
+### Preservado
+
+- `/brands` continúa con `productpricelevels`, filtro compradores,
+  `retrieveAll()`, extracción/trim/deduplicación/orden; sin cache,
+  `$apply/groupby`, page size, `$orderby`, índice, tabla o paralelización.
+- Mappings, filtros, brand obligatoria, consolidación, precios, conflictos,
+  FormattedValue, `fechaStr`, contratos, Customer, CORS, JWT, rate limiting y
+  `VITE_PRODUCT_SOURCE=local` no cambian.
+
+### Validación
+
+- Backend completo: 121/121; frontend completo: 360/360 en 32 archivos.
+- Builds backend/frontend: PASS. Focalizadas backend 54/54 y frontend 34/34.
+- Sin commit, push, deploy, smoke productivo, variables ni cambios externos.
+
 ## 2026-08-18 — PHASE1-070
 
 ### Implementado

@@ -1,5 +1,27 @@
 # Roadmap aprobado
 
+## Phase1-073 — Instrument and Align Product Brands Loading
+
+El hito queda **PASS — BRANDS TRACE ALIGNED / PRODUCT PROVIDER TEMPORARY 35 S /
+QUERY UNCHANGED / NOT DEPLOYED / NOT ACTIVATED**. La infraestructura temporal
+Phase1-066/068 cubre ahora también `GET /api/products/brands` y propaga el mismo
+contexto desde API hasta Dataverse Client. `operation=PRODUCT_MASTER` y
+`operation=PRODUCT_BRANDS` separan técnicamente ambos flujos sin ampliar el
+contrato frontend; página, conteos, acumulados y totales continúan bajo un
+esquema seguro.
+
+El Dataverse Product Provider real usa temporalmente 35 000 ms para
+`loadBrands()` y `loadProducts({ brand })`, con AbortController, error
+sanitizado y cleanup intactos. Customer conserva 10 000 ms, el fetch backend
+Dataverse 30 000 ms y el smoke Product 35 000 ms.
+
+`/brands` conserva `retrieveAll()` sin cache, agregación, cambios de página,
+orden, índices o paralelización. Siguiente acción exacta: después de checkpoint
+y deploy autorizados por separado, ejecutar una única medición controlada de
+`GET /api/products/brands` para obtener páginas/registros/tiempos reales; usar
+esa evidencia para definir otro prompt de optimización sin activar todavía
+`VITE_PRODUCT_SOURCE=dataverse`.
+
 ## Phase1-070 — Add Product Brand Prefilter
 
 El hito queda **PASS — PRODUCT BRAND PREFILTER IMPLEMENTED / GLOBAL LOAD

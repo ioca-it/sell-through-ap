@@ -154,6 +154,19 @@ describe('dataverseCustomerProvider vía backend API', () => {
     );
   });
 
+  it('conserva el timeout Customer default de 10000 ms', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const { provider } = createProvider();
+
+    await provider.searchCustomersByCode('C');
+
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 10000);
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
+    setTimeoutSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
+  });
+
   it('no consulta la API y orienta la capa superior cuando no hay sesión', async () => {
     const fetchImpl = vi.fn();
     const provider = createDataverseCustomerProvider({

@@ -2,6 +2,36 @@
 
 ## Fase actual
 
+PHASE1-073 queda **PASS — PRODUCT BRANDS TRACE ALIGNED / PRODUCT PROVIDER
+TEMPORARY 35 S TIMEOUT / BRANDS QUERY UNCHANGED / NOT DEPLOYED / NOT
+ACTIVATED**. `GET /api/products/brands` crea ahora el mismo contexto efímero y
+allowlisted de Phase1-066/068 que Product Master y lo propaga por Product Route
+→ Product Service → Product Price Level Gateway → Dataverse Client. Los eventos
+de request y paginación comparten un único `traceId` por request e incorporan
+la clasificación técnica interna `PRODUCT_BRANDS`; Product Master conserva
+`PRODUCT_MASTER`. La clasificación no forma parte de la respuesta frontend.
+
+Brands emite recepción, autenticación, inicio de servicio, token, fetch y
+respuesta, además de página incremental, elapsed de fetch, registros devueltos,
+presencia booleana de next link, acumulado y totales. Los esquemas permanecen
+cerrados a metadata técnica segura; Customer no crea ni propaga el contexto y
+no genera `PHASE1_066_PRODUCT_REQUEST_TRACE` ni
+`PHASE1_068_PRODUCT_PAGINATION_TRACE`.
+
+El timeout default del Dataverse Product Provider real aumenta temporalmente de
+10 000 a 35 000 ms tanto para `loadBrands()` como para
+`loadProducts({ brand })`. Conserva AbortController, error sanitizado, inyección
+y cleanup. Customer Provider permanece en 10 000 ms, el fetch backend
+Dataverse en 30 000 ms y el smoke Product en 35 000 ms. Los 35 s del Provider
+Product deben reevaluarse después de medir y optimizar Brands/Product Master.
+
+La consulta Brands no se optimiza en este hito: continúa sobre
+`productpricelevels`, filtro de compradores, proyección vigente y
+`retrieveAll()`, seguida por selección de marca, `trim()`, deduplicación y
+orden. No se añadieron cache, `$apply/groupby`, índices, tabla auxiliar, page
+size, `$orderby` alternativo ni paralelización. Product Dataverse sigue sin
+activarse; la optimización queda pendiente de medición productiva autorizada.
+
 PHASE1-070 queda **PASS — PRODUCT BRAND PREFILTER IMPLEMENTED / GLOBAL PRODUCT
 LOAD BLOCKED / LOCAL PARITY PRESERVED / NOT DEPLOYED / NOT ACTIVATED**. La UI
 de Configuración mantiene `selectedCustomer` y `selectedBrand` separados y
@@ -108,11 +138,13 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-070 — Add Product Brand Prefilter.
+PHASE1-073 — Instrument and Align Product Brands Loading.
 
 ## Última auditoría aprobada
 
-Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. Sus tres observaciones previas a activación quedaron resueltas sin activar Dataverse: Phase1-036 protege atributos divergentes, Phase1-038 preserva precios ausentes como `null` y Phase1-040 normaliza `fechaStr` entre fuentes.
+Claude Phase1-071 — Audit Product Brand Prefilter, ejecutada el 2026-08-18.
+Sus tres blockers de observabilidad/timeout quedan resueltos por Phase1-073 sin
+optimizar `/brands`, desplegar ni activar Product Dataverse.
 
 ## Servicios implementados
 
@@ -140,10 +172,11 @@ Claude Phase1-034 — Audit Dataverse Product Master, ejecutada el 2026-08-17. S
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
 - Diagnóstico seguro Dataverse Phase1-020/057/059/061: clasifica fallos HTTP/OData, respuesta inválida y red; para red añade solo categoría de transporte, timeout configurado y tres booleanos de estado seguros, nunca error/payload/URL/query/credenciales/PII.
-- Trace temporal Product Phase1-066: correlaciona exclusivamente un
-  `GET /api/products/master` entre API, autenticación, Product Service y
-  Dataverse Client mediante UUID efímero y eventos allowlisted; no modifica
-  contratos ni habilita logging general para Customer.
+- Trace temporal Product Phase1-066/073: correlaciona las rutas
+  `GET /api/products/master` y `GET /api/products/brands` entre API,
+  autenticación, Product Service y Dataverse Client mediante UUID efímero,
+  eventos allowlisted y operación interna `PRODUCT_MASTER|PRODUCT_BRANDS`; no
+  modifica contratos ni habilita logging general para Customer.
 - Diagnóstico temporal Product Phase1-068: demuestra que los múltiples fetch
   son páginas secuenciales de `retrieveAll()` y registra solo número de página,
   elapsed/fetch elapsed, conteos y presencia booleana de next link, más totales
@@ -186,7 +219,8 @@ Carga Maestro Producto
         -> Local Product Provider -> Master Parser
         -> Dataverse Product Provider frontend
           -> Authenticated API Client / getAccessToken / MSAL
-            -> Product API portable (`GET /api/products/master`)
+            -> Product API portable (`GET /api/products/brands` o
+               `GET /api/products/master?brand=...`)
               -> Product Service
                 -> Product Price Level Gateway
                   -> Dataverse Client / Entra Token Provider

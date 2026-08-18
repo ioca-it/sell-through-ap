@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createDataverseProductProvider,
   PRODUCT_API_ERROR_CODES,
+  PRODUCT_REQUEST_TIMEOUT_MS,
   ProductApiError,
 } from '../dataverseProductProvider.js';
 
@@ -92,6 +93,95 @@ describe('DataverseProductProvider vía backend portable', () => {
     expect(url.pathname).toBe('/api/products/brands');
     expect(url.search).toBe('');
     expect(url.href).not.toMatch(/\$filter|\$select|crbbe_/);
+  });
+
+  it('usa temporalmente 35000 ms por default en loadBrands y loadProducts', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const fetchImpl = vi.fn(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => (
+        url.pathname === '/api/products/brands' ? { brands: [] } : { products: [] }
+      ),
+    }));
+    const provider = createDataverseProductProvider({
+      apiBaseUrl: 'https://backend.invalid',
+      fetchImpl,
+      getAccessToken: async () => 'delegated-token',
+    });
+
+    await provider.loadBrands();
+    await provider.loadProducts({ brand: 'Marca' });
+
+    expect(PRODUCT_REQUEST_TIMEOUT_MS).toBe(35000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 35000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 35000);
+    fetchImpl.mock.calls.forEach(([, options]) => {
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+    });
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(2);
+    setTimeoutSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
+  });
+
+  it('mantiene timeout inyectable, aborta y devuelve el error Product sanitizado', async () => {
+    vi.useFakeTimers();
+    try {
+      let requestSignal;
+      const fetchImpl = vi.fn(async (_url, { signal }) => {
+        requestSignal = signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            const error = new Error('detalle técnico sensible');
+            error.name = 'AbortError';
+            reject(error);
+          }, { once: true });
+        });
+      });
+      const provider = createDataverseProductProvider({
+        apiBaseUrl: 'https://backend.invalid',
+        fetchImpl,
+        getAccessToken: async () => 'delegated-token',
+        requestTimeoutMs: 50,
+      });
+
+      const pending = provider.loadBrands();
+      const rejection = expect(pending).rejects.toEqual(expect.objectContaining({
+        name: 'ProductApiError',
+        code: PRODUCT_API_ERROR_CODES.REQUEST_TIMEOUT,
+        message: 'No fue posible consultar el Maestro Producto.',
+      }));
+      await vi.advanceTimersByTimeAsync(49);
+      expect(requestSignal.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejection;
+      expect(requestSignal.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('acepta una respuesta previa al timeout y limpia el timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const provider = createDataverseProductProvider({
+        apiBaseUrl: 'https://backend.invalid',
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ brands: ['ANKER'] }),
+        }),
+        getAccessToken: async () => 'delegated-token',
+        requestTimeoutMs: 50,
+      });
+
+      await expect(provider.loadBrands()).resolves.toEqual(['ANKER']);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('no consulta Product Master cuando brand no es válida', async () => {

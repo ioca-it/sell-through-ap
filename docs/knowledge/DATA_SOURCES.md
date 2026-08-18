@@ -113,9 +113,17 @@ El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.
 ## DS-006 — Dataverse
 
 - Estado Customer: **IMPLEMENTED + PRODUCTION VALIDATED** por Phase1-032. Vercel usa `VITE_CUSTOMER_SOURCE=dataverse`; búsqueda/selección conservan el contrato Customer.
-- Estado Product: **PRODUCT URL LOGICAL NAME CORRECTED / TEMPORARY DIAGNOSTICS REMOVED / NOT DEPLOYED / NOT ACTIVATED** por Phase1-055. `productpricelevels` permanece confirmado, `crbbe_urlproducto` reemplaza el nombre anterior incorrecto `producturl` solo en la integración backend y `VITE_PRODUCT_SOURCE=local` continúa como fuente efectiva.
+- Estado Product: **BRAND PREFILTER IMPLEMENTED / BRANDS TRACE ALIGNED /
+  TEMPORARY 35 S PROVIDER / NOT DEPLOYED / NOT ACTIVATED** por Phase1-073.
+  `productpricelevels` y `crbbe_urlproducto` permanecen confirmados, y
+  `VITE_PRODUCT_SOURCE=local` continúa como fuente efectiva.
 - Fuentes autorizadas: `accounts` para Maestro Cliente y `productpricelevels` para Maestro Producto, cada una mediante su endpoint funcional y gateway backend.
 - Frontend Providers: `dataverseCustomerProvider.js` y `dataverseProductProvider.js`, consumidores exclusivos del backend mediante `VITE_API_BASE_URL`; adjuntan Bearer MSAL a través del cliente HTTP compartido y normalizan fallos sin exponer detalles.
+- Timeout frontend: Dataverse Product Provider usa temporalmente 35 000 ms para
+  `loadBrands()` y `loadProducts({ brand })`; Dataverse Customer Provider
+  conserva 10 000 ms. Ambos mantienen AbortController, error público sanitizado
+  y cleanup. El timeout Product debe reevaluarse después de medir y optimizar
+  Brands/Product Master.
 - Selectores: `VITE_CUSTOMER_SOURCE=local|dataverse` (producción `dataverse`) y `VITE_PRODUCT_SOURCE=local|dataverse` (default/producción `local`).
 - Repositories/Application Services: Customer y Product separados; la UI no recibe nombres físicos Dataverse.
 - Alternativa temporal: `localCustomerProvider.js`, con cinco clientes claramente ficticios desde `customerFixtures.js` e inyección opcional de otros fixtures.
@@ -123,6 +131,11 @@ El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.
 - Entity Sets confirmados: `accounts` para Customer y `productpricelevels` para Product.
 - Mapping confirmado dentro de Account Customer Gateway: `new_codigocliente` → `customerCode`, `name` → `customerName`, `crbbe_nombrepais` → `country` y `new_tipocliente@OData.Community.Display.V1.FormattedValue` → `String(value).trim()` → `customerType`. El valor numérico de `new_tipocliente` no se expone; la ausencia de FormattedValue produce `customerType: ''`. El Choice global asociado es `new_tipoclienteglobal`, pero no se consulta por búsqueda porque la anotación entrega la etiqueta en la misma respuesta.
 - API Customer: búsquedas por código/nombre y lectura por código. API Product: `GET /api/products/brands` y `GET /api/products/master?brand=<brand>`; `brand` es el único parámetro funcional de Maestro, obligatorio y máximo 100 caracteres. Select/filtro/orden/paginación se construyen solo en backend; parámetros desconocidos, duplicados y OData libre se rechazan.
+- Trazabilidad Product temporal: ambas rutas Product generan un contexto
+  efímero por request y lo propagan hasta Dataverse Client. Los eventos
+  Phase1-066/068 distinguen internamente `PRODUCT_MASTER` de `PRODUCT_BRANDS` y
+  registran solo metadata allowlisted de request/página/totales. Customer no
+  genera ni propaga este tracing y la clasificación no se expone al frontend.
 - Autenticación: dos fronteras separadas. Vercel usa MSAL/Microsoft Entra ID y entrega al backend portable un Bearer delegado para Customer/Product; Render valida firma, issuer, audience, tenant y scope mediante `AUTH_*`. El backend obtiene aparte su token OAuth 2.0 `client_credentials` mediante `DV_*` para consultar Dataverse; su scope se deriva de `DV_BASE_URL` y se cachea con margen de seguridad.
 - Seguridad: variables, secretos y access token `DV_*` solo backend. MSAL usa `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`; `getAccessToken` intenta `acquireTokenSilent` y deriva a `loginRedirect` cuando falta sesión o se requiere interacción. El token delegado se limita al header Bearer del Provider frontend; UI, Repository y Service no conocen JWT, nombres lógicos ni OData.
 - Cache frontend: administrado por MSAL en `sessionStorage`; no existe almacenamiento manual de access tokens ni client secret de SellThrough-Web.
@@ -134,6 +147,11 @@ El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.
 - Smoke Dataverse Phase1-010B/011: búsqueda protegida `GET /api/customers/search?type=code&q=CL0000041`, activada sólo mediante `?phase1-010b-smoke=1`; resultado real `HTTP 200`, JWT aceptado, request Dataverse intentado, exactamente un Customer y diagnóstico nulo. Se conserva sólo la cantidad, nunca el payload Customer, y el arnés permanece disponible temporalmente.
 - Smoke Product Phase1-042: activado solo mediante `?phase1-042-product-smoke=1&brand=<marca explícita>` y dirigido a `GET /api/products/master?brand=<brand>`. Sin marca controlada devuelve `SMOKE_BRAND_REQUIRED` y no consulta la API. Conserva cuenta MSAL, Bearer delegado, timeout de 35 000 ms y resumen sanitizado sin publicar la marca ni datos Product, token, headers o query.
 - Diagnóstico seguro Phase1-020/057/059/061: conserva `DATAVERSE_INVALID_FIELD_OR_FILTER` y la observabilidad derivada de `invalid_response`; un rechazo de fetch se reduce a `NETWORK_TIMEOUT`, `NETWORK_ABORTED`, `NETWORK_FETCH_FAILED`, `NETWORK_INVALID_URL` o `NETWORK_UNKNOWN`, más timeout configurado y booleanos de token/base URL. Un fallo del Entra Token Provider ocurre antes de fetch y no se clasifica como red Dataverse. No se registran error/message/stack originales, URL/host/query, Entity Set/filtros, tokens/Authorization, secretos, tenant/client id, payload, SKU ni datos Product/Customer. Phase1-061 eleva **temporalmente** el timeout Dataverse Client de 10 000 ms a 30 000 ms: `getToken()` y headers ocurren antes, `AbortController`/timer nacen inmediatamente antes de `fetchImpl()` y el cleanup inmediato excluye parse/shape del presupuesto. Aplica al fetch HTTP del cliente compartido por Product y Customer; el Token Provider conserva su timeout independiente de 10 000 ms. Los 30 000 ms deberán reevaluarse después de validar Product Master y de definir por separado cualquier optimización de consulta/paginación. Los diagnósticos temporales Product Phase1-046/048/050/052 y Customer Phase1-022/024 continúan fuera del runtime.
+- Consulta Brands Phase1-073: permanece sin optimización sobre
+  `productpricelevels` con filtro de compradores y `retrieveAll()`, seguida por
+  extracción de marca, `trim()`, deduplicación y orden. No hay cache,
+  `$apply/groupby`, índice, tabla auxiliar, cambio de page size/`$orderby` ni
+  paralelización; su costo real queda pendiente de medición productiva.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún hostname de hosting está codificado en módulos Customer/Product/Dataverse.
 
 Los secretos, tokens y permisos no se versionan. Los IDs públicos de la SPA, scope delegado y endpoint temporal se documentan como variables frontend; los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.

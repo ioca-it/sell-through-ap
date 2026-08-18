@@ -9,6 +9,9 @@ import {
 import { createAuthenticatedApiClient } from './authenticatedApiClient.js';
 
 const PUBLIC_ERROR_MESSAGE = 'No fue posible consultar el Maestro Producto.';
+// Temporal: permite que Product espere la ventana backend Dataverse de 30 s
+// más el margen HTTP. Reevaluar tras medir y optimizar Brands/Product Master.
+export const PRODUCT_REQUEST_TIMEOUT_MS = 35000;
 
 export const PRODUCT_API_ERROR_CODES = Object.freeze({
   SESSION_REQUIRED: 'PRODUCT_SESSION_REQUIRED',
@@ -46,7 +49,7 @@ export const createDataverseProductProvider = ({
   apiBaseUrl = configuredApiBaseUrl(),
   fetchImpl = globalThis.fetch,
   getAccessToken,
-  requestTimeoutMs = 10000,
+  requestTimeoutMs = PRODUCT_REQUEST_TIMEOUT_MS,
 } = {}) => {
   const apiClient = createAuthenticatedApiClient({
     apiBaseUrl,

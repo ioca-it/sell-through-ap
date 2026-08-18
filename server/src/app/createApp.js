@@ -8,6 +8,7 @@ import { createProductService } from '../modules/products/productService.js';
 import {
   createProductRequestTrace,
   PRODUCT_TRACE_COMPONENTS,
+  PRODUCT_TRACE_OPERATIONS,
   PRODUCT_TRACE_RESULTS,
   PRODUCT_TRACE_STAGES,
 } from '../observability/productRequestTrace.js';
@@ -39,14 +40,22 @@ const applyCors = ({ request, response, allowedOrigins }) => {
   return true;
 };
 
-const isProductMasterGet = (request) => request.method === 'GET'
-  && typeof request.url === 'string'
-  && (request.url === '/api/products/master'
-    || request.url.startsWith('/api/products/master?'));
+const readProductTraceOperation = (request) => {
+  if (request.method !== 'GET' || typeof request.url !== 'string') return undefined;
+  if (request.url === '/api/products/master'
+    || request.url.startsWith('/api/products/master?')) {
+    return PRODUCT_TRACE_OPERATIONS.MASTER;
+  }
+  if (request.url === '/api/products/brands'
+    || request.url.startsWith('/api/products/brands?')) {
+    return PRODUCT_TRACE_OPERATIONS.BRANDS;
+  }
+  return undefined;
+};
 
-const startProductTrace = (factory) => {
+const startProductTrace = (factory, operation) => {
   try {
-    return factory();
+    return factory({ operation });
   } catch {
     return undefined;
   }
@@ -67,8 +76,9 @@ export const createApp = ({
   }
 
   return async (request, response) => {
-    const productTrace = isProductMasterGet(request)
-      ? startProductTrace(productTraceFactory)
+    const productTraceOperation = readProductTraceOperation(request);
+    const productTrace = productTraceOperation
+      ? startProductTrace(productTraceFactory, productTraceOperation)
       : undefined;
     productTrace?.checkpoint({
       component: PRODUCT_TRACE_COMPONENTS.API,

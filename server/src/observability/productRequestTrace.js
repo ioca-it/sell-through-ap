@@ -11,6 +11,11 @@ export const PRODUCT_TRACE_COMPONENTS = Object.freeze({
   DATAVERSE_CLIENT: 'DataverseClient',
 });
 
+export const PRODUCT_TRACE_OPERATIONS = Object.freeze({
+  MASTER: 'PRODUCT_MASTER',
+  BRANDS: 'PRODUCT_BRANDS',
+});
+
 export const PRODUCT_TRACE_STAGES = Object.freeze({
   REQUEST_RECEIVED: 'PRODUCT_REQUEST_RECEIVED',
   AUTH_VALIDATED: 'PRODUCT_AUTH_VALIDATED',
@@ -35,6 +40,7 @@ export const PRODUCT_PAGINATION_STAGES = Object.freeze({
 });
 
 const ALLOWED_COMPONENTS = new Set(Object.values(PRODUCT_TRACE_COMPONENTS));
+const ALLOWED_OPERATIONS = new Set(Object.values(PRODUCT_TRACE_OPERATIONS));
 const ALLOWED_STAGES = new Set(Object.values(PRODUCT_TRACE_STAGES));
 const ALLOWED_RESULTS = new Set(Object.values(PRODUCT_TRACE_RESULTS));
 const ALLOWED_PAGINATION_STAGES = new Set(Object.values(PRODUCT_PAGINATION_STAGES));
@@ -65,10 +71,14 @@ export const createProductRequestTrace = ({
   logger = defaultLogger,
   now = () => performance.now(),
   createTraceId = randomUUID,
+  operation = PRODUCT_TRACE_OPERATIONS.MASTER,
 } = {}) => {
   if (typeof logger !== 'function' || typeof now !== 'function'
     || typeof createTraceId !== 'function') {
     throw new Error('ProductRequestTrace: configuración inválida.');
+  }
+  if (!ALLOWED_OPERATIONS.has(operation)) {
+    throw new Error('ProductRequestTrace: operación inválida.');
   }
 
   const traceId = createTraceId();
@@ -91,6 +101,7 @@ export const createProductRequestTrace = ({
         elapsedMs: sanitizeElapsedMs(startMs, now),
         result,
         traceId,
+        operation,
       });
       try {
         logger(event);
@@ -121,6 +132,7 @@ export const createProductRequestTrace = ({
           stage,
           elapsedMs: sanitizeElapsedMs(startMs, now),
           traceId,
+          operation,
           pageNumber,
         });
       } else if (stage === PRODUCT_PAGINATION_STAGES.PAGE_FETCH_COMPLETED) {
@@ -137,6 +149,7 @@ export const createProductRequestTrace = ({
           stage,
           elapsedMs: sanitizeElapsedMs(startMs, now),
           traceId,
+          operation,
           pageNumber,
           fetchElapsedMs,
           recordsReturned,
@@ -155,6 +168,7 @@ export const createProductRequestTrace = ({
           stage,
           elapsedMs: sanitizeElapsedMs(startMs, now),
           traceId,
+          operation,
           totalPages,
           totalRecords,
           totalFetchElapsedMs,

@@ -278,7 +278,7 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
   }
 
   return Object.freeze({
-    async loadBrands() {
+    async loadBrands({ productTrace } = {}) {
       // La lista usa una proyección estrecha y paginación encapsulada; no carga
       // ni consolida el contrato Product completo para descubrir las marcas.
       const rows = await dataverseClient.retrieveAll({
@@ -288,6 +288,7 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
           PRODUCT_SOURCE.fields.buyerCompany,
         ]),
         filter: PRODUCT_COMPANY_FILTER,
+        productTrace,
       });
       return extractProductBrands(rows);
     },

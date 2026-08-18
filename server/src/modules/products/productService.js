@@ -31,8 +31,13 @@ export const createProductService = ({ productGateway } = {}) => {
     throw new Error('ProductService: Product Gateway inválido.');
   }
   return Object.freeze({
-    listBrands() {
-      return productGateway.loadBrands();
+    listBrands({ productTrace } = {}) {
+      productTrace?.checkpoint({
+        component: PRODUCT_TRACE_COMPONENTS.SERVICE,
+        stage: PRODUCT_TRACE_STAGES.SERVICE_STARTED,
+        result: PRODUCT_TRACE_RESULTS.REACHED,
+      });
+      return productGateway.loadBrands({ productTrace });
     },
 
     loadMaster({ brand, productTrace } = {}) {
