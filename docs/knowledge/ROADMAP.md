@@ -1,5 +1,29 @@
 # Roadmap aprobado
 
+## Phase1-077 — Optimize Brand Query and Validate Brand-Filtered Product Master
+
+El hito queda **PASS — SERVER-SIDE BRAND GROUPBY / FILTERED PRODUCT MASTER
+PRESERVED / LOCALLY VALIDATED / NOT DEPLOYED / NOT MEASURED IN PRODUCTION**.
+Brands sustituye cinco páginas/24.787 filas de la medición anterior por una
+consulta Dataverse `$apply=filter(...)/groupby((marca))`. El filtro de los dos
+compradores precede al groupby de un único campo; no existe `$distinct` OData
+ni `retrieveAll()` global para esta ruta. El contrato `{ brands: [] }` y su
+normalización defensiva permanecen intactos.
+
+Product Master conserva marca obligatoria/escapada antes de `retrieveAll()`,
+sin fallback global, cambios de `$orderby`, mappings, precios o conflictos. Las
+pruebas A/B demuestran consultas y datasets independientes; sin marca se
+responde 400 antes de Dataverse.
+
+Phase1-066 registra para Brands un cierre agregado seguro con elapsed, conteo y
+request completado; no fabrica eventos Phase1-068. Product Master conserva su
+tracing paginado. UI, Customer, fuentes y timeouts permanecen sin cambios.
+
+Siguiente acción exacta: después de revisión y autorización separada, crear el
+checkpoint, desplegar sin activar `VITE_PRODUCT_SOURCE=dataverse` y ejecutar una
+única medición Brands más una única medición Product filtrada por marca. Solo
+esa evidencia puede autorizar una reducción posterior de timeouts.
+
 ## Phase1-075 — Add Authenticated Product Brands Smoke Test
 
 El hito queda **PASS — TEMPORARY AUTHENTICATED BRANDS SMOKE / SANITIZED /

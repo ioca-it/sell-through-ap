@@ -9,6 +9,7 @@ import {
 import { createProductPriceLevelGateway } from '../src/integrations/dataverse/productPriceLevelGateway.js';
 import { createProductService } from '../src/modules/products/productService.js';
 import {
+  PRODUCT_AGGREGATE_STAGES,
   createProductRequestTrace,
   PRODUCT_PAGINATION_DIAGNOSTIC_ID,
   PRODUCT_PAGINATION_STAGES,
@@ -138,33 +139,24 @@ test('reconstruye en orden el flujo Product completo con un traceId efímero por
   );
 });
 
-test('extiende el flujo y la paginación Product a GET brands con operación aislada', async () => {
+test('mide GET brands agregado sin fabricar eventos de paginación', async () => {
   const events = [];
   const productTraceFactory = createTraceFactory(events);
+  let fetchCalls = 0;
   const dataverseClient = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',
     tokenProvider: { getToken: async () => 'sensitive-dataverse-token' },
     fetchImpl: async (url) => {
-      if (!url.searchParams.has('$skiptoken')) {
-        return new Response(JSON.stringify({
-          value: [
-            {
-              crbbe_nombremarca: 'BRAND-SENSITIVE-1',
-              crbbe_companiacompradora: 'IOCA USA INC',
-            },
-            {
-              crbbe_nombremarca: 'BRAND-SENSITIVE-2',
-              crbbe_companiacompradora: 'SAND SPORTS, CORP.',
-            },
-          ],
-          '@odata.nextLink': 'https://organization.crm.dynamics.com/api/data/v9.2/productpricelevels?$skiptoken=query-sensitive',
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
+      fetchCalls += 1;
+      assert.equal(url.searchParams.has('$apply'), true);
+      assert.equal(url.searchParams.has('$skiptoken'), false);
       return new Response(JSON.stringify({
-        value: [{
-          crbbe_nombremarca: 'BRAND-SENSITIVE-3',
-          crbbe_companiacompradora: 'IOCA USA INC',
-        }],
+        value: [
+          { crbbe_nombremarca: 'BRAND-SENSITIVE-1' },
+          { crbbe_nombremarca: 'BRAND-SENSITIVE-2' },
+          { crbbe_nombremarca: ' BRAND-SENSITIVE-1 ' },
+          { crbbe_nombremarca: null },
+        ],
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     },
   });
@@ -180,11 +172,11 @@ test('extiende el flujo y la paginación Product a GET brands con operación ais
       assert.deepEqual((await response.json()).brands, [
         'BRAND-SENSITIVE-1',
         'BRAND-SENSITIVE-2',
-        'BRAND-SENSITIVE-3',
       ]);
       await nextTurn();
     }
   });
+  assert.equal(fetchCalls, 2);
 
   const requestEvents = events.filter(({ diagnosticId }) => (
     diagnosticId === PRODUCT_TRACE_DIAGNOSTIC_ID
@@ -203,10 +195,7 @@ test('extiende el flujo y la paginación Product a GET brands con operación ais
       PRODUCT_TRACE_STAGES.TOKEN_ACQUIRED,
       PRODUCT_TRACE_STAGES.FETCH_STARTED,
       PRODUCT_TRACE_STAGES.FETCH_COMPLETED,
-      PRODUCT_TRACE_STAGES.TOKEN_REQUEST_STARTED,
-      PRODUCT_TRACE_STAGES.TOKEN_ACQUIRED,
-      PRODUCT_TRACE_STAGES.FETCH_STARTED,
-      PRODUCT_TRACE_STAGES.FETCH_COMPLETED,
+      PRODUCT_AGGREGATE_STAGES.QUERY_COMPLETED,
       PRODUCT_TRACE_STAGES.RESPONSE_SENT,
     ]);
   });
@@ -217,30 +206,23 @@ test('extiende el flujo y la paginación Product a GET brands con operación ais
   assert.equal(events.every(({ operation }) => (
     operation === PRODUCT_TRACE_OPERATIONS.BRANDS
   )), true);
+  assert.deepEqual(paginationEvents, []);
   traceIds.forEach((traceId) => {
-    const completed = paginationEvents.filter((event) => (
+    const aggregate = requestEvents.find((event) => (
       event.traceId === traceId
-      && event.stage === PRODUCT_PAGINATION_STAGES.PAGE_FETCH_COMPLETED
+      && event.stage === PRODUCT_AGGREGATE_STAGES.QUERY_COMPLETED
     ));
-    assert.deepEqual(completed.map((event) => ({
-      pageNumber: event.pageNumber,
-      recordsReturned: event.recordsReturned,
-      hasNextLink: event.hasNextLink,
-      cumulativeRecords: event.cumulativeRecords,
-    })), [
-      { pageNumber: 1, recordsReturned: 2, hasNextLink: true, cumulativeRecords: 2 },
-      { pageNumber: 2, recordsReturned: 1, hasNextLink: false, cumulativeRecords: 3 },
-    ]);
-    const summary = paginationEvents.find((event) => (
-      event.traceId === traceId
-      && event.stage === PRODUCT_PAGINATION_STAGES.PAGINATION_COMPLETED
-    ));
-    assert.equal(summary.totalPages, 2);
-    assert.equal(summary.totalRecords, 3);
-    assert.equal(summary.totalFetchElapsedMs, completed.reduce(
-      (total, event) => total + event.fetchElapsedMs,
-      0,
-    ));
+    assert.deepEqual(aggregate, {
+      component: 'DataverseClient',
+      diagnosticId: PRODUCT_TRACE_DIAGNOSTIC_ID,
+      stage: PRODUCT_AGGREGATE_STAGES.QUERY_COMPLETED,
+      elapsedMs: aggregate.elapsedMs,
+      result: 'PASS',
+      traceId,
+      operation: PRODUCT_TRACE_OPERATIONS.BRANDS,
+      recordsReturned: 4,
+      requestCompleted: true,
+    });
   });
   assert.doesNotMatch(
     JSON.stringify(events),

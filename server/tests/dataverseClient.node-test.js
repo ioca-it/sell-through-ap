@@ -127,6 +127,55 @@ test('omite Prefer cuando el consumidor no solicita anotaciones', async () => {
   assert.equal(Object.hasOwn(request.options.headers, 'Prefer'), false);
 });
 
+test('compone filter/groupby estructurado sin exponer opciones OData adicionales', async () => {
+  let requestUrl;
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async (url) => {
+      requestUrl = url;
+      return jsonResponse({ value: [{ crbbe_nombremarca: 'ANKER' }] });
+    },
+  });
+
+  assert.deepEqual(await client.retrieveGrouped({
+    entitySet: 'productpricelevels',
+    filter: "(crbbe_companiacompradora eq 'IOCA USA INC')",
+    groupBy: ['crbbe_nombremarca'],
+  }), [{ crbbe_nombremarca: 'ANKER' }]);
+
+  assert.equal(
+    requestUrl.searchParams.get('$apply'),
+    "filter((crbbe_companiacompradora eq 'IOCA USA INC'))/groupby((crbbe_nombremarca))",
+  );
+  assert.equal(requestUrl.searchParams.has('$distinct'), false);
+  assert.equal(requestUrl.searchParams.has('$filter'), false);
+  assert.equal(requestUrl.searchParams.has('$select'), false);
+  assert.equal(requestUrl.searchParams.has('$orderby'), false);
+});
+
+test('rechaza campos groupby arbitrarios antes de consultar Dataverse', async () => {
+  let fetchCalled = false;
+  const client = createDataverseClient({
+    baseUrl: 'https://organization.crm.dynamics.com',
+    tokenProvider: { getToken: async () => 'access-token' },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return jsonResponse({ value: [] });
+    },
+  });
+
+  await assert.rejects(
+    client.retrieveGrouped({
+      entitySet: 'productpricelevels',
+      filter: 'statecode eq 0',
+      groupBy: ['crbbe_nombremarca)/aggregate($count as leaked'],
+    }),
+    /agrupación inválida/,
+  );
+  assert.equal(fetchCalled, false);
+});
+
 test('acepta el contrato estándar Dataverse 200 con @odata.context y value poblado', async () => {
   const client = createDataverseClient({
     baseUrl: 'https://organization.crm.dynamics.com',
@@ -574,5 +623,9 @@ test('expone solo las operaciones productivas de lectura Dataverse', () => {
     fetchImpl: async () => ({ ok: true, json: async () => ({ value: [] }) }),
   });
 
-  assert.deepEqual(Object.keys(client), ['retrieveMultiple', 'retrieveAll']);
+  assert.deepEqual(Object.keys(client), [
+    'retrieveMultiple',
+    'retrieveGrouped',
+    'retrieveAll',
+  ]);
 });

@@ -1,5 +1,32 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-18 — PHASE1-077
+
+### Optimización Brands
+
+- Sustituido `retrieveAll()` global por una operación Dataverse estructurada
+  `$apply=filter(...)/groupby((marca))`; compradores filtrados antes de agrupar
+  exclusivamente la marca y sin inventar `$distinct`.
+- Preservados trim, vacíos, deduplicación defensiva, orden y contrato
+  `{ brands: [] }`; el frontend continúa sin OData o LogicalNames.
+- Dataverse Client incorpora `retrieveGrouped` con propiedades groupby
+  validadas y composición interna no accesible desde React.
+
+### Product Master, tracing y preservado
+
+- Marca obligatoria/escapada permanece antes de `retrieveAll()`; A/B no
+  reutilizan dataset y sin marca no se consulta Product Dataverse.
+- Brands emite un cierre Phase1-066 agregado con elapsed/conteo/completado y no
+  fabrica paginación Phase1-068. Product Master conserva trazas vigentes.
+- Sin cambios UI, Customer, mappings, precios, conflictos, `$orderby`, fuentes
+  o timeouts 30.000/35.000 ms.
+
+### Validación
+
+- Backend 124/124 y build/syntax PASS.
+- Frontend 381/381 en 33 archivos y build PASS con 1.684 módulos.
+- Sin commit, push, deploy, smoke productivo, variables ni cambios externos.
+
 ## 2026-08-18 — PHASE1-075
 
 ### Implementado

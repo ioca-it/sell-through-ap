@@ -45,7 +45,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 | `priceUSA` | `amount` cuando `crbbe_origen = USA` |
 | `priceChina` | `amount` cuando `crbbe_origen = CHINA` |
 
-El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.` y, para Product Master, añade obligatoriamente `crbbe_nombremarca eq '<brand escapada>'` antes de `retrieveAll()`. Sin `brand` válida el Product Service responde 400 antes del Gateway; no existe fallback global. Consolida por SKU; `amount = 0` conserva un precio real igual a cero y `amount null|undefined`, una fila ausente USA o una fila ausente CHINA producen `null` en el precio correspondiente. Valores numéricos distintos del mismo SKU/origen/comprador, o entre ambos compradores sin precedencia autorizada, detienen la carga con `409 / PRODUCT_MASTER_CONFLICT`; cero contra otro número distinto también bloquea, mientras `null`/ausente no compite con un valor real. La misma protección aplica a divergencias no vacías de `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` o `productUrl`. La lista de marcas usa `retrieveAll()` con solo `crbbe_nombremarca` y `crbbe_companiacompradora`; puede recorrer varias páginas, pero no descarga los trece campos ni consolida Product. Normaliza `trim()`, excluye null/vacío, deduplica coincidencias exactas y ordena determinísticamente. Los nombres físicos permanecen exclusivamente en Product Price Level Gateway.
+El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.` y, para Product Master, añade obligatoriamente `crbbe_nombremarca eq '<brand escapada>'` antes de `retrieveAll()`. Sin `brand` válida el Product Service responde 400 antes del Gateway; no existe fallback global. Consolida por SKU; `amount = 0` conserva un precio real igual a cero y `amount null|undefined`, una fila ausente USA o una fila ausente CHINA producen `null` en el precio correspondiente. Valores numéricos distintos del mismo SKU/origen/comprador, o entre ambos compradores sin precedencia autorizada, detienen la carga con `409 / PRODUCT_MASTER_CONFLICT`; cero contra otro número distinto también bloquea, mientras `null`/ausente no compite con un valor real. La misma protección aplica a divergencias no vacías de `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` o `productUrl`. La lista de marcas usa `$apply=filter(...)/groupby((crbbe_nombremarca))`: filtra las dos compañías antes de agrupar exclusivamente la marca y no recorre el dataset global mediante `retrieveAll()`. Node conserva `trim()`, exclusión de null/vacío, deduplicación defensiva y orden determinístico. Los nombres físicos permanecen exclusivamente en Product Price Level Gateway.
 
 ### Alias reconocidos del Maestro
 
@@ -113,8 +113,8 @@ El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.
 ## DS-006 — Dataverse
 
 - Estado Customer: **IMPLEMENTED + PRODUCTION VALIDATED** por Phase1-032. Vercel usa `VITE_CUSTOMER_SOURCE=dataverse`; búsqueda/selección conservan el contrato Customer.
-- Estado Product: **BRAND PREFILTER IMPLEMENTED / BRANDS TRACE ALIGNED /
-  TEMPORARY 35 S PROVIDER / NOT DEPLOYED / NOT ACTIVATED** por Phase1-073.
+- Estado Product: **SERVER-SIDE BRAND GROUPBY / BRAND-FILTERED MASTER /
+  TEMPORARY 35 S PROVIDER / NOT DEPLOYED / NOT ACTIVATED** por Phase1-077.
   `productpricelevels` y `crbbe_urlproducto` permanecen confirmados, y
   `VITE_PRODUCT_SOURCE=local` continúa como fuente efectiva.
 - Fuentes autorizadas: `accounts` para Maestro Cliente y `productpricelevels` para Maestro Producto, cada una mediante su endpoint funcional y gateway backend.
@@ -133,8 +133,9 @@ El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.
 - API Customer: búsquedas por código/nombre y lectura por código. API Product: `GET /api/products/brands` y `GET /api/products/master?brand=<brand>`; `brand` es el único parámetro funcional de Maestro, obligatorio y máximo 100 caracteres. Select/filtro/orden/paginación se construyen solo en backend; parámetros desconocidos, duplicados y OData libre se rechazan.
 - Trazabilidad Product temporal: ambas rutas Product generan un contexto
   efímero por request y lo propagan hasta Dataverse Client. Los eventos
-  Phase1-066/068 distinguen internamente `PRODUCT_MASTER` de `PRODUCT_BRANDS` y
-  registran solo metadata allowlisted de request/página/totales. Customer no
+  Phase1-066/068 distinguen internamente `PRODUCT_MASTER` de `PRODUCT_BRANDS`.
+  Brands registra solo cierre agregado, elapsed, conteo y request completado,
+  sin eventos Phase1-068; Product Master conserva páginas/totales. Customer no
   genera ni propaga este tracing y la clasificación no se expone al frontend.
 - Autenticación: dos fronteras separadas. Vercel usa MSAL/Microsoft Entra ID y entrega al backend portable un Bearer delegado para Customer/Product; Render valida firma, issuer, audience, tenant y scope mediante `AUTH_*`. El backend obtiene aparte su token OAuth 2.0 `client_credentials` mediante `DV_*` para consultar Dataverse; su scope se deriva de `DV_BASE_URL` y se cachea con margen de seguridad.
 - Seguridad: variables, secretos y access token `DV_*` solo backend. MSAL usa `VITE_AUTH_TENANT_ID`, `VITE_AUTH_CLIENT_ID` y `VITE_AUTH_API_SCOPE`; `getAccessToken` intenta `acquireTokenSilent` y deriva a `loginRedirect` cuando falta sesión o se requiere interacción. El token delegado se limita al header Bearer del Provider frontend; UI, Repository y Service no conocen JWT, nombres lógicos ni OData.
@@ -147,11 +148,11 @@ El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.
 - Smoke Dataverse Phase1-010B/011: búsqueda protegida `GET /api/customers/search?type=code&q=CL0000041`, activada sólo mediante `?phase1-010b-smoke=1`; resultado real `HTTP 200`, JWT aceptado, request Dataverse intentado, exactamente un Customer y diagnóstico nulo. Se conserva sólo la cantidad, nunca el payload Customer, y el arnés permanece disponible temporalmente.
 - Smoke Product Phase1-042: activado solo mediante `?phase1-042-product-smoke=1&brand=<marca explícita>` y dirigido a `GET /api/products/master?brand=<brand>`. Sin marca controlada devuelve `SMOKE_BRAND_REQUIRED` y no consulta la API. Conserva cuenta MSAL, Bearer delegado, timeout de 35 000 ms y resumen sanitizado sin publicar la marca ni datos Product, token, headers o query.
 - Diagnóstico seguro Phase1-020/057/059/061: conserva `DATAVERSE_INVALID_FIELD_OR_FILTER` y la observabilidad derivada de `invalid_response`; un rechazo de fetch se reduce a `NETWORK_TIMEOUT`, `NETWORK_ABORTED`, `NETWORK_FETCH_FAILED`, `NETWORK_INVALID_URL` o `NETWORK_UNKNOWN`, más timeout configurado y booleanos de token/base URL. Un fallo del Entra Token Provider ocurre antes de fetch y no se clasifica como red Dataverse. No se registran error/message/stack originales, URL/host/query, Entity Set/filtros, tokens/Authorization, secretos, tenant/client id, payload, SKU ni datos Product/Customer. Phase1-061 eleva **temporalmente** el timeout Dataverse Client de 10 000 ms a 30 000 ms: `getToken()` y headers ocurren antes, `AbortController`/timer nacen inmediatamente antes de `fetchImpl()` y el cleanup inmediato excluye parse/shape del presupuesto. Aplica al fetch HTTP del cliente compartido por Product y Customer; el Token Provider conserva su timeout independiente de 10 000 ms. Los 30 000 ms deberán reevaluarse después de validar Product Master y de definir por separado cualquier optimización de consulta/paginación. Los diagnósticos temporales Product Phase1-046/048/050/052 y Customer Phase1-022/024 continúan fuera del runtime.
-- Consulta Brands Phase1-073: permanece sin optimización sobre
-  `productpricelevels` con filtro de compradores y `retrieveAll()`, seguida por
-  extracción de marca, `trim()`, deduplicación y orden. No hay cache,
-  `$apply/groupby`, índice, tabla auxiliar, cambio de page size/`$orderby` ni
-  paralelización; su costo real queda pendiente de medición productiva.
+- Consulta Brands Phase1-077: `productpricelevels` ejecuta el filtro de
+  compradores dentro de `$apply` y antes de `groupby` sobre un único campo de
+  marca. No existe `$distinct` OData ni `retrieveAll()` global para Brands. No
+  hay cache, índice, tabla auxiliar, page size, `$orderby` o paralelización; el
+  costo optimizado real queda pendiente de medición productiva.
 - Hosting: Render temporal mediante `VITE_API_BASE_URL`, Azure objetivo; ningún hostname de hosting está codificado en módulos Customer/Product/Dataverse.
 
 Los secretos, tokens y permisos no se versionan. Los IDs públicos de la SPA, scope delegado y endpoint temporal se documentan como variables frontend; los comentarios históricos de `dataService.js` no constituyen otra integración ni un contrato adicional.

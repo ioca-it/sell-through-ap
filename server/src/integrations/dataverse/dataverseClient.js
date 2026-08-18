@@ -6,6 +6,7 @@ import {
   inspectDataverseHttpFailure,
 } from './dataverseDiagnostics.js';
 import {
+  PRODUCT_AGGREGATE_STAGES,
   PRODUCT_PAGINATION_STAGES,
   PRODUCT_TRACE_COMPONENTS,
   PRODUCT_TRACE_RESULTS,
@@ -122,6 +123,21 @@ const readElapsedMs = (startedAt) => Math.max(
   Math.trunc(performance.now() - startedAt),
 );
 
+const ODATA_PROPERTY_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+const createGroupByApply = ({ filter, groupBy }) => {
+  if (typeof filter !== 'string' || filter.trim() === '') {
+    throw new Error('DataverseClient: filtro agregado inválido.');
+  }
+  if (!Array.isArray(groupBy) || groupBy.length === 0
+    || groupBy.some((property) => (
+      typeof property !== 'string' || !ODATA_PROPERTY_NAME.test(property)
+    ))) {
+    throw new Error('DataverseClient: agrupación inválida.');
+  }
+  return `filter(${filter})/groupby((${groupBy.join(',')}))`;
+};
+
 export class DataverseRequestError extends Error {
   constructor(message = 'No fue posible consultar Dataverse.') {
     super(message);
@@ -169,6 +185,7 @@ export const createDataverseClient = ({
     filter,
     orderBy,
     top,
+    apply,
   }) => {
     if (typeof entitySet !== 'string' || !/^[A-Za-z0-9_]+$/.test(entitySet)) {
       throw new Error('DataverseClient: Entity Set inválido.');
@@ -181,6 +198,7 @@ export const createDataverseClient = ({
     if (filter) url.searchParams.set('$filter', filter);
     if (orderBy) url.searchParams.set('$orderby', orderBy);
     if (Number.isInteger(top) && top > 0) url.searchParams.set('$top', String(top));
+    if (apply) url.searchParams.set('$apply', apply);
     return url;
   };
 
@@ -331,6 +349,23 @@ export const createDataverseClient = ({
     return page.value;
   };
 
+  const retrieveGrouped = async (query) => {
+    const page = await retrievePage({
+      url: createQueryUrl({
+        entitySet: query.entitySet,
+        apply: createGroupByApply(query),
+      }),
+      includeAnnotations: query.includeAnnotations,
+      productTrace: query.productTrace,
+    });
+    query.productTrace?.aggregateCheckpoint?.({
+      stage: PRODUCT_AGGREGATE_STAGES.QUERY_COMPLETED,
+      recordsReturned: page.value.length,
+      requestCompleted: true,
+    });
+    return page.value;
+  };
+
   const retrieveAll = async (query) => {
     const rows = [];
     let url = createQueryUrl(query);
@@ -369,6 +404,9 @@ export const createDataverseClient = ({
   return Object.freeze({
     retrieveMultiple(query) {
       return retrieveMultiple(query);
+    },
+    retrieveGrouped(query) {
+      return retrieveGrouped(query);
     },
     retrieveAll(query) {
       return retrieveAll(query);

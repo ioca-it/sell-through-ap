@@ -259,9 +259,8 @@ export const extractProductBrands = (rows) => {
 
   const brands = new Set();
   rows.forEach((row) => {
-    const buyerCompany = normalizeText(row?.[PRODUCT_SOURCE.fields.buyerCompany]);
     const brand = normalizeText(row?.[PRODUCT_SOURCE.fields.brand]);
-    if (ALLOWED_BUYER_COMPANY_SET.has(buyerCompany) && brand) brands.add(brand);
+    if (brand) brands.add(brand);
   });
   return Object.freeze([...brands].sort(compareBrands));
 };
@@ -279,15 +278,15 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
 
   return Object.freeze({
     async loadBrands({ productTrace } = {}) {
-      // La lista usa una proyección estrecha y paginación encapsulada; no carga
-      // ni consolida el contrato Product completo para descubrir las marcas.
-      const rows = await dataverseClient.retrieveAll({
+      if (typeof dataverseClient.retrieveGrouped !== 'function') {
+        throw new Error('ProductPriceLevelGateway: Dataverse Client agregado inválido.');
+      }
+      // Dataverse filtra compradores antes de agrupar exclusivamente la marca;
+      // el resultado ya no recorre el Product Master global con retrieveAll().
+      const rows = await dataverseClient.retrieveGrouped({
         entitySet: PRODUCT_SOURCE.entitySet,
-        select: Object.freeze([
-          PRODUCT_SOURCE.fields.brand,
-          PRODUCT_SOURCE.fields.buyerCompany,
-        ]),
         filter: PRODUCT_COMPANY_FILTER,
+        groupBy: Object.freeze([PRODUCT_SOURCE.fields.brand]),
         productTrace,
       });
       return extractProductBrands(rows);

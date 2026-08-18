@@ -2,6 +2,27 @@
 
 ## Fase actual
 
+PHASE1-077 queda **PASS — SERVER-SIDE BRAND GROUPBY IMPLEMENTED / FILTERED
+PRODUCT MASTER PRESERVED / LOCALLY VALIDATED / NOT DEPLOYED / NOT MEASURED IN
+PRODUCTION**. `GET /api/products/brands` sustituye el recorrido global de
+`retrieveAll()` por una consulta Dataverse estructurada con
+`$apply=filter(...)/groupby((marca))`: los dos compradores autorizados se
+filtran antes de agrupar exclusivamente la marca. OData no ofrece `$distinct`.
+El backend conserva trim, exclusión de vacíos, deduplicación defensiva, orden y
+el contrato `{ brands: [] }` sin publicar OData o LogicalNames.
+
+Dataverse Client incorpora `retrieveGrouped` con `groupBy` validado; el Gateway
+construye filtro/campo desde constantes internas y el frontend continúa sin
+enviar OData. Brands deja de generar trazas de paginación y emite un cierre
+agregado seguro Phase1-066 con operación, elapsed, registros retornados y
+`requestCompleted`; Phase1-068 permanece intacto para Product Master.
+
+Product Master conserva marca obligatoria/escapada antes de `retrieveAll()`,
+sin fallback global ni cambios en `$orderby`, mappings, precios, conflictos o
+Customer. La prueba A→B confirma consultas y datasets independientes. UI y
+timeouts 30.000/35.000 ms permanecen intactos; solo una medición posterior al
+deploy permitirá decidir su reducción.
+
 PHASE1-075 queda **PASS — TEMPORARY AUTHENTICATED PRODUCT BRANDS SMOKE /
 SANITIZED / FRONTEND-ONLY / NOT DEPLOYED / NOT EXECUTED / PRODUCT SOURCE
 UNCHANGED**. El trigger exacto `?phase1-075-brands-smoke=1` reutiliza la sesión
@@ -161,7 +182,7 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-075 — Add Authenticated Product Brands Smoke Test.
+PHASE1-077 — Optimize Brand Query and Validate Brand-Filtered Product Master.
 
 ## Última auditoría aprobada
 
@@ -197,7 +218,10 @@ optimizar `/brands`, desplegar ni activar Product Dataverse.
 - Product normalizer, Repository y Product Master Application Service: contratos `loadBrands()` y `loadProducts({ brand })` independientes de la fuente, con marca obligatoria para cargar Product y adaptación hacia Master Parser/Record Assembler que preserva `0`, `null` y `fechaStr`.
 - Product Provider Factory: selecciona `local` o `dataverse` mediante `VITE_PRODUCT_SOURCE`; `local` continúa como default y reutiliza `masterParser.js` sin duplicar sus reglas.
 - Dataverse Product Provider frontend: consume `GET /api/products/brands` y `GET /api/products/master?brand=...` mediante el transporte autenticado; solo conoce el contrato funcional `brand` y nunca OData o LogicalNames.
-- Product Price Level Gateway backend: encapsula `crbbe_nombremarca` → `brand`, la proyección de marcas, `crbbe_urlproducto` → `productUrl`, los demás mappings y el filtro compradores + marca aplicado antes de paginar, además de FormattedValue, consolidación y conflictos vigentes.
+- Product Price Level Gateway backend: encapsula `crbbe_nombremarca` → `brand`,
+  la consulta Brands `filter/groupby`, `crbbe_urlproducto` → `productUrl`, los
+  demás mappings y el filtro compradores + marca aplicado antes de paginar,
+  además de FormattedValue, consolidación y conflictos vigentes.
 - Product Service/API: endpoints funcionales cerrados de marcas y Maestro filtrado, `brand` obligatoria de máximo 100 caracteres, JWT/CORS/rate limiter compartidos y rechazo de parámetros/OData no autorizados.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
@@ -205,10 +229,11 @@ optimizar `/brands`, desplegar ni activar Product Dataverse.
 - Trace temporal Product Phase1-066/073: correlaciona las rutas
   `GET /api/products/master` y `GET /api/products/brands` entre API,
   autenticación, Product Service y Dataverse Client mediante UUID efímero,
-  eventos allowlisted y operación interna `PRODUCT_MASTER|PRODUCT_BRANDS`; no
-  modifica contratos ni habilita logging general para Customer.
-- Diagnóstico temporal Product Phase1-068: demuestra que los múltiples fetch
-  son páginas secuenciales de `retrieveAll()` y registra solo número de página,
+  eventos allowlisted y operación interna `PRODUCT_MASTER|PRODUCT_BRANDS`;
+  Brands registra el cierre agregado y no fabrica páginas. No modifica
+  contratos ni habilita logging general para Customer.
+- Diagnóstico temporal Product Phase1-068: demuestra para Product Master que
+  los múltiples fetch son páginas secuenciales de `retrieveAll()` y registra solo número de página,
   elapsed/fetch elapsed, conteos y presencia booleana de next link, más totales
   finales; no registra el enlace, query, filas ni datos Product/Customer.
 - Diagnósticos temporales Product Phase1-046 y Phase1-048/050/052: retirados del gateway, Dataverse Client, runtime y pruebas después de confirmar `crbbe_urlproducto`; no quedan probes, consultas de metadata, guards one-shot ni observabilidad temporal Product.
@@ -317,11 +342,12 @@ Distribution y Pareto permanecen en Application Service. Executive Report consum
 
 ## Siguiente hito
 
-La siguiente acción exacta es solicitar autorización separada para
-checkpoint/deploy de Phase1-075. Solo después de quedar Live podrá ejecutarse
-una única vez `?phase1-075-brands-smoke=1` para capturar el resumen frontend y
-las métricas backend Phase1-066/068 de `operation=PRODUCT_BRANDS` antes de
-decidir cualquier optimización. `VITE_PRODUCT_SOURCE=local` permanece vigente.
+Revisar Phase1-077 y autorizar por separado checkpoint/deploy. Con la versión
+Live y `VITE_PRODUCT_SOURCE=local` aún vigente, ejecutar una única medición
+autenticada de Brands y una única medición Product Master con marca controlada;
+comparar elapsed/conteos y decidir en otro hito si se reducen los timeouts
+temporales. No activar Product Dataverse como fuente normal durante esas
+mediciones.
 
 ## Decisiones congeladas
 
@@ -384,13 +410,12 @@ decidir cualquier optimización. `VITE_PRODUCT_SOURCE=local` permanece vigente.
 
 ## Cantidad de pruebas
 
-Frontend: 381/381 aprobadas en 33 archivos. Backend: última validación vigente
-121/121 en 10 archivos; Phase1-075 no modificó ni reejecutó backend.
+Frontend: 381/381 aprobadas en 33 archivos. Backend: 124/124 aprobadas en 10
+archivos.
 
 ## Estado del build
 
-Phase1-075: smokes focalizados 49/49 y frontend completo 381/381 en 33
-archivos; build frontend aprobado con Vite 5.4.21 y 1 684 módulos
-transformados. Backend no se ejecutó porque ningún archivo backend fue
-afectado. Product Dataverse no fue activado y Phase1-075 no se desplegó ni
-ejecutó contra producción.
+Phase1-077: backend 124/124 y build/syntax PASS; frontend 381/381 en 33
+archivos y build PASS con Vite 5.4.21 y 1.684 módulos transformados. Product
+Dataverse no fue activado y Phase1-077 no se desplegó ni ejecutó contra
+producción.

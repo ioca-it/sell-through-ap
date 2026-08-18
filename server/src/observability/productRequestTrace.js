@@ -39,11 +39,16 @@ export const PRODUCT_PAGINATION_STAGES = Object.freeze({
   PAGINATION_COMPLETED: 'PRODUCT_PAGINATION_COMPLETED',
 });
 
+export const PRODUCT_AGGREGATE_STAGES = Object.freeze({
+  QUERY_COMPLETED: 'PRODUCT_AGGREGATE_QUERY_COMPLETED',
+});
+
 const ALLOWED_COMPONENTS = new Set(Object.values(PRODUCT_TRACE_COMPONENTS));
 const ALLOWED_OPERATIONS = new Set(Object.values(PRODUCT_TRACE_OPERATIONS));
 const ALLOWED_STAGES = new Set(Object.values(PRODUCT_TRACE_STAGES));
 const ALLOWED_RESULTS = new Set(Object.values(PRODUCT_TRACE_RESULTS));
 const ALLOWED_PAGINATION_STAGES = new Set(Object.values(PRODUCT_PAGINATION_STAGES));
+const ALLOWED_AGGREGATE_STAGES = new Set(Object.values(PRODUCT_AGGREGATE_STAGES));
 const SAFE_TRACE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 const defaultLogger = (event) => console.info(JSON.stringify(event));
@@ -107,6 +112,36 @@ export const createProductRequestTrace = ({
         logger(event);
       } catch {
         // La trazabilidad temporal nunca altera el flujo funcional observado.
+      }
+      return true;
+    },
+    aggregateCheckpoint({
+      stage,
+      recordsReturned,
+      requestCompleted,
+    } = {}) {
+      if (!ALLOWED_AGGREGATE_STAGES.has(stage)
+        || !isNonNegativeInteger(recordsReturned)
+        || typeof requestCompleted !== 'boolean') {
+        return false;
+      }
+      const event = Object.freeze({
+        component: PRODUCT_TRACE_COMPONENTS.DATAVERSE_CLIENT,
+        diagnosticId: PRODUCT_TRACE_DIAGNOSTIC_ID,
+        stage,
+        elapsedMs: sanitizeElapsedMs(startMs, now),
+        result: requestCompleted
+          ? PRODUCT_TRACE_RESULTS.PASS
+          : PRODUCT_TRACE_RESULTS.FAIL,
+        traceId,
+        operation,
+        recordsReturned,
+        requestCompleted,
+      });
+      try {
+        logger(event);
+      } catch {
+        // La medición agregada no altera el resultado funcional Product.
       }
       return true;
     },

@@ -170,15 +170,18 @@ test('no reintroduce productpricelevel como Entity Set runtime del gateway', asy
   assert.equal(runtimeEntitySet, 'productpricelevels');
 });
 
-test('lista marcas con proyección mínima, filtro de compradores y retrieveAll', async () => {
+test('lista marcas con filtro previo y groupby exclusivo sin retrieveAll global', async () => {
   const calls = [];
   const gateway = createProductPriceLevelGateway({
     dataverseClient: {
-      retrieveAll: async (query) => {
+      retrieveAll: async () => {
+        assert.fail('Brands no debe usar retrieveAll.');
+      },
+      retrieveGrouped: async (query) => {
         calls.push(query);
         return [
-          rawRow({ crbbe_nombremarca: ' ANKER ' }),
-          rawRow({ crbbe_nombremarca: 'SKULLCANDY' }),
+          { crbbe_nombremarca: ' ANKER ' },
+          { crbbe_nombremarca: 'SKULLCANDY' },
         ];
       },
     },
@@ -187,18 +190,19 @@ test('lista marcas con proyección mínima, filtro de compradores y retrieveAll'
   assert.deepEqual(await gateway.loadBrands(), ['ANKER', 'SKULLCANDY']);
   assert.deepEqual(calls, [{
     entitySet: 'productpricelevels',
-    select: ['crbbe_nombremarca', 'crbbe_companiacompradora'],
     filter: "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.')",
+    groupBy: ['crbbe_nombremarca'],
     productTrace: undefined,
   }]);
 });
 
-test('propaga el mismo contexto Product desde loadBrands hasta retrieveAll', async () => {
+test('propaga el mismo contexto Product desde loadBrands hasta retrieveGrouped', async () => {
   const productTrace = Object.freeze({ checkpoint() {}, paginationCheckpoint() {} });
   let receivedTrace;
   const gateway = createProductPriceLevelGateway({
     dataverseClient: {
-      retrieveAll: async (query) => {
+      retrieveAll: async () => [],
+      retrieveGrouped: async (query) => {
         receivedTrace = query.productTrace;
         return [];
       },
@@ -217,7 +221,6 @@ test('marcas aplica trim, exclusión de vacíos, deduplicación exacta y orden e
     rawRow({ crbbe_nombremarca: null }),
     rawRow({ crbbe_nombremarca: undefined }),
     rawRow({ crbbe_nombremarca: '   ' }),
-    rawRow({ crbbe_nombremarca: 'OTRA', crbbe_companiacompradora: 'OTRA COMPAÑIA' }),
   ]), ['ANKER', 'SKULLCANDY']);
 });
 
@@ -253,6 +256,32 @@ test('la defensa backend no mezcla registros de otra marca', async () => {
     (await gateway.loadProducts({ brand: 'Skullcandy' })).map(({ sku }) => sku),
     ['A-1'],
   );
+});
+
+test('cargas consecutivas A y B consultan y consolidan datasets independientes', async () => {
+  const filters = [];
+  const gateway = createProductPriceLevelGateway({
+    dataverseClient: {
+      retrieveAll: async ({ filter }) => {
+        filters.push(filter);
+        if (filter.includes("crbbe_nombremarca eq 'ANKER'")) {
+          return [rawRow({ crbbe_sku: 'A-1', crbbe_nombremarca: 'ANKER' })];
+        }
+        return [rawRow({ crbbe_sku: 'B-1', crbbe_nombremarca: 'SKULLCANDY' })];
+      },
+    },
+  });
+
+  assert.deepEqual(
+    (await gateway.loadProducts({ brand: 'ANKER' })).map(({ sku }) => sku),
+    ['A-1'],
+  );
+  assert.deepEqual(
+    (await gateway.loadProducts({ brand: 'SKULLCANDY' })).map(({ sku }) => sku),
+    ['B-1'],
+  );
+  assert.equal(filters.length, 2);
+  assert.notEqual(filters[0], filters[1]);
 });
 
 test('incluye IOCA y SAND, y excluye otras compañías en la defensa backend', () => {
