@@ -41,18 +41,26 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
   vacío o solo espacios. Esas filas no crean productos ni conflictos; no se
   limita el origen válido a USA/CHINA, aunque solo esos dos valores alimentan
   el pivot de precios vigente.
+- Latest Product record se define como `MAX(createdon)` por
+  `SKU + ORIGIN + BUYER COMPANY`, después de los filtros vigentes y antes de
+  detectar conflictos o consolidar atributos/precios. Las filas históricas
+  anteriores quedan fuera. Todos los registros empatados exactamente en el
+  máximo permanecen; si son incompatibles conservan `PRODUCT_MASTER_CONFLICT`
+  sin segunda precedencia.
 - Dataverse consolida por SKU: origen `USA` alimenta `priceUSA` y origen `CHINA`
-  alimenta `priceChina`; sin fila del origen, o con `amount null|undefined`, el
-  precio correspondiente queda en `null`. Un `amount = 0` se conserva como
-  precio real igual a cero.
-- Importes numéricos distintos para un mismo SKU/origen/comprador, o entre
-  compradores sin precedencia autorizada, son conflicto funcional: la carga se
-  bloquea y no suma, promedia ni selecciona un valor. Cero contra otro número
-  distinto también es conflicto; `null` o ausencia no entra en la comparación
-  ni genera conflicto falso con un valor numérico real.
+  alimenta `priceChina`, cada uno después de resolver su propio máximo; sin fila
+  vigente del origen, o con `amount null|undefined`, el precio correspondiente
+  queda en `null`. Un `amount = 0` vigente se conserva como precio real igual a
+  cero.
+- Después de resolver cada comprador independientemente, importes numéricos
+  distintos entre compradores sin precedencia autorizada son conflicto
+  funcional. También bloquean amounts incompatibles entre filas empatadas en
+  el máximo del mismo grupo. No se suma ni promedia; cero contra otro número
+  distinto también es conflicto y `null` o ausencia no compite con un número.
 - `level` y `status` usan FormattedValue cuando existe. Sin anotación solo se acepta un valor fuente textual; códigos numéricos Choice no se convierten ni se exponen como etiquetas.
 - `imageUrl` y `productUrl` se conservan como atributos del Product y del detalle SKU sin introducir lógica Dataverse en UI.
-- `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `creationDate`, `imageUrl` y `productUrl` deben ser únicos por SKU. Vacío más valor puede inicializar el atributo; dos valores no vacíos distintos después de normalizar bloquean la consolidación sin elegir precedencia.
+- `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `imageUrl` y `productUrl` deben ser únicos por SKU entre registros vigentes. Vacío más valor puede inicializar el atributo; dos valores no vacíos distintos después de normalizar bloquean la consolidación sin elegir otra precedencia.
+- `Product.creationDate` representa el mayor `createdon` entre los registros vigentes seleccionados para el SKU, aunque USA y CHINA tengan máximos diferentes. Producto Nuevo usa esa fecha y conserva su umbral estricto `<90 días`.
 - Para detectar esas divergencias, strings, URLs y FormattedValue usan `trim()` y las fechas una representación canónica equivalente. Una fecha no vacía inválida conserva su texto trimmed solo para comparación interna y no se vuelve equivalente artificialmente a otra fecha.
 - Precio y atributo reutilizan `PRODUCT_MASTER_CONFLICT` y se distinguen únicamente en metadata interna; el error público conserva código/mensaje sanitizados y no publica valores, campos físicos ni contexto Dataverse.
 - Phase1-038 establece `0 = precio real` y `null = precio no disponible` en

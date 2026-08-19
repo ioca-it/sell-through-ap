@@ -172,6 +172,22 @@
 - Consecuencia: Executive Report y Recommendation Engine podrán recibir resultados sin riesgo de que Portfolio Analysis congele referencias compartidas fuera de su salida.
 - Reversibilidad: restaurar el congelador anterior y retirar los clones; no existen datos persistidos ni contratos externos que recuperar.
 
+## D-024 — Latest Product record por SKU, origen y comprador
+
+- Estado: aprobado e implementado localmente por Phase1-090; no desplegado.
+- Decisión: después de los filtros Product vigentes, seleccionar
+  `MAX(createdon)` independientemente por `SKU + ORIGIN + BUYER COMPANY` antes
+  de detectar conflictos PRICE/atributos y consolidar por SKU.
+- Empate: conservar todas las filas con el máximo exacto; valores incompatibles
+  mantienen `PRODUCT_MASTER_CONFLICT` y no existe segunda precedencia.
+- Origen/comprador: USA y CHINA se resuelven por separado; los compradores se
+  resuelven individualmente y luego conservan la comparación cross-buyer sin
+  preferencia IOCA/SAND.
+- Fecha pública: `Product.creationDate` es el mayor `createdon` entre las filas
+  vigentes del SKU; Producto Nuevo conserva `<90 días` sobre esa fecha.
+- Reversibilidad: retirar la selección temporal y restaurar `creationDate` como
+  atributo conflictivo; no existe migración ni estado externo que recuperar.
+
 ## Asuntos observados sin decisión de cambio
 
 - La fecha de corte no controla el cálculo EOL.

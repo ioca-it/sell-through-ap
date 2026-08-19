@@ -108,7 +108,6 @@ const PRODUCT_ATTRIBUTE_FIELDS = Object.freeze([
   'brand',
   'category',
   'discontinuationDate',
-  'creationDate',
   'level',
   'status',
   'imageUrl',
@@ -121,7 +120,7 @@ const createProduct = (row) => ({
   brand: row.brand,
   category: row.category,
   discontinuationDate: row.discontinuationDate,
-  creationDate: row.creationDate,
+  creationDate: null,
   level: row.level,
   status: row.status,
   imageUrl: row.imageUrl,
@@ -136,6 +135,43 @@ const matchesCommercialCompany = (rawRow, buyerCompany) => (
 );
 
 const hasValidOrigin = (row) => row.origin !== '';
+
+const isCommercialRow = (rawRow, row) => (
+  matchesCommercialCompany(rawRow, row.buyerCompany)
+  && hasValidOrigin(row)
+  && row.sku
+);
+
+// Latest Product record = MAX(createdon) por SKU + origen + comprador. Todos
+// los registros empatados en el máximo permanecen para que los conflictos
+// incompatibles sigan visibles sin inventar una segunda precedencia.
+const selectLatestRowsBySkuOriginBuyer = (rows) => {
+  const groups = new Map();
+  rows.forEach((rawRow) => {
+    const row = mapProductPriceLevelRow(rawRow);
+    if (!isCommercialRow(rawRow, row)) return;
+
+    const key = `${row.sku}|${row.origin}|${row.buyerCompany}`;
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, { latestCreatedOn: row.creationDate, rows: [{ rawRow, row }] });
+      return;
+    }
+
+    if (current.latestCreatedOn === null) {
+      if (row.creationDate === null) current.rows.push({ rawRow, row });
+      else groups.set(key, { latestCreatedOn: row.creationDate, rows: [{ rawRow, row }] });
+      return;
+    }
+    if (row.creationDate === null) return;
+    if (row.creationDate > current.latestCreatedOn) {
+      groups.set(key, { latestCreatedOn: row.creationDate, rows: [{ rawRow, row }] });
+      return;
+    }
+    if (row.creationDate === current.latestCreatedOn) current.rows.push({ rawRow, row });
+  });
+  return [...groups.values()].flatMap((group) => group.rows);
+};
 
 const addAmount = (amounts, key, amount, context) => {
   if (amount === null) return;
@@ -159,7 +195,7 @@ const findAmountConflicts = (amounts, scope) => (
 );
 
 const comparableAttributeValue = (rawRow, row, field) => {
-  if (field === 'discontinuationDate' || field === 'creationDate') {
+  if (field === 'discontinuationDate') {
     return comparableDate(rawRow[PRODUCT_SOURCE.fields[field]]);
   }
   return row[field];
@@ -205,16 +241,16 @@ export const consolidateProductPriceLevelRows = (rows) => {
   const amountsBySkuOriginBuyer = new Map();
   const amountsBySkuOrigin = new Map();
   const attributesBySku = new Map();
+  const latestCreationDateBySku = new Map();
 
-  rows.forEach((rawRow) => {
-    const row = mapProductPriceLevelRow(rawRow);
-    // El filtro OData es obligatorio; esta defensa backend impide publicar una
-    // compañía ajena aunque una respuesta upstream no respete el predicado.
-    if (!matchesCommercialCompany(rawRow, row.buyerCompany)
-      || !hasValidOrigin(row)
-      || !row.sku) return;
+  selectLatestRowsBySkuOriginBuyer(rows).forEach(({ rawRow, row }) => {
     if (!products.has(row.sku)) products.set(row.sku, createProduct(row));
     addAttributeValues(attributesBySku, rawRow, row);
+    if (row.creationDate
+      && (!latestCreationDateBySku.has(row.sku)
+        || row.creationDate > latestCreationDateBySku.get(row.sku))) {
+      latestCreationDateBySku.set(row.sku, row.creationDate);
+    }
 
     const product = products.get(row.sku);
     PRODUCT_ATTRIBUTE_FIELDS.forEach((field) => {
@@ -247,6 +283,10 @@ export const consolidateProductPriceLevelRows = (rows) => {
   const attributeConflicts = findAttributeConflicts(attributesBySku);
   const conflicts = [...buyerConflicts, ...crossBuyerConflicts, ...attributeConflicts];
   if (conflicts.length > 0) throw new ProductMasterConflictError(conflicts);
+
+  products.forEach((product, sku) => {
+    product.creationDate = latestCreationDateBySku.get(sku) ?? null;
+  });
 
   amountsBySkuOrigin.forEach(({ values, context }) => {
     if (values.size === 0) return;

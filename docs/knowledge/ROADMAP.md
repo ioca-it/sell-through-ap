@@ -1,5 +1,23 @@
 # Roadmap aprobado
 
+## Phase1-090 — Resolve Product Duplicates by Latest Record
+
+Product Master aplica la precedencia funcional aprobada después de sus filtros
+vigentes: `MAX(createdon)` por `SKU + ORIGIN + BUYER COMPANY`. USA y CHINA se
+resuelven independientemente; los compradores también, antes de aplicar el
+conflicto cross-buyer existente. Los empates exactos en el máximo conservan
+todas las filas y siguen bloqueando cuando contienen valores incompatibles.
+
+`Product.creationDate` queda en el mayor `createdon` entre las filas vigentes
+del SKU. Producto Nuevo conserva la regla estricta `<90 días`. La muestra local
+SKULLCANDY Phase1-089 queda con 0 conflictos y 362 productos; no se cambian la
+query, los filtros, Brands, contratos, seguridad, fuentes o timeouts.
+
+Siguiente acción externa exacta: autorizar deploy backend y frontend, activar
+la fuente Product Dataverse si todavía no está activa en el entorno objetivo y
+validar una vez Marca → Product Master → Producto Nuevo. Este hito no ejecuta
+acciones externas.
+
 ## Phase1-087 — Add Valid Origin Filter and Close Presentation Gaps
 
 Product Master incorpora en backend

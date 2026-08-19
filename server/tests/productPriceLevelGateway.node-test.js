@@ -477,7 +477,6 @@ test('fecha no vacía inválida no se vuelve equivalente a otra fecha', () => {
   ['level', { [`crbbe_clasificacioncomercial@${FORMATTED}`]: 'Best' }],
   ['status', { [`crbbe_etapa@${FORMATTED}`]: 'EOL' }],
   ['discontinuationDate', { crbbe_validohasta: '2027-07-01T00:00:00Z' }],
-  ['creationDate', { createdon: '2026-08-02T12:00:00Z' }],
   ['imageUrl', { crbbe_imagenproducto: 'https://images.invalid/other.png' }],
   ['productUrl', { crbbe_urlproducto: 'https://products.invalid/other' }],
 ].forEach(([field, override]) => {
@@ -532,6 +531,129 @@ test('también bloquea precios distintos entre compradores sin precedencia autor
     ]),
     ProductMasterConflictError,
   );
+});
+
+test('selecciona MAX(createdon) para el mismo SKU+USA+buyer sin conflicto histórico', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 30, createdon: '2026-05-01T00:00:00Z' }),
+  ])[0];
+
+  assert.equal(product.priceUSA, 30);
+  assert.equal(product.creationDate, '2026-05-01T00:00:00.000Z');
+});
+
+test('selecciona MAX(createdon) para el mismo SKU+CHINA+buyer', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ amount: 18, crbbe_origen: 'CHINA', createdon: '2025-02-01T00:00:00Z' }),
+    rawRow({ amount: 20, crbbe_origen: 'CHINA', createdon: '2026-04-01T00:00:00Z' }),
+  ])[0];
+
+  assert.equal(product.priceChina, 20);
+  assert.equal(product.creationDate, '2026-04-01T00:00:00.000Z');
+});
+
+test('resuelve USA y CHINA independientemente y usa su mayor createdon vigente', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ amount: 25, crbbe_origen: 'USA', createdon: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 30, crbbe_origen: 'USA', createdon: '2026-05-01T00:00:00Z' }),
+    rawRow({ amount: 18, crbbe_origen: 'CHINA', createdon: '2025-02-01T00:00:00Z' }),
+    rawRow({ amount: 20, crbbe_origen: 'CHINA', createdon: '2026-04-01T00:00:00Z' }),
+  ])[0];
+
+  assert.equal(product.priceUSA, 30);
+  assert.equal(product.priceChina, 20);
+  assert.equal(product.creationDate, '2026-05-01T00:00:00.000Z');
+});
+
+test('el orden de entrada no altera MAX(createdon) ni el producto consolidado', () => {
+  const rows = [
+    rawRow({ amount: 25, crbbe_origen: 'USA', createdon: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 30, crbbe_origen: 'USA', createdon: '2026-05-01T00:00:00Z' }),
+    rawRow({ amount: 18, crbbe_origen: 'CHINA', createdon: '2025-02-01T00:00:00Z' }),
+    rawRow({ amount: 20, crbbe_origen: 'CHINA', createdon: '2026-04-01T00:00:00Z' }),
+  ];
+
+  assert.deepEqual(
+    consolidateProductPriceLevelRows(rows),
+    consolidateProductPriceLevelRows([...rows].reverse()),
+  );
+});
+
+test('un atributo incompatible histórico queda fuera de la consolidación', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({
+      crbbe_nombreproducto: 'Nombre histórico',
+      createdon: '2025-01-01T00:00:00Z',
+    }),
+    rawRow({
+      crbbe_nombreproducto: 'Nombre vigente',
+      createdon: '2026-05-01T00:00:00Z',
+    }),
+  ])[0];
+
+  assert.equal(product.productName, 'Nombre vigente');
+});
+
+test('empate exacto en MAX(createdon) con precios incompatibles mantiene conflicto', () => {
+  assert.throws(
+    () => consolidateProductPriceLevelRows([
+      rawRow({ amount: 20, createdon: '2025-01-01T00:00:00Z' }),
+      rawRow({ amount: 25, createdon: '2026-05-01T00:00:00Z' }),
+      rawRow({ amount: 30, createdon: '2026-05-01T00:00:00Z' }),
+    ]),
+    (error) => error instanceof ProductMasterConflictError
+      && error.conflicts.some((conflict) => (
+        conflict.conflictType === 'PRICE'
+        && conflict.scope === 'SKU_ORIGIN_BUYER'
+        && assert.deepEqual(conflict.values, [25, 30]) === undefined
+      )),
+  );
+});
+
+test('resuelve cada buyer por MAX(createdon) y preserva conflicto cross-buyer', () => {
+  assert.throws(
+    () => consolidateProductPriceLevelRows([
+      rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
+      rawRow({ amount: 30, createdon: '2026-05-01T00:00:00Z' }),
+      rawRow({
+        amount: 28,
+        createdon: '2025-02-01T00:00:00Z',
+        crbbe_nombrecompania: 'SAND SPORTS, CORP.',
+        crbbe_companiacompradora: 'SAND SPORTS, CORP.',
+      }),
+      rawRow({
+        amount: 31,
+        createdon: '2026-04-01T00:00:00Z',
+        crbbe_nombrecompania: 'SAND SPORTS, CORP.',
+        crbbe_companiacompradora: 'SAND SPORTS, CORP.',
+      }),
+    ]),
+    (error) => error instanceof ProductMasterConflictError
+      && error.conflicts.some((conflict) => (
+        conflict.conflictType === 'PRICE'
+        && conflict.scope === 'SKU_ORIGIN'
+        && assert.deepEqual(conflict.values, [30, 31]) === undefined
+      )),
+  );
+});
+
+test('MAX(createdon) conserva amount cero como precio real', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 0, createdon: '2026-05-01T00:00:00Z' }),
+  ])[0];
+
+  assert.equal(product.priceUSA, 0);
+});
+
+test('MAX(createdon) conserva amount null como precio no disponible', () => {
+  const product = consolidateProductPriceLevelRows([
+    rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: null, createdon: '2026-05-01T00:00:00Z' }),
+  ])[0];
+
+  assert.equal(product.priceUSA, null);
 });
 
 test('el contrato final no expone nombres Dataverse ni campos auxiliares', () => {

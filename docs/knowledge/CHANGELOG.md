@@ -1,5 +1,21 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-19 — PHASE1-090
+
+### Latest Product record por grupo comercial
+
+- Product selecciona `MAX(createdon)` por
+  `SKU + ORIGIN + BUYER COMPANY` antes de conflictos y consolidación.
+- USA y CHINA se resuelven independientemente; cada comprador se resuelve antes
+  de conservar la comparación cross-buyer vigente.
+- Los empates máximos equivalentes consolidan; los incompatibles mantienen
+  `PRODUCT_MASTER_CONFLICT` sin segunda precedencia.
+- `Product.creationDate` usa el mayor `createdon` entre registros vigentes del
+  SKU y Producto Nuevo conserva `<90 días`.
+- La muestra SKULLCANDY Phase1-089 queda con 0 conflictos y 362 productos.
+- Sin cambio de query, filtros, Brands, contratos, Customer, seguridad,
+  timeouts, Dataverse o infraestructura; sin commit, push o deploy.
+
 ## 2026-08-19 — PHASE1-087
 
 ### Origen válido y cierre de presentación
