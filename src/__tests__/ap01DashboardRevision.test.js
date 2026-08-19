@@ -101,11 +101,11 @@ const findElements = (node, predicate, matches = []) => {
 const buildResults = () => {
   const repository = createSellThroughRepository({
     rawMaestro: [
-      'SKU\tMODELO\tESTADO\tFECHA EOL\tcreationDate\tUSA',
-      'REPONER\tModelo recomendado\tACTIVO\t-\t2026-01-01\t10',
-      'SIN-REPOSICION\tModelo cubierto\tACTIVO\t-\t2026-01-01\t10',
-      'EOL-SIN-REPOSICION\tModelo EOL\tEOL\t1/1/2025\t2025-01-01\t10',
-      'NUEVO-AUSENTE\tModelo nuevo\tACTIVO\t-\t2026-07-01\t10',
+      'MARCA\tSKU\tMODELO\tCATEGORIA\tESTADO\tFECHA EOL\tcreationDate\tUSA',
+      'SKULLCANDY\tREPONER\tModelo recomendado\tAUDIO\tACTIVO\t-\t2026-07-15\t10',
+      'SKULLCANDY\tSIN-REPOSICION\tModelo cubierto\tAUDIO\tACTIVO\t-\t2026-01-01\t10',
+      'SKULLCANDY\tEOL-SIN-REPOSICION\tModelo EOL\tAUDIO\tEOL\t1/1/2025\t2025-01-01\t10',
+      'SKULLCANDY\tNUEVO-AUSENTE\tModelo nuevo\tTRUE WIRELESS\tACTIVO\t-\t2026-07-01\t10',
     ].join('\n'),
     rawInventario: [
       'SKU\tTIER\tORIGEN\tINV SEGURIDAD\tINV PROYECTADO\tINV FINAL\tCOMPRA\tVENTAS',
@@ -121,8 +121,13 @@ const buildResults = () => {
   return execution.resultados;
 };
 
-const renderDashboard = (resultados, { showKnowledge = false } = {}) => {
-  stateHarness.overrides = { 2: resultados, 5: showKnowledge, 6: 'dashboard' };
+const renderDashboard = (resultados, { showActives = false, showKnowledge = false } = {}) => {
+  stateHarness.overrides = {
+    2: resultados,
+    4: showActives,
+    5: showKnowledge,
+    6: 'dashboard',
+  };
   stateHarness.values = [];
   stateHarness.nextIndex = 0;
   return App();
@@ -210,6 +215,44 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(dashboardContent).not.toContain('SKUs EOL ya descontinuados — con fase activa');
   });
 
+  it('presenta los productos nuevos ausentes desde Product Master sin incluir un SKU presente', () => {
+    const resultados = buildResults();
+    const tree = renderDashboard(resultados);
+    const section = findElement(
+      tree,
+      (node) => node.type === 'div'
+        && node.props.className === 'bg-white border shadow-sm'
+        && textContent(node).includes('Nuevos no presentes en el inventario del cliente'),
+    );
+    const content = textContent(section);
+
+    expect(resultados.executiveReport.dashboard.alertas.nuevosNoPresentes).toBe(1);
+    expect(content).toContain('NUEVO-AUSENTE');
+    expect(content).toContain('Modelo nuevo');
+    expect(content).toContain('SKULLCANDY');
+    expect(content).toContain('TRUE WIRELESS');
+    expect(content).toContain('2026-07-01');
+    expect(content).not.toContain('REPONER');
+    expect(content).toContain('Esta lista no calcula reposición');
+  });
+
+  it('explica el índice de rotación, sus colores y los buckets EOL reales', () => {
+    const tree = renderDashboard(buildResults(), { showActives: true, showKnowledge: true });
+    const content = textContent(tree);
+
+    expect(content).toContain('Índice de rotación = Inv. Inicial ÷ Ventas.');
+    expect(content).toContain('Verde: alta, <1');
+    expect(content).toContain('Azul: normal, 1–3');
+    expect(content).toContain('Ámbar: lenta, >3–10');
+    expect(content).toContain('Rojo: muy lenta, >10');
+    expect(content).toContain('EOL vencido:');
+    expect(content).toContain('EOL crítico: faltan 1–27 días.');
+    expect(content).toContain('EOL próximo: faltan 28–83 días.');
+    expect(content).toContain('EOL planificado: faltan 84 días o más.');
+    expect(content).toContain('45 días restantes corresponde a EOL próximo');
+    expect(content).toContain('no constituye comunicación de descuentos al consumidor');
+  });
+
   it('valoriza tránsito sin decimales y diferencia A/B/C con verde, azul y rojo', () => {
     const tree = renderDashboard(buildResults());
     const transitSection = findElement(
@@ -268,6 +311,41 @@ describe('AP01 — presentación del Dashboard', () => {
       ['SKULLCANDY', 4, 366, 'USA', 0.15, 0.2, 0.8],
       ['SKULLCANDY', 4, 366, 'CHINA', 0.15, 0.2, 0.8],
     ]);
+  });
+
+  it('exporta tránsito, reposición, nuevos no presentes y creationDate sin recalcular datasets', () => {
+    xlsxHarness.sheetsByName = {};
+    const resultados = buildResults();
+    const tree = renderDashboard(resultados);
+    const exportButton = findElement(
+      tree,
+      (node) => node.type === 'button' && textContent(node).includes('Exportar Excel'),
+    );
+
+    exportButton.props.onClick();
+
+    expect(xlsxHarness.sheetsByName['Inventario en tránsito']).toContainEqual([
+      'REPONER', 'Modelo recomendado', 'ACTIVO', 'BEST', 1, 10,
+    ]);
+    const replenishment = resultados.recs.find(({ sku }) => sku === 'REPONER');
+    expect(xlsxHarness.sheetsByName['Reposición sugerida']).toContainEqual([
+      replenishment.sku,
+      replenishment.modelo,
+      replenishment.marca,
+      replenishment.tier,
+      replenishment.invProyectado,
+      replenishment.compra,
+      replenishment.reposicionSugerida,
+      replenishment.valorReposicion,
+    ]);
+    expect(xlsxHarness.sheetsByName['Nuevos no presentes']).toContainEqual([
+      'NUEVO-AUSENTE', 'Modelo nuevo', 'SKULLCANDY', 'TRUE WIRELESS', '2026-07-01',
+    ]);
+    const completeRows = xlsxHarness.sheetsByName['Datos Completos'];
+    const creationDateColumn = completeRows[0].indexOf('Fecha de creación');
+    const replenishmentRow = completeRows.find((row) => row[0] === 'REPONER');
+    expect(creationDateColumn).toBeGreaterThan(0);
+    expect(replenishmentRow[creationDateColumn]).toBe('2026-07-15');
   });
 
   it('genera un XLSX que se puede releer preservando hojas, valores y formatos', () => {
@@ -356,6 +434,9 @@ describe('AP01 — presentación del Dashboard', () => {
       'Activos',
       'Sin Maestro',
       'Sin Origen en Inv',
+      'Inventario en tránsito',
+      'Reposición sugerida',
+      'Nuevos no presentes',
       'Datos Completos',
       'Distribución Tier',
       'Distribución Categoría',

@@ -123,6 +123,7 @@ const PRESENT_MASTER_RECORD_KEYS = [
   'costo',
   'costoCHINA',
   'costoUSA',
+  'creationDate',
   'deltaInvSeguridad',
   'descPct',
   'descTotal',

@@ -19,6 +19,7 @@ const PRODUCT_SOURCE = Object.freeze({
     productUrl: 'crbbe_urlproducto',
     amount: 'amount',
     origin: 'crbbe_origen',
+    companyName: 'crbbe_nombrecompania',
     buyerCompany: 'crbbe_companiacompradora',
   }),
 });
@@ -129,6 +130,11 @@ const createProduct = (row) => ({
   priceChina: null,
 });
 
+const matchesCommercialCompany = (rawRow, buyerCompany) => (
+  ALLOWED_BUYER_COMPANY_SET.has(buyerCompany)
+  && normalizeText(rawRow[PRODUCT_SOURCE.fields.companyName]) === buyerCompany
+);
+
 const addAmount = (amounts, key, amount, context) => {
   if (amount === null) return;
   if (!amounts.has(key)) amounts.set(key, { values: new Set(), context });
@@ -202,7 +208,7 @@ export const consolidateProductPriceLevelRows = (rows) => {
     const row = mapProductPriceLevelRow(rawRow);
     // El filtro OData es obligatorio; esta defensa backend impide publicar una
     // compañía ajena aunque una respuesta upstream no respete el predicado.
-    if (!ALLOWED_BUYER_COMPANY_SET.has(row.buyerCompany) || !row.sku) return;
+    if (!matchesCommercialCompany(rawRow, row.buyerCompany) || !row.sku) return;
     if (!products.has(row.sku)) products.set(row.sku, createProduct(row));
     addAttributeValues(attributesBySku, rawRow, row);
 
@@ -270,6 +276,10 @@ const PRODUCT_COMPANY_FILTER = `(${ALLOWED_BUYER_COMPANIES
     `${PRODUCT_SOURCE.fields.buyerCompany} eq ${quoteODataString(company)}`
   ))
   .join(' or ')})`;
+const PRODUCT_COMMERCIAL_UNIVERSE_FILTER = [
+  PRODUCT_COMPANY_FILTER,
+  `${PRODUCT_SOURCE.fields.companyName} eq ${PRODUCT_SOURCE.fields.buyerCompany}`,
+].join(' and ');
 
 export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
   if (!dataverseClient || typeof dataverseClient.retrieveAll !== 'function') {
@@ -285,7 +295,7 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
       // el resultado ya no recorre el Product Master global con retrieveAll().
       const rows = await dataverseClient.retrieveGrouped({
         entitySet: PRODUCT_SOURCE.entitySet,
-        filter: PRODUCT_COMPANY_FILTER,
+        filter: PRODUCT_COMMERCIAL_UNIVERSE_FILTER,
         groupBy: Object.freeze([PRODUCT_SOURCE.fields.brand]),
         productTrace,
       });
@@ -299,7 +309,7 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
       const rows = await dataverseClient.retrieveAll({
         entitySet: PRODUCT_SOURCE.entitySet,
         select: Object.freeze(Object.values(PRODUCT_SOURCE.fields)),
-        filter: `${PRODUCT_COMPANY_FILTER} and ${brandFilter}`,
+        filter: `${PRODUCT_COMMERCIAL_UNIVERSE_FILTER} and ${brandFilter}`,
         orderBy: [
           PRODUCT_SOURCE.fields.sku,
           PRODUCT_SOURCE.fields.origin,

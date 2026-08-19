@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isNewProduct } from '../newProduct.js';
+import { findNewProductsMissingInventory, isNewProduct } from '../newProduct.js';
 
 const processingDate = new Date(2026, 7, 1);
 const dateDaysBefore = (days) => {
@@ -26,4 +26,18 @@ describe('Producto Nuevo', () => {
       expect(isNewProduct({ creationDate, processingDate })).toBe(false);
     },
   );
+
+  it('cuenta por SKU los nuevos ausentes y excluye un SKU nuevo ya presente', () => {
+    const missing = findNewProductsMissingInventory({
+      masterBySku: {
+        'NEW-MISSING': { sku: 'NEW-MISSING', creationDate: dateDaysBefore(30) },
+        'NEW-PRESENT': { sku: 'NEW-PRESENT', creationDate: dateDaysBefore(30) },
+        'OLD-MISSING': { sku: 'OLD-MISSING', creationDate: dateDaysBefore(90) },
+      },
+      inventoryRecords: [{ sku: 'NEW-PRESENT', invFinal: 10 }],
+      processingDate,
+    });
+
+    expect(missing.map(({ sku }) => sku)).toEqual(['NEW-MISSING']);
+  });
 });

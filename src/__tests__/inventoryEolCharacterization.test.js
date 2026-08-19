@@ -241,6 +241,10 @@ afterAll(() => {
 });
 
 describe('Inventory Engine extraído', () => {
+  it('resuelve el período Trimestral con las 13 semanas configuradas', () => {
+    expect(obtenerSemanasPeriodo('Trimestral', 4, SEMANAS_POR_PERIODO)).toBe(13);
+  });
+
   it('calcula merma como inventario proyectado menos inventario final', () => {
     const result = calcularMerma({
       invProyectado: 18,

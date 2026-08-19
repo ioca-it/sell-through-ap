@@ -81,6 +81,7 @@ test('flujo Product procesa el contrato estándar Dataverse 200 hasta la API', a
     crbbe_etapa: product.status,
     crbbe_imagenproducto: product.imageUrl,
     crbbe_urlproducto: product.productUrl,
+    crbbe_nombrecompania: 'IOCA USA INC',
     crbbe_companiacompradora: 'IOCA USA INC',
   };
   const dataverseClient = createDataverseClient({

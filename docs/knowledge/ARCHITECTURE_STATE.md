@@ -2,6 +2,31 @@
 
 ## Fase actual
 
+PHASE1-084 queda **PASS LOCAL / REAL DATAVERSE VALIDATION PENDING / NOT
+DEPLOYED**. El
+Product Price Level Gateway restringe el universo comercial en Dataverse con
+los dos compradores autorizados y la comparación de columnas de la misma fila
+`crbbe_nombrecompania eq crbbe_companiacompradora`; Product Master añade luego
+la marca obligatoria y Brands aplica la misma condición dentro de
+`$apply=filter(...)/groupby((crbbe_nombremarca))`. Node conserva una defensa
+equivalente, sin sustituir el filtro upstream ni descargar el conjunto global.
+
+Producto Nuevo reutiliza la regla aprobada `<90 días` desde `creationDate` del
+Product Master. El Application Service ya cruza esos SKU contra Inventario y el
+Dashboard presenta el KPI y la nueva tabla de ausentes sin calcular reposición.
+El record analítico conserva `creationDate` para Datos Completos. Excel reutiliza
+los datasets calculados para Tránsito, Reposición sugerida y Nuevos no
+presentes. SKU Activos explica índice/colores; la base EOL documenta los cuatro
+estados reales y mantiene descuentos como referencia interna. Trimestral
+permanece en el motor vigente con 13 semanas.
+
+No cambian contratos HTTP, mappings Product públicos, pivot USA/CHINA,
+semántica `0|null`, conflictos residuales, Customer, seguridad, fuentes,
+timeouts o infraestructura. La validación local cerró con backend 125/125,
+frontend 391/391, ambos builds y `git diff --check` sin errores. La validación
+real de SKULLCANDY después de un deploy autorizado permanece externa a este
+hito; Phase1-084 no despliega.
+
 PHASE1-081 queda **PASS — REAL DATAVERSE BRAND-TO-PRODUCT FLOW READY /
 FRONTEND ACTIVATION PENDING / LOCALLY VALIDATED / NOT DEPLOYED**. La causa del
 ComboBox vacío era la selección efectiva `VITE_PRODUCT_SOURCE=local` (también

@@ -24,6 +24,7 @@ const rawRow = (overrides = {}) => ({
   crbbe_urlproducto: ' https://products.invalid/sku-001 ',
   amount: 25,
   crbbe_origen: ' USA ',
+  crbbe_nombrecompania: 'IOCA USA INC',
   crbbe_companiacompradora: 'IOCA USA INC',
   internalid: 'no-publicar',
   ...overrides,
@@ -127,7 +128,7 @@ test('gateway consulta productpricelevels con ambas compañías y marca antes de
   assert.equal(calls[0].entitySet, 'productpricelevels');
   assert.equal(
     calls[0].filter,
-    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombremarca eq 'Skullcandy'",
+    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora and crbbe_nombremarca eq 'Skullcandy'",
   );
   assert.deepEqual(calls[0].includeAnnotations, [FORMATTED]);
   assert.deepEqual(calls[0].select, [
@@ -143,6 +144,7 @@ test('gateway consulta productpricelevels con ambas compañías y marca antes de
     'crbbe_urlproducto',
     'amount',
     'crbbe_origen',
+    'crbbe_nombrecompania',
     'crbbe_companiacompradora',
   ]);
   assert.equal(
@@ -190,7 +192,7 @@ test('lista marcas con filtro previo y groupby exclusivo sin retrieveAll global'
   assert.deepEqual(await gateway.loadBrands(), ['ANKER', 'SKULLCANDY']);
   assert.deepEqual(calls, [{
     entitySet: 'productpricelevels',
-    filter: "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.')",
+    filter: "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora",
     groupBy: ['crbbe_nombremarca'],
     productTrace: undefined,
   }]);
@@ -238,7 +240,7 @@ test('escapa brand OData y aplica el filtro en la llamada inicial a retrieveAll'
   await gateway.loadProducts({ brand: "O'Brien" });
   assert.equal(
     query.filter,
-    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombremarca eq 'O''Brien'",
+    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora and crbbe_nombremarca eq 'O''Brien'",
   );
 });
 
@@ -287,8 +289,16 @@ test('cargas consecutivas A y B consultan y consolidan datasets independientes',
 test('incluye IOCA y SAND, y excluye otras compañías en la defensa backend', () => {
   const products = consolidateProductPriceLevelRows([
     rawRow({ crbbe_sku: 'IOCA-1', crbbe_companiacompradora: 'IOCA USA INC' }),
-    rawRow({ crbbe_sku: 'SAND-1', crbbe_companiacompradora: 'SAND SPORTS, CORP.' }),
-    rawRow({ crbbe_sku: 'OTRA-1', crbbe_companiacompradora: 'OTRA COMPAÑIA' }),
+    rawRow({
+      crbbe_sku: 'SAND-1',
+      crbbe_nombrecompania: 'SAND SPORTS, CORP.',
+      crbbe_companiacompradora: 'SAND SPORTS, CORP.',
+    }),
+    rawRow({
+      crbbe_sku: 'OTRA-1',
+      crbbe_nombrecompania: 'OTRA COMPAÑIA',
+      crbbe_companiacompradora: 'OTRA COMPAÑIA',
+    }),
   ]);
   assert.deepEqual(products.map(({ sku }) => sku), ['IOCA-1', 'SAND-1']);
 });
@@ -299,6 +309,15 @@ test('consolida USA y CHINA del mismo SKU sin sumar ni promediar', () => {
     rawRow({ amount: 18, crbbe_origen: 'CHINA' }),
   ]);
   assert.deepEqual(products, [{ ...expectedProduct, priceChina: 18 }]);
+});
+
+test('excluye como defensa filas cuya compañía nominal difiere del comprador', () => {
+  const products = consolidateProductPriceLevelRows([
+    rawRow({ amount: 25 }),
+    rawRow({ amount: 26, crbbe_nombrecompania: 'SAND SPORTS, CORP.' }),
+  ]);
+
+  assert.deepEqual(products, [expectedProduct]);
 });
 
 test('mantiene null cuando un SKU no tiene fila para uno de los orígenes', () => {
@@ -469,7 +488,11 @@ test('también bloquea precios distintos entre compradores sin precedencia autor
   assert.throws(
     () => consolidateProductPriceLevelRows([
       rawRow({ amount: 25, crbbe_companiacompradora: 'IOCA USA INC' }),
-      rawRow({ amount: 26, crbbe_companiacompradora: 'SAND SPORTS, CORP.' }),
+      rawRow({
+        amount: 26,
+        crbbe_nombrecompania: 'SAND SPORTS, CORP.',
+        crbbe_companiacompradora: 'SAND SPORTS, CORP.',
+      }),
     ]),
     ProductMasterConflictError,
   );

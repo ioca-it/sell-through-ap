@@ -10,7 +10,7 @@ import {
   fmtUSDInline,
   toDisplayValue,
 } from './utils/formatters.js';
-import { primerDiaMes } from './utils/dateUtils.js';
+import { normalizeFechaStr, primerDiaMes } from './utils/dateUtils.js';
 import {
   getPhaseDiscountTable,
   processSellThrough,
@@ -770,6 +770,7 @@ export default function App({
   ) && rawInventario.trim() !== '';
   const productosReposicionSugerida = resultados?.recs
     ?.filter((record) => record.reposicionSugerida > 0) ?? [];
+  const productosNuevosNoPresentes = resultados?.newProductsMissingInventory ?? [];
 
   const procesar = async () => {
     setError(null);
@@ -1058,11 +1059,68 @@ export default function App({
       aplicarFormato(ws, { 3: '$#,##0.00', 4: '$#,##0.00', 5: '$#,##0.00' });
       XLSX.utils.book_append_sheet(wb, ws, 'Sin Origen en Inv');
     }
+
+    const transitHeader = [
+      'SKU', 'Modelo', 'Estado', 'Nivel', 'Unidades en tránsito', 'Valor en tránsito',
+    ];
+    const transitRows = resultados.alertas.productosEnTransito.map((record) => [
+      record.sku,
+      record.modelo,
+      record.estado,
+      record.tier || 'SIN CATEGORIA',
+      record.unidadesEnTransito,
+      record.valorEnTransito,
+    ]);
+    const wsTransit = XLSX.utils.aoa_to_sheet([transitHeader, ...transitRows]);
+    wsTransit['!cols'] = [
+      { wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 16 }, { wch: 22 }, { wch: 20 },
+    ];
+    aplicarFormato(wsTransit, { 5: '$#,##0.00' });
+    XLSX.utils.book_append_sheet(wb, wsTransit, 'Inventario en tránsito');
+
+    const replenishmentHeader = [
+      'SKU', 'Modelo', 'Marca', 'Nivel', 'Inv. Proyectado', 'Compra / Tránsito',
+      'Reposición Sugerida', 'Valor Reposición',
+    ];
+    const replenishmentRows = productosReposicionSugerida.map((record) => [
+      record.sku,
+      record.modelo,
+      record.marca,
+      record.tier,
+      record.invProyectado,
+      record.compra,
+      record.reposicionSugerida,
+      record.valorReposicion,
+    ]);
+    const wsReplenishment = XLSX.utils.aoa_to_sheet([
+      replenishmentHeader,
+      ...replenishmentRows,
+    ]);
+    wsReplenishment['!cols'] = [
+      { wch: 18 }, { wch: 42 }, { wch: 14 }, { wch: 12 },
+      { wch: 17 }, { wch: 20 }, { wch: 22 }, { wch: 18 },
+    ];
+    aplicarFormato(wsReplenishment, { 7: '$#,##0.00' });
+    XLSX.utils.book_append_sheet(wb, wsReplenishment, 'Reposición sugerida');
+
+    const newProductHeader = ['SKU', 'Producto / Modelo', 'Marca', 'Categoría', 'Fecha de creación'];
+    const newProductRows = productosNuevosNoPresentes.map((product) => [
+      product.sku,
+      product.modelo,
+      product.marca,
+      product.categoria,
+      normalizeFechaStr(product.creationDate),
+    ]);
+    const wsNewProducts = XLSX.utils.aoa_to_sheet([newProductHeader, ...newProductRows]);
+    wsNewProducts['!cols'] = [
+      { wch: 18 }, { wch: 42 }, { wch: 14 }, { wch: 24 }, { wch: 20 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsNewProducts, 'Nuevos no presentes');
     
     // ===== HOJA 10: DATOS COMPLETOS (auditoría) =====
     const hdrAll = [
       'SKU', 'Tienda', 'Modelo', 'Marca', 'Categoría', 'Estado', 'Tier',
-      'Fecha EOL', 'Días Desc.', 'Días Restantes', 'Clasificación Temporal',
+      'Fecha EOL', 'Fecha de creación', 'Días Desc.', 'Días Restantes', 'Clasificación Temporal',
       'Bucket', 'Fase', 'Origen', 'Sin Origen Inv',
       'Inv. Seguridad Cliente', 'Inv. Seguridad IOCA', 'Δ IOCA-Cliente', 'Fuente Inv. Seg.',
       'Semanas Período', 'Lead Time Aplicado',
@@ -1077,7 +1135,7 @@ export default function App({
     ];
     const rowsAll = resultados.recs.map(r => [
       r.sku, r.tienda, r.modelo, r.marca, r.categoria || 'SIN CATEGORIA', r.estado, r.tier,
-      r.fechaStr, r.diasDesc, r.diasRestantes, r.clasificacionTemporal,
+      r.fechaStr, normalizeFechaStr(r.creationDate), r.diasDesc, r.diasRestantes, r.clasificacionTemporal,
       r.bucket, r.fase !== null ? `F${r.fase}` : '', r.origen, r.sinOrigenInv ? 'SI' : 'NO',
       r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
       r.semanasPeriodo, r.leadTimeAplicado,
@@ -2250,6 +2308,41 @@ export default function App({
               )}
             </div>
 
+            <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
+                  <Calendar className="w-5 h-5" style={{ color: '#1e40af' }} />
+                  Nuevos no presentes en el inventario del cliente
+                </h2>
+                <div className="text-xs text-stone-500 mt-1">
+                  Productos del Maestro con menos de 90 días desde su fecha de creación y cuyo SKU no está presente en el inventario. Esta lista no calcula reposición.
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
+                    <tr>
+                      <Th>SKU</Th><Th>Producto / Modelo</Th><Th>Marca</Th><Th>Categoría</Th><Th align="center">Fecha de creación</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productosNuevosNoPresentes.length === 0 && (
+                      <tr><td colSpan={5} className="p-6 text-center text-stone-500">No hay productos nuevos ausentes del inventario.</td></tr>
+                    )}
+                    {productosNuevosNoPresentes.map((product) => (
+                      <tr key={product.sku} className="border-t" style={{ borderColor: '#e5e0d5' }}>
+                        <Td bold>{product.sku}</Td>
+                        <Td className="text-stone-600">{product.modelo}</Td>
+                        <Td>{product.marca}</Td>
+                        <Td>{product.categoria}</Td>
+                        <Td align="center">{normalizeFechaStr(product.creationDate)}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* INVENTARIO EN TRÁNSITO */}
             <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
               <div className="px-6 py-4 border-b flex items-center justify-between flex-wrap gap-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
@@ -2781,6 +2874,14 @@ export default function App({
                 </button>
                 {showActivos && (
                   <div className="overflow-x-auto">
+                    <div className="px-6 py-3 text-[10px] text-stone-600 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                      <strong>Índice de rotación = Inv. Inicial ÷ Ventas.</strong>{' '}
+                      <span style={{ color: '#065f46' }}>Verde: alta, &lt;1</span> ·{' '}
+                      <span style={{ color: '#1e40af' }}>Azul: normal, 1–3</span> ·{' '}
+                      <span style={{ color: '#92400e' }}>Ámbar: lenta, &gt;3–10</span> ·{' '}
+                      <span style={{ color: '#7f1d1d' }}>Rojo: muy lenta, &gt;10</span> ·{' '}
+                      <span style={{ color: '#777' }}>Gris/—: Ventas = 0.</span>
+                    </div>
                     <table className="w-full text-[11px]">
                       <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
                         <tr>
@@ -2852,9 +2953,19 @@ export default function App({
                         ))}
                       </tbody>
                     </table>
+                    <div className="mt-3 text-[10px] leading-relaxed text-stone-600">
+                      <strong>EOL vencido:</strong> la fecha EOL es igual o anterior a la fecha de procesamiento.{' '}
+                      <strong>EOL crítico:</strong> faltan 1–27 días.{' '}
+                      <strong>EOL próximo:</strong> faltan 28–83 días.{' '}
+                      <strong>EOL planificado:</strong> faltan 84 días o más.{' '}
+                      Cálculo: días restantes = Fecha EOL − fecha de procesamiento; por ejemplo, 45 días restantes corresponde a EOL próximo.
+                    </div>
                   </div>
                   <div>
                     <h3 className="text-sm font-bold mb-2" style={{ color: '#0a2540' }}>Tabla de Descuento por Fase</h3>
+                    <div className="text-[10px] text-stone-500 mb-2">
+                      Referencia interna para explicar el cálculo; no constituye comunicación de descuentos al consumidor.
+                    </div>
                     <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
                       <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
                         <tr><Th>Marca</Th><Th align="center">Fase</Th><Th align="center">Días</Th><Th align="center">Origen</Th><Th align="center">Desc.</Th><Th align="center">IOCA</Th><Th align="center">Retail</Th></tr>

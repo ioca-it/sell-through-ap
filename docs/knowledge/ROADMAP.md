@@ -1,5 +1,26 @@
 # Roadmap aprobado
 
+## Phase1-084 — Finalize Product Data Rules and Meeting Requirements
+
+Hito implementado y validado localmente: backend 125/125, frontend 391/391 y
+ambos builds correctos. Product Master y
+Brands comparten el universo válido: comprador IOCA/SAND y
+`crbbe_nombrecompania eq crbbe_companiacompradora`, evaluado por Dataverse antes
+de consolidar o agrupar. La marca continúa obligatoria antes de
+`retrieveAll()` y los conflictos que sobrevivan permanecen bloqueados sin regla
+"más reciente gana".
+
+Para presentación se reutiliza Producto Nuevo `<90 días`: KPI por cantidad de
+SKU ausentes, tabla con atributos Product, `creationDate` en Datos Completos y
+hojas Excel de Tránsito, Reposición y Nuevos no presentes. Se añadieron leyenda
+real de rotación, explicación EOL y cobertura de Trimestral=13 sin motores
+paralelos.
+
+Siguiente acción exacta: mediante autorización separada, desplegar
+backend/frontend y validar una vez Brands y SKULLCANDY en el flujo normal. Si
+quedan conflictos después del filtro, requieren evidencia y decisión funcional
+separadas; no se introduce precedencia temporal.
+
 ## Phase1-081 — Activate Real Dataverse Brand-to-Product Configuration Flow
 
 El hito queda **PASS — NORMAL DATAVERSE PRODUCT FLOW READY / EXTERNAL SOURCE

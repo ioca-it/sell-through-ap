@@ -1,5 +1,27 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-19 — PHASE1-084
+
+### Product y requerimientos de reunión
+
+- Product Master filtra en Dataverse comprador IOCA/SAND, igualdad
+  `crbbe_nombrecompania eq crbbe_companiacompradora` y marca escapada; Brands
+  usa el mismo universo antes de `groupby`.
+- Se preservan consolidación, precios `0|null`, FormattedValue, `fechaStr` y
+  bloqueo de conflictos residuales sin precedencia temporal.
+- KPI y tabla Nuevos no presentes reutilizan Product Master y la regla vigente
+  `<90 días`; Datos Completos incorpora `creationDate`.
+- Excel añade detalle de Tránsito, Reposición sugerida y Nuevos no presentes
+  desde datasets ya calculados.
+- SKU Activos explica índice/colores; Bucket EOL documenta reglas reales; la
+  tabla de descuentos queda identificada como referencia de cálculo.
+- Trimestral se valida en el sistema vigente con 13 semanas.
+
+### Preservado
+
+- Sin cambios de Customer, autenticación, CORS, rate limiting, variables,
+  timeouts, Dataverse, Entra o hosting; sin commit, push o deploy.
+
 ## 2026-08-18 — PHASE1-081
 
 ### Flujo real Product por marca
