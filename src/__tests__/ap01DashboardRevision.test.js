@@ -181,7 +181,11 @@ const buildEolUniverseResults = () => {
   const repository = createSellThroughRepository({
     rawInventario: [
       'SKU\tTIER\tORIGEN\tINV INICIAL\tVENTAS\tINV FINAL',
-      ...skus.map((sku) => `${sku}\tEOL\tUSA\t2\t1\t1`),
+      ...skus.map((sku, index) => (
+        index === 0
+          ? `${sku}\tEOL\tUSA\t0\t0\t1`
+          : `${sku}\tEOL\tUSA\t2\t1\t1`
+      )),
     ].join('\n'),
     config: CONFIG,
   });
@@ -191,7 +195,7 @@ const buildEolUniverseResults = () => {
       productName: `Producto ${sku}`,
       brand: 'SKULLCANDY',
       category: 'AUDIO',
-      discontinuationDate: phaseDates[index % phaseDates.length],
+      discontinuationDate: index === 0 ? null : phaseDates[index % phaseDates.length],
       creationDate: '2025-01-01',
       level: 'EOL',
       status: 'EOL',
@@ -304,7 +308,9 @@ describe('AP01 — presentación del Dashboard', () => {
     );
     const content = textContent(executiveSection);
 
-    expect(content).toContain('SKU con EOL definido');
+    expect(content).toContain('SKU clasificados EOL');
+    expect(content).toContain('Unidades clasificadas EOL');
+    expect(content).not.toContain('EOL definido');
     expect(content).not.toContain('SKU Vencidos');
     expect(content).toContain('SKU Sin Maestro');
     expect(content).toContain('Valor Inventario Total');
@@ -334,14 +340,14 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(content).toContain('Complementarios');
   });
 
-  it('reconcilia el KPI EOL con 43 filas, unidades, valor y las cuatro fases ordenadas', () => {
+  it('reconcilia el universo EOL y presenta N/D/Sin fecha EOL sin alterar sus cuatro buckets', () => {
     const resultados = buildEolUniverseResults();
     const tree = renderDashboard(resultados);
     const section = findElement(
       tree,
       (node) => node.type === 'div'
         && node.props.className === 'bg-white border shadow-sm'
-        && textContent(node).includes('SKUs con EOL definido'),
+        && textContent(node).includes('SKU clasificados EOL'),
     );
     const table = findElement(section, (node) => node.type === 'table');
     const skuCells = findElements(
@@ -352,13 +358,27 @@ describe('AP01 — presentación del Dashboard', () => {
       table,
       (node) => node.type === 'span' && node.props['data-eol-phase'],
     ).map(textContent);
+    const eolWithoutDateRow = findElement(
+      table,
+      (node) => node.type === 'tr' && textContent(node).includes('EOL-01'),
+    );
 
     expect(resultados.totales).toMatchObject({ skuEOL: 43, unidEOL: 43, valorEOL: 430 });
     expect(resultados.eolTodos).toHaveLength(43);
+    expect(resultados.eolSinFecha.map(({ sku }) => sku)).toEqual(['EOL-01']);
+    expect(resultados.eolTodos.find(({ sku }) => sku === 'EOL-01')).toMatchObject({
+      estado: 'EOL', fechaStr: '', diasDesc: null, bucket: null, porcentajeRotacion: null,
+    });
     expect(skuCells).toHaveLength(resultados.totales.skuEOL);
-    expect(textContent(section)).toContain('Mismo universo del KPI: 43 SKU · 43 unidades · $430');
+    expect(textContent(section)).toContain('43 SKU clasificados EOL');
+    expect(textContent(section)).toContain('43 unidades clasificadas EOL');
+    expect(textContent(section)).toContain('$430');
+    expect(textContent(eolWithoutDateRow)).toContain('N/DN/DSin fecha EOL');
+    expect(textContent(eolWithoutDateRow).match(/N\/D/g)).toHaveLength(3);
     expect(phases).toHaveLength(43);
-    expect([...new Set(phases)]).toEqual(['VENCIDO', 'CRÍTICO', 'PRÓXIMO', 'PLANIFICADO']);
+    expect([...new Set(phases)]).toEqual([
+      'VENCIDO', 'CRÍTICO', 'PRÓXIMO', 'PLANIFICADO', 'Sin fecha EOL',
+    ]);
     expect(textContent(table)).toContain('Liquidar / no reponer');
   });
 
@@ -412,7 +432,7 @@ describe('AP01 — presentación del Dashboard', () => {
     const replenishmentContent = textContent(replenishmentSection);
     const dashboardContent = textContent(tree);
     const replenishmentPosition = dashboardContent.indexOf('Productos de Reposición Sugerida');
-    const eolPosition = dashboardContent.indexOf('SKUs con EOL definido', replenishmentPosition);
+    const eolPosition = dashboardContent.indexOf('SKU clasificados EOL', replenishmentPosition);
 
     expect(mixCards.map(({ props }) => [props.label, props.value])).toEqual([
       ['Cantidad de SKU', resultados.distribucionTier.inventario.totalSKUs],
@@ -459,6 +479,7 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(content).toContain('Azul: normal, 33.33%–100%');
     expect(content).toContain('Ámbar: lenta, 10%–<33.33%');
     expect(content).toContain('Rojo: crítica, <10%');
+    expect(content).toContain('Gris/N/D: Inventario Inicial = 0.');
     expect(content).toContain('EOL vencido: la fecha EOL es igual o anterior a la Fecha base EOL.');
     expect(content).toContain('EOL crítico: faltan 1–27 días.');
     expect(content).toContain('EOL próximo: faltan 28–83 días.');
@@ -731,6 +752,8 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(phaseSheet['!cols'].map(({ wch }) => wch)).toEqual([14, 8, 11, 9, 18, 14, 14]);
     expect(summaryRows.find((row) => row[0] === 'Fórmula aplicada')?.[1]).toBeTruthy();
     expect(summaryRows.find((row) => row[0] === 'Total Unidades')?.[1]).toBe(26);
+    expect(summaryRows.find((row) => row[0] === 'SKU clasificados EOL')?.[1]).toBe(1);
+    expect(summaryRows.find((row) => row[0] === 'Unidades clasificadas EOL')?.[1]).toBe(1);
     expect(activeEolRows.find((row) => row[0] === 'EOL-SIN-REPOSICION')?.[3])
       .toBe('2025-01-01');
   });

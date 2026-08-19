@@ -1,5 +1,23 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-19 — PHASE1-098
+
+### Semántica visible del universo EOL
+
+- `SKU clasificados EOL` reemplaza la afirmación de que todo EOL tiene
+  información/fecha válida; el universo continúa siendo `eolTodos` de Product
+  Master.
+- Fecha y Días EOL ausentes muestran `N/D`; Fase EOL muestra
+  `Sin fecha EOL`, sin retirar el SKU del KPI o del detalle.
+- La leyenda EOL añade definiciones separadas de SKU, Fecha, Días y Fase, y
+  alinea Recomendación EOL, Porcentaje de Rotación y Valor Inventario.
+- KPI, unidades, valor y tabla permanecen reconciliados; buckets, motor,
+  acciones, Pareto, reposición y semántica de precios `0|null` no cambian.
+- Sin cambios backend, fuentes, Product Master, Dataverse o infraestructura;
+  sin acciones externas.
+- Frontend PASS con 35 archivos/415 pruebas y build Vite de 1,689 módulos;
+  backend no aplicó.
+
 ## 2026-08-19 — PHASE1-096
 
 ### Consistencia EOL y Carga de Información

@@ -210,7 +210,7 @@ describe('clasificación temporal y EOL Fase 4', () => {
     }).clasificacionTemporal).toBe('VENCIDO');
   });
 
-  it('separa el KPI de EOL definido de las tablas vencida y futura', () => {
+  it('separa el universo total EOL de los subconjuntos vencido y futuro', () => {
     const resultados = processData({
       maestro: [
         'SKU\tESTADO\tFECHA EOL\tUSA',

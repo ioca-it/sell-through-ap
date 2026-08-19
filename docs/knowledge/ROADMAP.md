@@ -1,5 +1,19 @@
 # Roadmap aprobado
 
+## Phase1-098 — Align EOL Definitions With Real Runtime Semantics
+
+La presentación usa `SKU clasificados EOL` para el universo Product Master
+`eolTodos`, independientemente de que exista una Fecha EOL válida. Fecha y Días
+EOL ausentes muestran `N/D`; Fase EOL no calculable muestra `Sin fecha EOL`.
+KPI, unidades, valor y detalle continúan reconciliados.
+
+Las definiciones compartidas documentan fórmula/fuente/interpretación de SKU
+EOL, Fecha, Días, Fase, Recomendación, Porcentaje de Rotación y Valor
+Inventario. El hito queda validado localmente con 415/415 pruebas y build
+correcto. No cambian EOL Engine, buckets, acciones, Pareto, reposición, Product
+Master, Dataverse ni backend. Siguiente acción externa exacta: validar
+visualmente una vez en desktop/mobile y autorizar por separado cualquier deploy.
+
 ## Phase1-096 — Finalize EOL Consistency and Simplify Data Load Screen
 
 La presentación reconcilia KPI y detalle sobre todos los SKU con EOL definido,

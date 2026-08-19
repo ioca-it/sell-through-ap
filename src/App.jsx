@@ -110,7 +110,7 @@ const EOL_PHASE_STYLES = Object.freeze({
   'EOL Planificado': Object.freeze({ label: 'PLANIFICADO', priority: 3, background: '#dbeafe', color: '#1e40af' }),
 });
 const EOL_PHASE_UNCLASSIFIED = Object.freeze({
-  label: '—', priority: 4, background: '#f5f5f0', color: '#78716c',
+  label: 'Sin fecha EOL', priority: 4, background: '#f5f5f0', color: '#78716c',
 });
 
 // ============================================================
@@ -145,6 +145,12 @@ const colorPorcentajeRotacion = (v) => {
   if (v >= 10) return { bg: '#fef3c7', fg: '#92400e' };
   return { bg: '#fee2e2', fg: '#7f1d1d' };
 };
+
+const fmtRotationPercentage = (value) => (
+  value === null || value === undefined || Number.isNaN(value)
+    ? 'N/D'
+    : fmtPctPoints(value)
+);
 
 const generarInformeEjecutivo = (resultados, config) => {
   if (!resultados) return null;
@@ -947,8 +953,8 @@ export default function App({
       ['Total Unidades', resultados.totales.totalUnidades],
       ['SKUs Activos', resultados.totales.skuActivos],
       ['Total Unidades Activas', resultados.totales.unidadesActivas],
-      ['SKUs con EOL definido', resultados.totales.skuEOL],
-      ['Total Unidades EOL', resultados.totales.unidEOL],
+      ['SKU clasificados EOL', resultados.totales.skuEOL],
+      ['Unidades clasificadas EOL', resultados.totales.unidEOL],
       ['SKUs sin ventas', resultados.totales.skuSinVentas],
       ['Total Unidades sin ventas', resultados.totales.unidadesSinVentas],
       ['Valor inventario sin ventas', resultados.totales.valorInventarioSinVentas],
@@ -2009,7 +2015,7 @@ export default function App({
                     {[
                       ['Total SKU', summary.totalSKUs, 'Total Unidades', summary.totalUnidades, 'Valor Inventario Total', summary.valorTotalInventario],
                       ['SKU Activos', summary.skuActivos, 'Unidades Activas', summary.unidadesActivas, 'Valor Inventario SKU Activos', summary.valorActivo],
-                      ['SKU con EOL definido', summary.skuEOL, 'Unidades con EOL definido', summary.unidadesEOL, 'Valor Inventario EOL', summary.valorEOL],
+                      ['SKU clasificados EOL', summary.skuEOL, 'Unidades clasificadas EOL', summary.unidadesEOL, 'Valor Inventario EOL', summary.valorEOL],
                       ['SKU sin ventas', summary.skuSinVentas, 'Unidades sin ventas', summary.unidadesSinVentas, 'Valor inventario sin ventas', summary.valorInventarioSinVentas],
                       ['SKU Sin Maestro', summary.skuSinMaestro, 'Unidades Sin Maestro', summary.unidadesSinMaestro, 'Valor Inventario Sin Maestro', summary.valorSinMaestro],
                     ].map(([label, value, unitLabel, unitValue, moneyLabel, moneyValue]) => (
@@ -2165,7 +2171,7 @@ export default function App({
               <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <KPIUnitPair label="Total SKU" value={resultados.totales.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.totales.totalUnidades} moneyLabel="Valor Inventario Total" moneyValue={fmtUSD(resultados.totales.valorTotalInventario)} />
                 <KPIUnitPair label="SKU Activos" value={resultados.totales.skuActivos} unitLabel="Unidades Activas" unitValue={resultados.totales.unidadesActivas} moneyLabel="Valor Inventario SKU Activos" moneyValue={fmtUSD(resultados.totales.valorActivo)} color="#065f46" bg="#d1fae5" />
-                <KPIUnitPair label="SKU con EOL definido" value={resultados.totales.skuEOL} unitLabel="Unidades con EOL definido" unitValue={resultados.totales.unidEOL} moneyLabel="Valor Inventario EOL" moneyValue={fmtUSD(resultados.totales.valorEOL)} color="#7f1d1d" bg="#fee2e2" />
+                <KPIUnitPair label="SKU clasificados EOL" value={resultados.totales.skuEOL} unitLabel="Unidades clasificadas EOL" unitValue={resultados.totales.unidEOL} moneyLabel="Valor Inventario EOL" moneyValue={fmtUSD(resultados.totales.valorEOL)} color="#7f1d1d" bg="#fee2e2" />
                 <KPIUnitPair label="SKU sin ventas" value={resultados.totales.skuSinVentas} unitLabel="Unidades sin ventas" unitValue={resultados.totales.unidadesSinVentas} moneyLabel="Valor inventario sin ventas" moneyValue={fmtUSD(resultados.totales.valorInventarioSinVentas)} color="#92400e" bg="#fef3c7" />
                 <KPIUnitPair label="SKU Sin Maestro" value={resultados.totales.sinMaestro} unitLabel="Unidades Sin Maestro" unitValue={resultados.totales.unidadesSinMaestro} moneyLabel="Valor Inventario Sin Maestro" moneyValue={fmtUSD(resultados.totales.valorSinMaestro)} />
               </div>
@@ -2794,10 +2800,10 @@ export default function App({
                 <div>
                   <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
                     <Package className="w-5 h-5" style={{ color: '#7f1d1d' }} />
-                    SKUs con EOL definido
+                    SKU clasificados EOL
                   </h2>
                   <div className="text-xs text-stone-500 mt-1">
-                    Mismo universo del KPI: <strong>{resultados.totales.skuEOL} SKU</strong> · <strong>{resultados.totales.unidEOL} unidades</strong> · <strong>{fmtUSD(resultados.totales.valorEOL)}</strong>. La FASE EOL usa la Fecha base EOL.
+                    Mismo universo del KPI: <strong>{resultados.totales.skuEOL} SKU clasificados EOL</strong> · <strong>{resultados.totales.unidEOL} unidades clasificadas EOL</strong> · <strong>{fmtUSD(resultados.totales.valorEOL)}</strong>. La Fecha EOL puede ser N/D; Días y Fase EOL solo se calculan con una fecha válida.
                   </div>
                 </div>
               </div>
@@ -2820,13 +2826,13 @@ export default function App({
                   </thead>
                   <tbody>
                     {eolDetailRows.length === 0 && (
-                      <tr><td colSpan={18} className="p-6 text-center text-stone-500">No hay SKU con EOL definido en este inventario.</td></tr>
+                      <tr><td colSpan={18} className="p-6 text-center text-stone-500">No hay SKU clasificados EOL en este inventario.</td></tr>
                     )}
                     {eolDetailRows.map((r, i) => {
                       const colorRot = colorPorcentajeRotacion(r.porcentajeRotacion);
                       const phaseStyle = getEolPhaseStyle(r.bucket);
                       const daysLabel = r.diasDesc === null
-                        ? '—'
+                        ? 'N/D'
                         : (r.diasDesc >= 0
                           ? `${r.diasDesc} vencidos`
                           : `${Math.abs(r.diasDesc)} restantes`);
@@ -2835,7 +2841,7 @@ export default function App({
                         <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                         <Td className="text-stone-600">{r.modelo}</Td>
                         <Td>{r.marca}</Td>
-                        <Td align="center">{r.fechaStr || '—'}</Td>
+                        <Td align="center">{r.fechaStr || 'N/D'}</Td>
                         <Td align="center">
                           <span className="px-2 py-0.5 font-bold" style={{
                             background: phaseStyle.background,
@@ -2877,7 +2883,7 @@ export default function App({
                         <Td align="center" bold>{r.invFinal}</Td>
                         <Td align="right" bold>{fmtUSD(r.valorInv)}</Td>
                         <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
-                          {fmtPctPoints(r.porcentajeRotacion)}
+                          {fmtRotationPercentage(r.porcentajeRotacion)}
                         </Td>
                         <Td align="right" bold>{fmtUSD(r.descTotal)}</Td>
                         <Td bold style={{ color: '#7f1d1d', fontSize: '10px' }}>
@@ -2965,7 +2971,7 @@ export default function App({
                       <span style={{ color: '#1e40af' }}>Azul: normal, 33.33%–100%</span> ·{' '}
                       <span style={{ color: '#92400e' }}>Ámbar: lenta, 10%–&lt;33.33%</span> ·{' '}
                       <span style={{ color: '#7f1d1d' }}>Rojo: crítica, &lt;10%</span> ·{' '}
-                      <span style={{ color: '#777' }}>Gris/—: Inventario Inicial = 0.</span>
+                      <span style={{ color: '#777' }}>Gris/N/D: Inventario Inicial = 0.</span>
                     </div>
                     <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
                       <DefinitionLegend ids={DEFINITION_GROUPS.active} />
@@ -2996,7 +3002,7 @@ export default function App({
                             <Td align="right">{fmtUSD(r.costo)}</Td>
                             <Td align="center" bold>{r.invFinal}</Td>
                             <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
-                              {fmtPctPoints(r.porcentajeRotacion)}
+                              {fmtRotationPercentage(r.porcentajeRotacion)}
                             </Td>
                             <Td align="right" bold style={{ background: '#d1fae5', color: '#065f46' }}>{fmtUSD(r.valorInv)}</Td>
                           </tr>
@@ -3176,7 +3182,7 @@ export default function App({
                     {[
                       ['Total SKU', resultados.totales.totalSKUs, 'Total Unidades', resultados.totales.totalUnidades],
                       ['SKU Activos', resultados.totales.skuActivos, 'Total Unidades Activas', resultados.totales.unidadesActivas],
-                      ['SKU con EOL definido', resultados.totales.skuEOL, 'Total Unidades EOL', resultados.totales.unidEOL],
+                      ['SKU clasificados EOL', resultados.totales.skuEOL, 'Unidades clasificadas EOL', resultados.totales.unidEOL],
                       ['SKU sin ventas', resultados.totales.skuSinVentas, 'Unidades sin ventas', resultados.totales.unidadesSinVentas, 'Valor inventario sin ventas', resultados.totales.valorInventarioSinVentas],
                       ['SKU Sin Maestro', resultados.totales.sinMaestro, 'Total Unidades Sin Maestro', resultados.totales.unidadesSinMaestro],
                     ].map(([label, value, unitLabel, unitValue, moneyLabel, moneyValue]) => (

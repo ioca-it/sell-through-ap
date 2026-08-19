@@ -2,6 +2,21 @@
 
 ## Fase actual
 
+PHASE1-098 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**.
+La presentación denomina `SKU clasificados EOL` al universo `eolTodos`, que
+depende de la clasificación Product Master y puede contener Fecha EOL
+ausente/inválida. Fecha y Días EOL no calculables muestran `N/D`; Fase EOL
+muestra `Sin fecha EOL`. KPI, unidades, valor y detalle conservan el mismo
+universo.
+
+La fuente común de definiciones distingue SKU EOL, Fecha EOL, Días EOL y Fase
+EOL; alinea también Recomendación EOL, Porcentaje de Rotación y Valor
+Inventario con sus fórmulas y semántica `0|null`. EOL Engine, buckets,
+acciones, Pareto, reposición, Product Master, Dataverse y backend permanecen
+intactos. La validación final cierra con frontend 35/35 archivos y 415/415
+pruebas, build Vite de 1,689 módulos y backend no aplicable al no existir
+cambios bajo `server/`.
+
 PHASE1-096 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**.
 La tabla principal `SKUs con EOL definido` reutiliza `eolTodos`, el mismo
 universo de `skuEOL`, `unidEOL` y `valorEOL`, y lo ordena visualmente como
