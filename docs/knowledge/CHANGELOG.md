@@ -1,5 +1,19 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-19 — PHASE1-087
+
+### Origen válido y cierre de presentación
+
+- Product Master filtra server-side `crbbe_origen ne null` y
+  `crbbe_origen ne ''` antes de paginación/consolidación; Node conserva una
+  defensa equivalente para null, vacío y solo espacios.
+- Brands comparte el filtro dentro de `$apply/filter/groupby`.
+- Conflictos causados solo por origen inválido desaparecen; conflictos reales
+  entre precios válidos siguen bloqueados sin precedencia.
+- Gap-check Phase1-084 sin regresiones ni correcciones adicionales; Producto
+  Nuevo `<90 días` permanece intacto.
+- Sin commit, push, deploy, smokes, timeouts o cambios externos.
+
 ## 2026-08-19 — PHASE1-084
 
 ### Product y requerimientos de reunión

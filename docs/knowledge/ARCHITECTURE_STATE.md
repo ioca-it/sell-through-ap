@@ -2,6 +2,26 @@
 
 ## Fase actual
 
+PHASE1-087 queda **IMPLEMENTED LOCALLY / NOT DEPLOYED**. Product Master amplía
+el filtro Dataverse previo a paginación con
+`crbbe_origen ne null and crbbe_origen ne ''`, además de compradores,
+comparación compañía-comprador y marca obligatoria. Brands comparte ese mismo
+universo antes de `$apply/filter/groupby`, por lo que no ofrece marcas que solo
+tengan filas Product sin origen válido. Node conserva una defensa equivalente
+para respuestas upstream inesperadas.
+
+Las filas de origen null, vacío o solo espacios no participan en consolidación
+ni conflictos. Los conflictos debidos exclusivamente a esas filas desaparecen;
+precios diferentes dentro del universo válido continúan bloqueando sin
+precedencia ni regla de último precio. El gap-check de Phase1-084 no encontró
+conexiones rotas en KPI/tabla de nuevos, `creationDate`, Excel de tránsito y
+reposición, rotación, EOL o Trimestral=13; no se reimplementó ninguno.
+
+No cambian contratos, pivot USA/CHINA, semántica `0|null`, Customer, providers,
+seguridad, fuentes, timeouts, infraestructura ni la regla Producto Nuevo
+`<90 días`. La evidencia final queda en el log Phase1-087; la validación real
+posterior a un deploy autorizado permanece externa.
+
 PHASE1-084 queda **PASS LOCAL / REAL DATAVERSE VALIDATION PENDING / NOT
 DEPLOYED**. El
 Product Price Level Gateway restringe el universo comercial en Dataverse con

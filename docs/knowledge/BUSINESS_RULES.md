@@ -26,16 +26,21 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
   real, mientras una entrada vacía o inválida queda en `null` como precio no
   disponible.
 - El contrato incorpora `creationDate`; el origen local reconoce el encabezado normalizado `creationDate` y conserva `null` cuando falta o no puede interpretarse.
-- La alternativa Dataverse usa exclusivamente `productpricelevels`, filtrado en backend por comprador `IOCA USA INC` o `SAND SPORTS, CORP.`, exige en la misma fila `crbbe_nombrecompania = crbbe_companiacompradora` y añade la marca seleccionada; no descarga compañías o marcas ajenas para filtrarlas en React.
+- La alternativa Dataverse usa exclusivamente `productpricelevels`, filtrado en backend por comprador `IOCA USA INC` o `SAND SPORTS, CORP.`, exige en la misma fila `crbbe_nombrecompania = crbbe_companiacompradora`, requiere `crbbe_origen` no-null y no-vacío, y añade la marca seleccionada; no descarga filas inválidas para filtrarlas en React.
 - `brand` es obligatoria para Product Master Dataverse: debe ser string, aplicar `trim()`, no quedar vacía y no superar 100 caracteres. Sin valor válido no se consulta Dataverse ni se ejecuta una carga global.
 - El filtro de marca se construye con escape OData backend y se incorpora antes de `retrieveAll()`; el endpoint frontend no acepta `$filter`, `$select`, `$orderby`, `$top` u OData libre.
 - La lista de marcas usa `$apply/filter/groupby`: Dataverse filtra primero las
   dos compañías autorizadas, exige la igualdad entre compañía nominal y
-  compradora, y agrupa exclusivamente la marca. OData no ofrece
+  compradora y un origen no-null/no-vacío, y agrupa exclusivamente la marca.
+  OData no ofrece
   `$distinct` y Brands no recorre el dataset global mediante `retrieveAll()`.
   Después excluye null/vacío/solo espacios, deduplica defensivamente valores
   exactos después de `trim()` y ordena de forma determinística sin aliases ni
   combinación de marcas diferentes.
+- La defensa Node excluye antes de consolidar cualquier fila con origen null,
+  vacío o solo espacios. Esas filas no crean productos ni conflictos; no se
+  limita el origen válido a USA/CHINA, aunque solo esos dos valores alimentan
+  el pivot de precios vigente.
 - Dataverse consolida por SKU: origen `USA` alimenta `priceUSA` y origen `CHINA`
   alimenta `priceChina`; sin fila del origen, o con `amount null|undefined`, el
   precio correspondiente queda en `null`. Un `amount = 0` se conserva como

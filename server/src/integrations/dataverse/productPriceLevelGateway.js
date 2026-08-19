@@ -135,6 +135,8 @@ const matchesCommercialCompany = (rawRow, buyerCompany) => (
   && normalizeText(rawRow[PRODUCT_SOURCE.fields.companyName]) === buyerCompany
 );
 
+const hasValidOrigin = (row) => row.origin !== '';
+
 const addAmount = (amounts, key, amount, context) => {
   if (amount === null) return;
   if (!amounts.has(key)) amounts.set(key, { values: new Set(), context });
@@ -208,7 +210,9 @@ export const consolidateProductPriceLevelRows = (rows) => {
     const row = mapProductPriceLevelRow(rawRow);
     // El filtro OData es obligatorio; esta defensa backend impide publicar una
     // compañía ajena aunque una respuesta upstream no respete el predicado.
-    if (!matchesCommercialCompany(rawRow, row.buyerCompany) || !row.sku) return;
+    if (!matchesCommercialCompany(rawRow, row.buyerCompany)
+      || !hasValidOrigin(row)
+      || !row.sku) return;
     if (!products.has(row.sku)) products.set(row.sku, createProduct(row));
     addAttributeValues(attributesBySku, rawRow, row);
 
@@ -279,6 +283,8 @@ const PRODUCT_COMPANY_FILTER = `(${ALLOWED_BUYER_COMPANIES
 const PRODUCT_COMMERCIAL_UNIVERSE_FILTER = [
   PRODUCT_COMPANY_FILTER,
   `${PRODUCT_SOURCE.fields.companyName} eq ${PRODUCT_SOURCE.fields.buyerCompany}`,
+  `${PRODUCT_SOURCE.fields.origin} ne null`,
+  `${PRODUCT_SOURCE.fields.origin} ne ''`,
 ].join(' and ');
 
 export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
@@ -291,7 +297,7 @@ export const createProductPriceLevelGateway = ({ dataverseClient } = {}) => {
       if (typeof dataverseClient.retrieveGrouped !== 'function') {
         throw new Error('ProductPriceLevelGateway: Dataverse Client agregado inválido.');
       }
-      // Dataverse filtra compradores antes de agrupar exclusivamente la marca;
+      // Dataverse filtra compradores y origen válido antes de agrupar la marca;
       // el resultado ya no recorre el Product Master global con retrieveAll().
       const rows = await dataverseClient.retrieveGrouped({
         entitySet: PRODUCT_SOURCE.entitySet,

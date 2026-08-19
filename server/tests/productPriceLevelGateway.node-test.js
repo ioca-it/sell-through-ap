@@ -128,7 +128,7 @@ test('gateway consulta productpricelevels con ambas compañías y marca antes de
   assert.equal(calls[0].entitySet, 'productpricelevels');
   assert.equal(
     calls[0].filter,
-    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora and crbbe_nombremarca eq 'Skullcandy'",
+    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora and crbbe_origen ne null and crbbe_origen ne '' and crbbe_nombremarca eq 'Skullcandy'",
   );
   assert.deepEqual(calls[0].includeAnnotations, [FORMATTED]);
   assert.deepEqual(calls[0].select, [
@@ -192,7 +192,7 @@ test('lista marcas con filtro previo y groupby exclusivo sin retrieveAll global'
   assert.deepEqual(await gateway.loadBrands(), ['ANKER', 'SKULLCANDY']);
   assert.deepEqual(calls, [{
     entitySet: 'productpricelevels',
-    filter: "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora",
+    filter: "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora and crbbe_origen ne null and crbbe_origen ne ''",
     groupBy: ['crbbe_nombremarca'],
     productTrace: undefined,
   }]);
@@ -240,7 +240,7 @@ test('escapa brand OData y aplica el filtro en la llamada inicial a retrieveAll'
   await gateway.loadProducts({ brand: "O'Brien" });
   assert.equal(
     query.filter,
-    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora and crbbe_nombremarca eq 'O''Brien'",
+    "(crbbe_companiacompradora eq 'IOCA USA INC' or crbbe_companiacompradora eq 'SAND SPORTS, CORP.') and crbbe_nombrecompania eq crbbe_companiacompradora and crbbe_origen ne null and crbbe_origen ne '' and crbbe_nombremarca eq 'O''Brien'",
   );
 });
 
@@ -315,6 +315,42 @@ test('excluye como defensa filas cuya compañía nominal difiere del comprador',
   const products = consolidateProductPriceLevelRows([
     rawRow({ amount: 25 }),
     rawRow({ amount: 26, crbbe_nombrecompania: 'SAND SPORTS, CORP.' }),
+  ]);
+
+  assert.deepEqual(products, [expectedProduct]);
+});
+
+test('excluye como defensa una fila con origin null', () => {
+  assert.deepEqual(consolidateProductPriceLevelRows([
+    rawRow({ crbbe_origen: null }),
+  ]), []);
+});
+
+test("excluye como defensa una fila con origin ''", () => {
+  assert.deepEqual(consolidateProductPriceLevelRows([
+    rawRow({ crbbe_origen: '' }),
+  ]), []);
+});
+
+test('conserva una fila con origin válido', () => {
+  assert.deepEqual(consolidateProductPriceLevelRows([
+    rawRow({ crbbe_origen: 'USA' }),
+  ]), [expectedProduct]);
+});
+
+test('filas de origin null o vacío no generan conflictos residuales', () => {
+  const products = consolidateProductPriceLevelRows([
+    rawRow({ amount: 25, crbbe_origen: 'USA' }),
+    rawRow({
+      amount: 26,
+      crbbe_origen: null,
+      crbbe_nombreproducto: 'Conflicto solo en origin null',
+    }),
+    rawRow({
+      amount: 27,
+      crbbe_origen: '',
+      crbbe_nombreproducto: 'Conflicto solo en origin vacío',
+    }),
   ]);
 
   assert.deepEqual(products, [expectedProduct]);
@@ -450,7 +486,7 @@ test('fecha no vacía inválida no se vuelve equivalente a otra fecha', () => {
   });
 });
 
-test('detecta determinísticamente precios distintos del mismo SKU/origen/comprador', () => {
+test('conflictos reales entre precios de origin válido continúan detectándose', () => {
   assert.throws(
     () => consolidateProductPriceLevelRows([
       rawRow({ amount: 25 }),

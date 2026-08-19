@@ -1,5 +1,23 @@
 # Roadmap aprobado
 
+## Phase1-087 — Add Valid Origin Filter and Close Presentation Gaps
+
+Product Master incorpora en backend
+`crbbe_origen ne null and crbbe_origen ne ''` dentro del universo comercial,
+antes de `retrieveAll()` y consolidación. La defensa Node omite también origen
+null, vacío o solo espacios. Así dejan de existir conflictos provocados
+exclusivamente por esas filas, mientras los conflictos reales de precios
+válidos continúan bloqueados sin precedencia.
+
+Brands reutiliza el mismo universo dentro de `$apply/filter/groupby`, evitando
+mostrar marcas sin registros Product válidos. El gap-check de Phase1-084 quedó
+sin correcciones adicionales: sus ocho entregables permanecen visibles y
+conectados, con Producto Nuevo `<90 días` sin cambios.
+
+Siguiente acción externa exacta: si la presentación usa el entorno alojado,
+autorizar el deploy y validar una vez Brands y Product Master contra Dataverse.
+Este hito no despliega ni modifica Vercel, Render, Dataverse o Entra.
+
 ## Phase1-084 — Finalize Product Data Rules and Meeting Requirements
 
 Hito implementado y validado localmente: backend 125/125, frontend 391/391 y
