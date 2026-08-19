@@ -1,5 +1,23 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-19 — PHASE1-096
+
+### Consistencia EOL y Carga de Información
+
+- KPI y tabla principal comparten `eolTodos`, unidades y valor; la tabla expone
+  VENCIDO, CRÍTICO, PRÓXIMO y PLANIFICADO con prioridad de gestión.
+- Se elimina únicamente el `textarea` manual de Product Master; Inventario del
+  Cliente queda como entrada `1`, centrada y de ancho ampliado, con ejemplo,
+  validación y parsing preservados.
+- Origen se explica desde Inventario del Cliente hacia el precio de Product
+  Master Dataverse.
+- `Fecha base EOL` conserva el valor dinámico de `primerDiaMes()` y se distingue
+  de Fecha de corte; las leyendas EOL reutilizan `DefinitionLegend`.
+- Sin cambios de EOL Engine, buckets, descuentos, acciones, Product/Dataverse,
+  precios, reposición, providers, repositories, timeouts o backend.
+- Frontend PASS con 35 archivos/414 pruebas y build Vite de 1,689 módulos;
+  backend no aplicó y no hubo acciones externas.
+
 ## 2026-08-19 — PHASE1-094
 
 ### Auditoría final de presentación

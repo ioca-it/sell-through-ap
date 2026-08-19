@@ -103,6 +103,15 @@ const PARETO_CLASS_STYLES = Object.freeze({
   B: Object.freeze({ badge: '#1e40af', background: '#dbeafe', text: '#1e40af' }),
   C: Object.freeze({ badge: '#b91c1c', background: '#fee2e2', text: '#991b1b' }),
 });
+const EOL_PHASE_STYLES = Object.freeze({
+  'EOL Vencido': Object.freeze({ label: 'VENCIDO', priority: 0, background: '#fee2e2', color: '#7f1d1d' }),
+  'EOL Crítico': Object.freeze({ label: 'CRÍTICO', priority: 1, background: '#ffedd5', color: '#9a3412' }),
+  'EOL Próximo': Object.freeze({ label: 'PRÓXIMO', priority: 2, background: '#fef3c7', color: '#92400e' }),
+  'EOL Planificado': Object.freeze({ label: 'PLANIFICADO', priority: 3, background: '#dbeafe', color: '#1e40af' }),
+});
+const EOL_PHASE_UNCLASSIFIED = Object.freeze({
+  label: '—', priority: 4, background: '#f5f5f0', color: '#78716c',
+});
 
 // ============================================================
 // HELPERS
@@ -113,6 +122,20 @@ const compareNullableMoneyDescending = (left, right) => {
   if (isAvailablePrice(left)) return -1;
   if (isAvailablePrice(right)) return 1;
   return 0;
+};
+
+const getEolPhaseStyle = (bucket) => EOL_PHASE_STYLES[bucket] ?? EOL_PHASE_UNCLASSIFIED;
+
+// Orden de gestión: vencidos primero, seguidos por crítico, próximo y planificado.
+// Los días y buckets llegan calculados por EOL Engine; presentación no los redefine.
+const compareEolManagementPriority = (left, right) => {
+  const phaseDelta = getEolPhaseStyle(left.bucket).priority
+    - getEolPhaseStyle(right.bucket).priority;
+  if (phaseDelta !== 0) return phaseDelta;
+  if (left.diasDesc !== null && right.diasDesc !== null && left.diasDesc !== right.diasDesc) {
+    return right.diasDesc - left.diasDesc;
+  }
+  return left.sku.localeCompare(right.sku);
 };
 
 const colorPorcentajeRotacion = (v) => {
@@ -776,6 +799,8 @@ export default function App({
   const productosReposicionSugerida = resultados?.recs
     ?.filter((record) => record.reposicionSugerida > 0) ?? [];
   const productosNuevosNoPresentes = resultados?.newProductsMissingInventory ?? [];
+  const eolDetailRows = [...(resultados?.eolTodos ?? [])]
+    .sort(compareEolManagementPriority);
   const paretoClassBySku = new Map([
     ...(resultados?.analisisPareto?.skusParetoA ?? []),
     ...(resultados?.analisisPareto?.skusParetoB ?? []),
@@ -894,7 +919,7 @@ export default function App({
     // ===== HOJA 1: RESUMEN EJECUTIVO =====
     const resumenData = [
       ['IOCA SELL-THROUGH INTELLIGENCE V1 — ANÁLISIS DE FASES EOL Y MOTOR INV. SEGURIDAD IOCA'],
-      [`Fecha de cálculo: ${fechaLegible}`],
+      [`Fecha base EOL: ${fechaLegible}`],
       [],
       ['CONTEXTO DEL CLIENTE', ''],
       ['Campo', 'Valor'],
@@ -1499,11 +1524,11 @@ export default function App({
             </div>
             <div className="flex items-end gap-5">
               <div className="text-right text-xs">
-                <div className="opacity-70">Fecha de cálculo</div>
+                <div className="opacity-70">Fecha base EOL</div>
                 <div className="font-bold text-base" style={{ color: '#d4af37' }}>
                   {primerDiaMes().toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
                 </div>
-                <div className="opacity-60 mt-1">(primer día del mes en curso)</div>
+                <div className="opacity-60 mt-1">Primer día del mes utilizado para calcular días y fases EOL.</div>
               </div>
               <AuthenticationControls />
             </div>
@@ -1886,28 +1911,11 @@ export default function App({
             </div>
           </div>
 
-          <div className="p-6 grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* MAESTRO */}
-            <div>
+          <div className="p-6 flex justify-center">
+            {/* Inventario es la única entrada manual; Product Master llega por su Provider. */}
+            <div className="w-full max-w-5xl">
               <label className="block text-sm font-bold mb-2" style={{ color: '#0a2540' }}>
-                1. Maestro de Productos IOCA
-              </label>
-              <div className="text-[11px] text-stone-500 mb-2">
-                Columnas: <code className="bg-stone-100 px-1">MARCA</code> · <code className="bg-stone-100 px-1">SKU</code> · <code className="bg-stone-100 px-1">Modelos</code> · <code className="bg-stone-100 px-1">CATEGORIAS</code> · <code className="bg-stone-100 px-1">Fecha Descontinuacion</code> · <code className="bg-stone-100 px-1">creationDate</code> · <code className="bg-stone-100 px-1">ESTADO</code> · <code className="bg-stone-100 px-1">USA</code> · <code className="bg-stone-100 px-1">CHINA</code>
-              </div>
-              <textarea
-                value={rawMaestro}
-                onChange={e => setRawMaestro(e.target.value)}
-                placeholder="Pega aquí el Maestro de Productos consolidado IOCA..."
-                className="w-full h-44 p-3 border font-mono text-[10px]"
-                style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}
-              />
-            </div>
-
-            {/* INVENTARIO */}
-            <div>
-              <label className="block text-sm font-bold mb-2" style={{ color: '#0a2540' }}>
-                2. Inventario del Cliente
+                1. Inventario del Cliente
               </label>
               <div className="text-[11px] text-stone-500 mb-2">
                 Mínimo: <code className="bg-stone-100 px-1">SKU</code> · <code className="bg-stone-100 px-1">INV FINAL</code>. Opcionales: <code className="bg-stone-100 px-1">Tienda</code> · <code className="bg-stone-100 px-1">MARCA</code> · <code className="bg-stone-100 px-1">Nombre</code>
@@ -1926,13 +1934,13 @@ export default function App({
             <div className="flex items-center gap-2 text-xs text-stone-600 max-w-2xl">
               <Database className="w-4 h-4 flex-shrink-0" style={{ color: '#d4af37' }} />
               <span>
-                El <strong>Origen</strong> de cada SKU (USA o CHINA) se lee de la columna <code className="bg-stone-100 px-1">Origen</code> del <strong>Inventario del cliente</strong>. La herramienta usa el Costo USA o CHINA del Maestro según corresponda. Si no se declara Origen, se asume USA por default.
+                El <strong>Origen</strong> de cada SKU (USA o CHINA) se obtiene del <strong>Inventario del Cliente</strong> y determina el precio aplicable del <strong>Product Master Dataverse</strong>. Si no se declara Origen, se asume USA por default.
               </span>
             </div>
 
             {productBrandRequired && !selectedBrand && (
               <div role="status" className="w-full px-3 py-2 text-xs border" style={{ borderColor: '#f59e0b', color: '#92400e', background: '#fffbeb' }}>
-                Selecciona una marca en Configuración antes de cargar el Maestro Producto y ejecutar el análisis.
+                Selecciona una marca en Configuración antes de ejecutar el análisis; Product Master se obtendrá de Dataverse.
               </div>
             )}
 
@@ -1965,7 +1973,7 @@ export default function App({
           <div className="bg-white border shadow-sm p-12 text-center" style={{ borderColor: '#e5e0d5' }}>
             <BarChart3 className="w-12 h-12 mx-auto mb-3" style={{ color: '#cbd5e1' }} />
             <div className="text-sm font-bold mb-1" style={{ color: '#0a2540' }}>Dashboard sin datos</div>
-            <div className="text-xs text-stone-500 mb-4">Primero carga el Maestro e Inventario, y presiona "Calcular".</div>
+            <div className="text-xs text-stone-500 mb-4">Primero carga el Inventario del Cliente y presiona "Calcular"; Product Master se obtiene de la fuente configurada.</div>
             <button onClick={() => setActiveTab('carga')}
               className="px-5 py-2 text-sm font-bold inline-flex items-center gap-2"
               style={{ background: '#0a2540', color: '#faf8f3' }}>
@@ -2780,16 +2788,16 @@ export default function App({
               </div>
             </div>
 
-            {/* TABLA EOL CON FASE */}
+            {/* DETALLE DEL MISMO UNIVERSO DEL KPI EOL */}
             <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
               <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                 <div>
                   <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
                     <Package className="w-5 h-5" style={{ color: '#7f1d1d' }} />
-                    SKUs EOL vencidos / descontinuados
+                    SKUs con EOL definido
                   </h2>
                   <div className="text-xs text-stone-500 mt-1">
-                    Este detalle incluye solo EOL cuya fecha ya venció. El KPI “SKU con EOL definido” también incluye EOL futuros o sin fecha válida.
+                    Mismo universo del KPI: <strong>{resultados.totales.skuEOL} SKU</strong> · <strong>{resultados.totales.unidEOL} unidades</strong> · <strong>{fmtUSD(resultados.totales.valorEOL)}</strong>. La FASE EOL usa la Fecha base EOL.
                   </div>
                 </div>
               </div>
@@ -2801,31 +2809,45 @@ export default function App({
                   <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
                     <tr>
                       <Th>SKU</Th><Th>Modelo</Th><Th>Marca</Th><Th>Fecha EOL</Th>
-                      <Th align="center">Días Desc.</Th><Th align="center">Fase</Th><Th align="center">Origen</Th>
+                      <Th align="center">Días EOL</Th><Th align="center">FASE EOL</Th>
+                      <Th align="center">Fase desc.</Th><Th align="center">Origen</Th>
                       <Th align="right">Costo</Th><Th align="center">Desc. %</Th>
                       <Th align="right">Desc. Consumi $</Th><Th align="right">Aporte IOCA $</Th>
                       <Th align="right">Aporte Retail $</Th><Th align="center">Inv. Final</Th>
-                      <Th align="center">Porcentaje Rot.</Th>
+                      <Th align="right">Valor Inv.</Th><Th align="center">Porcentaje Rot.</Th>
                       <Th align="right">Desc. Total $</Th><Th>Acción EOL</Th>
                     </tr>
                   </thead>
                   <tbody>
-                    {resultados.eolVencidos.length === 0 && (
-                      <tr><td colSpan={16} className="p-6 text-center text-stone-500">No hay SKU EOL vencidos/descontinuados en este inventario; el KPI puede incluir EOL futuros o sin fecha válida.</td></tr>
+                    {eolDetailRows.length === 0 && (
+                      <tr><td colSpan={18} className="p-6 text-center text-stone-500">No hay SKU con EOL definido en este inventario.</td></tr>
                     )}
-                    {resultados.eolVencidos.map((r, i) => {
+                    {eolDetailRows.map((r, i) => {
                       const colorRot = colorPorcentajeRotacion(r.porcentajeRotacion);
+                      const phaseStyle = getEolPhaseStyle(r.bucket);
+                      const daysLabel = r.diasDesc === null
+                        ? '—'
+                        : (r.diasDesc >= 0
+                          ? `${r.diasDesc} vencidos`
+                          : `${Math.abs(r.diasDesc)} restantes`);
                       return (
                       <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
                         <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                         <Td className="text-stone-600">{r.modelo}</Td>
                         <Td>{r.marca}</Td>
-                        <Td align="center">{r.fechaStr}</Td>
+                        <Td align="center">{r.fechaStr || '—'}</Td>
                         <Td align="center">
                           <span className="px-2 py-0.5 font-bold" style={{
-                            background: r.diasDesc >= 240 ? '#fee2e2' : r.diasDesc >= 150 ? '#fef3c7' : '#dbeafe',
-                            color: r.diasDesc >= 240 ? '#7f1d1d' : r.diasDesc >= 150 ? '#92400e' : '#1e40af',
-                          }}>{renderServiceValue(r.diasDesc)}</span>
+                            background: phaseStyle.background,
+                            color: phaseStyle.color,
+                          }}>{daysLabel}</span>
+                        </Td>
+                        <Td align="center" bold>
+                          <span
+                            data-eol-phase={phaseStyle.label}
+                            className="px-2 py-0.5 text-[10px]"
+                            style={{ background: phaseStyle.background, color: phaseStyle.color }}
+                          >{phaseStyle.label}</span>
                         </Td>
                         <Td align="center">
                           {r.fase !== null ? (
@@ -2853,6 +2875,7 @@ export default function App({
                           {r.retailUSD > 0 ? fmtUSD(r.retailUSD) : '—'}
                         </Td>
                         <Td align="center" bold>{r.invFinal}</Td>
+                        <Td align="right" bold>{fmtUSD(r.valorInv)}</Td>
                         <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
                           {fmtPctPoints(r.porcentajeRotacion)}
                         </Td>
@@ -2867,11 +2890,12 @@ export default function App({
                       );
                     })}
                   </tbody>
-                  {resultados.eolVencidos.length > 0 && (
+                  {eolDetailRows.length > 0 && (
                     <tfoot>
                       <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
-                        <td colSpan={12} className="px-3 py-2 text-right font-bold">TOTALES</td>
-                        <td className="px-3 py-2 text-center font-bold">{renderServiceValue(resultados.totales?.unidadesEOLVencidas)}</td>
+                        <td colSpan={13} className="px-3 py-2 text-right font-bold">TOTALES: {resultados.totales.skuEOL} SKU</td>
+                        <td className="px-3 py-2 text-center font-bold">{renderServiceValue(resultados.totales.unidEOL)}</td>
+                        <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.valorEOL)}</td>
                         <td className="px-3 py-2 text-center font-bold">—</td>
                         <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.descEOL)}</td>
                         <td className="px-3 py-2">—</td>
@@ -2881,80 +2905,6 @@ export default function App({
                 </table>
               </div>
             </div>
-
-            {/* TABLA EOL FUTUROS */}
-            {resultados.eolFuturos.length > 0 && (
-              <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
-                <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
-                  <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
-                    <Calendar className="w-5 h-5" style={{ color: '#92400e' }} />
-                    SKUs EOL aún por descontinuarse — gestión preventiva
-                  </h2>
-                  <div className="text-xs text-stone-500 mt-1">
-                    Aún no aplica fase de descuento. Se gestionan según el Bucket EOL pre-vencido.
-                  </div>
-                </div>
-                <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
-                  <DefinitionLegend ids={DEFINITION_GROUPS.eol} />
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-[11px]">
-                    <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
-                      <tr>
-                        <Th>SKU</Th><Th>Modelo</Th><Th>Marca</Th><Th>Fecha EOL</Th>
-                        <Th align="center">Días hasta EOL</Th><Th align="center">Bucket Pre-EOL</Th>
-                        <Th align="center">Origen</Th>
-                        <Th align="right">Costo</Th><Th align="center">Inv. Final</Th>
-                        <Th align="center">Porcentaje Rot.</Th>
-                        <Th align="right">Valor Inv.</Th><Th>Acción EOL</Th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {resultados.eolFuturos.map((r, i) => {
-                        const colorRot = colorPorcentajeRotacion(r.porcentajeRotacion);
-                        return (
-                        <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
-                          <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
-                          <Td className="text-stone-600">{r.modelo}</Td>
-                          <Td>{r.marca}</Td>
-                          <Td align="center">{r.fechaStr}</Td>
-                          <Td align="center">
-                            <span className="px-2 py-0.5 font-bold" style={{ background: '#fef3c7', color: '#92400e' }}>
-                              {Math.abs(r.diasDesc)}
-                            </span>
-                          </Td>
-                          <Td align="center" bold>
-                            <span className="px-2 py-0.5" style={{
-                              background: r.bucket === 'EOL Crítico' ? '#fee2e2' : r.bucket === 'EOL Próximo' ? '#fef3c7' : '#dbeafe',
-                              color: r.bucket === 'EOL Crítico' ? '#7f1d1d' : r.bucket === 'EOL Próximo' ? '#92400e' : '#1e40af',
-                            }}>{renderServiceValue(r.bucket)}</span>
-                          </Td>
-                          <Td align="center" bold>
-                            <span className="px-2 py-0.5 text-[10px]" style={{
-                              background: r.origen === 'CHINA' ? '#fef3c7' : '#dbeafe',
-                              color: r.origen === 'CHINA' ? '#92400e' : '#1e40af',
-                            }}>{renderServiceValue(r.origen)}</span>
-                          </Td>
-                          <Td align="right">{fmtUSD(r.costo)}</Td>
-                          <Td align="center" bold>{r.invFinal}</Td>
-                          <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
-                            {fmtPctPoints(r.porcentajeRotacion)}
-                          </Td>
-                          <Td align="right" bold>{fmtUSD(r.valorInv)}</Td>
-                          <Td bold style={{ color: '#92400e', fontSize: '10px' }}>
-                            {obtenerRecomendacionEOL({
-                              bucket: r.bucket,
-                              paretoClase: paretoClassBySku.get(r.sku),
-                            })}
-                          </Td>
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
             {/* SIN MAESTRO */}
             {resultados.sinMaestro.length > 0 && (
@@ -2966,7 +2916,7 @@ export default function App({
                       ⚠ {resultados.sinMaestro.length} SKUs en inventario NO existen en el Maestro
                     </h3>
                     <div className="text-xs text-amber-800 mt-1">
-                      Estos códigos están en el inventario del cliente pero no aparecen en el Maestro IOCA cargado. Acción: actualizar el Maestro con su estado correcto, costos y fecha si aplica.
+                      Estos códigos están en el Inventario del Cliente pero no aparecen en Product Master Dataverse. Acción: actualizar Product Master con su estado correcto, precios y fecha si aplica.
                     </div>
                   </div>
                 </div>
@@ -3092,11 +3042,11 @@ export default function App({
                       </tbody>
                     </table>
                     <div className="mt-3 text-[10px] leading-relaxed text-stone-600">
-                      <strong>EOL vencido:</strong> la fecha EOL es igual o anterior a la fecha de procesamiento.{' '}
+                      <strong>EOL vencido:</strong> la fecha EOL es igual o anterior a la Fecha base EOL.{' '}
                       <strong>EOL crítico:</strong> faltan 1–27 días.{' '}
                       <strong>EOL próximo:</strong> faltan 28–83 días.{' '}
                       <strong>EOL planificado:</strong> faltan 84 días o más.{' '}
-                      Cálculo: días restantes = Fecha EOL − fecha de procesamiento; por ejemplo, 45 días restantes corresponde a EOL próximo.
+                      Cálculo: días restantes = Fecha EOL − Fecha base EOL; por ejemplo, 45 días restantes corresponde a EOL próximo.
                     </div>
                   </div>
                   <div>
@@ -3134,7 +3084,7 @@ export default function App({
           <div className="bg-white border shadow-sm p-12 text-center" style={{ borderColor: '#e5e0d5' }}>
             <FileText className="w-12 h-12 mx-auto mb-3" style={{ color: '#cbd5e1' }} />
             <div className="text-sm font-bold mb-1" style={{ color: '#0a2540' }}>Informe Ejecutivo sin datos</div>
-            <div className="text-xs text-stone-500 mb-4">Primero carga el Maestro e Inventario, y presiona "Calcular".</div>
+            <div className="text-xs text-stone-500 mb-4">Primero carga el Inventario del Cliente y presiona "Calcular"; Product Master se obtiene de la fuente configurada.</div>
             <button onClick={() => setActiveTab('carga')}
               className="px-5 py-2 text-sm font-bold inline-flex items-center gap-2"
               style={{ background: '#0a2540', color: '#faf8f3' }}>

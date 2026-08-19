@@ -131,6 +131,52 @@ beforeEach(() => {
   productMasterService.loadProducts.mockResolvedValue([]);
 });
 
+describe('Carga de Información simplificada', () => {
+  const openDataLoad = () => {
+    let tree = renderApp();
+    findElement(tree, (node) => node.type === 'button'
+      && textContent(node).includes('Carga de Información')).props.onClick();
+    tree = renderApp();
+    return tree;
+  };
+
+  it('oculta la carga manual Product, centra Inventario y conserva ejemplo y parsing', async () => {
+    let tree = openDataLoad();
+    const textareas = findElements(tree, (node) => node.type === 'textarea');
+    const inventoryBlock = findElement(
+      tree,
+      (node) => node.type === 'div'
+        && node.props.className?.includes('max-w-5xl')
+        && textContent(node).includes('1. Inventario del Cliente'),
+    );
+
+    expect(textContent(tree)).not.toContain('Maestro de Productos IOCA');
+    expect(textContent(tree)).not.toContain('Pega aquí el Maestro');
+    expect(textContent(tree)).toContain('1. Inventario del Cliente');
+    expect(textContent(tree)).toContain('Product Master Dataverse');
+    expect(textareas).toHaveLength(1);
+    expect(inventoryBlock.props.className).toContain('w-full');
+    expect(textareas[0].props.placeholder).toBe('Pega aquí el inventario del cliente...');
+
+    textareas[0].props.onChange({ target: { value: 'SKU\tINV FINAL\nMANUAL-1\t2' } });
+    tree = renderApp();
+    expect(findElement(tree, (node) => node.type === 'textarea').props.value)
+      .toContain('MANUAL-1');
+
+    findElement(tree, (node) => node.type === 'button'
+      && textContent(node).includes('Cargar ejemplo')).props.onClick();
+    tree = renderApp();
+    expect(findElement(tree, (node) => node.type === 'textarea').props.value.trim()).not.toBe('');
+    const calculate = findElement(tree, (node) => node.type === 'button'
+      && textContent(node).includes('Calcular y ver dashboard'));
+    expect(calculate.props.disabled).toBe(false);
+
+    await calculate.props.onClick();
+    tree = renderApp();
+    expect(textContent(tree)).toContain('Executive Dashboard');
+  });
+});
+
 describe('Pre-filtro Marca en Configuración', () => {
   const renderDataverseApp = () => renderApp({ productSource: 'dataverse' });
   const brandInput = (tree) => findInput(tree, 'product-brand-options');

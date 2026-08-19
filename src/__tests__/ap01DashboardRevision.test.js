@@ -175,6 +175,36 @@ const buildProductMediaResults = () => {
   return execution.resultados;
 };
 
+const buildEolUniverseResults = () => {
+  const phaseDates = ['2026-07-31', '2026-08-28', '2026-08-29', '2026-10-24'];
+  const skus = Array.from({ length: 43 }, (_, index) => `EOL-${String(index + 1).padStart(2, '0')}`);
+  const repository = createSellThroughRepository({
+    rawInventario: [
+      'SKU\tTIER\tORIGEN\tINV INICIAL\tVENTAS\tINV FINAL',
+      ...skus.map((sku) => `${sku}\tEOL\tUSA\t2\t1\t1`),
+    ].join('\n'),
+    config: CONFIG,
+  });
+  const execution = processSellThrough(repository, {
+    products: skus.map((sku, index) => ({
+      sku,
+      productName: `Producto ${sku}`,
+      brand: 'SKULLCANDY',
+      category: 'AUDIO',
+      discontinuationDate: phaseDates[index % phaseDates.length],
+      creationDate: '2025-01-01',
+      level: 'EOL',
+      status: 'EOL',
+      imageUrl: '',
+      productUrl: '',
+      priceUSA: 10,
+      priceChina: 8,
+    })),
+  });
+  if (execution.error) throw new Error(execution.error);
+  return execution.resultados;
+};
+
 const renderDashboard = (resultados, { showActives = false, showKnowledge = false } = {}) => {
   stateHarness.overrides = {
     2: resultados,
@@ -208,8 +238,7 @@ describe('AP01 — presentación del Dashboard', () => {
       ['Valor en tránsito', 'MEDIA-ACTIVO'],
       ['% Acum.', 'MEDIA-ACTIVO'],
       ['Compra / Tránsito', 'MEDIA-ACTIVO'],
-      ['Desc. Consumi $', 'EOL-VENCIDO'],
-      ['Días hasta EOL', 'EOL-FUTURO'],
+      ['FASE EOL', 'EOL-FUTURO'],
       ['Modelo (del inventario)', 'SIN-MAESTRO'],
     ];
 
@@ -305,6 +334,44 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(content).toContain('Complementarios');
   });
 
+  it('reconcilia el KPI EOL con 43 filas, unidades, valor y las cuatro fases ordenadas', () => {
+    const resultados = buildEolUniverseResults();
+    const tree = renderDashboard(resultados);
+    const section = findElement(
+      tree,
+      (node) => node.type === 'div'
+        && node.props.className === 'bg-white border shadow-sm'
+        && textContent(node).includes('SKUs con EOL definido'),
+    );
+    const table = findElement(section, (node) => node.type === 'table');
+    const skuCells = findElements(
+      table,
+      (node) => node.type === ProductSkuCell && textContent(node).startsWith('EOL-'),
+    );
+    const phases = findElements(
+      table,
+      (node) => node.type === 'span' && node.props['data-eol-phase'],
+    ).map(textContent);
+
+    expect(resultados.totales).toMatchObject({ skuEOL: 43, unidEOL: 43, valorEOL: 430 });
+    expect(resultados.eolTodos).toHaveLength(43);
+    expect(skuCells).toHaveLength(resultados.totales.skuEOL);
+    expect(textContent(section)).toContain('Mismo universo del KPI: 43 SKU · 43 unidades · $430');
+    expect(phases).toHaveLength(43);
+    expect([...new Set(phases)]).toEqual(['VENCIDO', 'CRÍTICO', 'PRÓXIMO', 'PLANIFICADO']);
+    expect(textContent(table)).toContain('Liquidar / no reponer');
+  });
+
+  it('presenta primerDiaMes como Fecha base EOL sin confundirla con Fecha de corte', () => {
+    const tree = renderDashboard(buildResults());
+    const content = textContent(tree);
+
+    expect(content).toContain('Fecha base EOL');
+    expect(content).toContain('01 de agosto de 2026');
+    expect(content).toContain('Primer día del mes utilizado para calcular días y fases EOL.');
+    expect(content).toContain('Fecha de corte');
+  });
+
   it('expone unidades explícitas en alertas y leyendas compactas por sección', () => {
     const tree = renderDashboard(buildResults(), { showActives: true });
     const alertCards = findElements(
@@ -345,7 +412,7 @@ describe('AP01 — presentación del Dashboard', () => {
     const replenishmentContent = textContent(replenishmentSection);
     const dashboardContent = textContent(tree);
     const replenishmentPosition = dashboardContent.indexOf('Productos de Reposición Sugerida');
-    const eolPosition = dashboardContent.indexOf('SKUs EOL', replenishmentPosition);
+    const eolPosition = dashboardContent.indexOf('SKUs con EOL definido', replenishmentPosition);
 
     expect(mixCards.map(({ props }) => [props.label, props.value])).toEqual([
       ['Cantidad de SKU', resultados.distribucionTier.inventario.totalSKUs],
@@ -392,10 +459,11 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(content).toContain('Azul: normal, 33.33%–100%');
     expect(content).toContain('Ámbar: lenta, 10%–<33.33%');
     expect(content).toContain('Rojo: crítica, <10%');
-    expect(content).toContain('EOL vencido:');
+    expect(content).toContain('EOL vencido: la fecha EOL es igual o anterior a la Fecha base EOL.');
     expect(content).toContain('EOL crítico: faltan 1–27 días.');
     expect(content).toContain('EOL próximo: faltan 28–83 días.');
     expect(content).toContain('EOL planificado: faltan 84 días o más.');
+    expect(content).toContain('días restantes = Fecha EOL − Fecha base EOL');
     expect(content).toContain('45 días restantes corresponde a EOL próximo');
     expect(content).toContain('no constituye comunicación de descuentos al consumidor');
   });

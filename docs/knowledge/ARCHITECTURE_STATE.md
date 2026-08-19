@@ -2,6 +2,21 @@
 
 ## Fase actual
 
+PHASE1-096 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**.
+La tabla principal `SKUs con EOL definido` reutiliza `eolTodos`, el mismo
+universo de `skuEOL`, `unidEOL` y `valorEOL`, y lo ordena visualmente como
+VENCIDO, CRÍTICO, PRÓXIMO y PLANIFICADO a partir del bucket ya calculado. Las
+acciones EOL, descuentos, umbrales y motores permanecen intactos.
+
+Carga de Información expone únicamente Inventario del Cliente como entrada
+manual, numerado `1` y centrado; Product Master conserva Application Service,
+Repository, Provider, Dataverse y la fuente local técnica. El encabezado
+identifica `primerDiaMes()` como `Fecha base EOL` y lo mantiene separado de
+`fechaCorte`. Sin cambios backend, fuentes, filtros, mappings, precios,
+reposición, timeouts o infraestructura. La validación final cierra con frontend
+35/35 archivos y 414/414 pruebas, build Vite de 1,689 módulos y backend no
+aplicable al no existir cambios bajo `server/`.
+
 PHASE1-094 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**. Valorización
 usa una sola selección por origen y agrega únicamente
 importes calculables sin convertir `null` a cero; el total se obtiene desde

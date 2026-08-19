@@ -1,5 +1,18 @@
 # Roadmap aprobado
 
+## Phase1-096 — Finalize EOL Consistency and Simplify Data Load Screen
+
+La presentación reconcilia KPI y detalle sobre todos los SKU con EOL definido,
+con las fases VENCIDO, CRÍTICO, PRÓXIMO y PLANIFICADO provenientes de los
+buckets vigentes. Carga de Información retira solo la entrada manual de Product
+Master, centra y renumera Inventario del Cliente, y aclara `primerDiaMes()` como
+Fecha base EOL.
+
+Product/Dataverse, providers, repositories, fuente local técnica, precios,
+acciones, descuentos, reposición, `fechaCorte`, timezone y motores no cambian.
+Siguiente acción externa exacta: validar visualmente una vez en desktop/mobile
+y autorizar separadamente cualquier deploy.
+
 ## Phase1-094 — Final Presentation Audit and Consolidated UX/Data Corrections
 
 Hito consolidado para presentación: corrige agregados monetarios parciales,
