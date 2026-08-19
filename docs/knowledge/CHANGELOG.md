@@ -1,5 +1,22 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-19 — PHASE1-092
+
+### Imágenes Product y hyperlinks SKU
+
+- Nuevo `ProductSkuCell` reutilizable con miniatura compacta, fallback, alt por
+  SKU y link `target="_blank"` / `rel="noopener noreferrer"`.
+- Solo `http:`/`https:` se aceptan para `imageUrl/productUrl`; esquemas
+  inseguros, relativos o inválidos se omiten sin exponer la URL.
+- Aplicado a once tablas SKU del Dashboard, tres tablas del Informe y Producto
+  Héroe; tablas/KPI agregados permanecen intactos.
+- Inventario en tránsito conserva `imageUrl/productUrl`; el resto de records y
+  datasets Product ya mantenían ambos campos.
+- Sin cambios backend, mappings, fuentes, Customer, precios, filtros, New, EOL,
+  reposición, Brands, Excel gráfico o infraestructura.
+- Frontend PASS con 34 archivos/405 pruebas y build Vite de 1.685 módulos;
+  backend no ejecutado por ausencia de cambios.
+
 ## 2026-08-19 — PHASE1-090
 
 ### Latest Product record por grupo comercial

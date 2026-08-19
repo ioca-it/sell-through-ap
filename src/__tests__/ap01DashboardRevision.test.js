@@ -55,6 +55,7 @@ vi.mock('xlsx', async (importOriginal) => {
 import App from '../App.jsx';
 import * as XLSX from 'xlsx';
 import { processSellThrough } from '../application/sellThroughApplicationService.js';
+import { ProductSkuCell } from '../components/ProductSkuCell.jsx';
 import { createSellThroughRepository } from '../repositories/sellThroughRepository.js';
 
 const CONFIG = {
@@ -121,6 +122,54 @@ const buildResults = () => {
   return execution.resultados;
 };
 
+const buildProductMediaResults = () => {
+  const repository = createSellThroughRepository({
+    rawInventario: [
+      'SKU\tTIER\tORIGEN\tINV SEGURIDAD\tINV INICIAL\tCOMPRA\tVENTAS\tINV PROYECTADO\tINV FINAL',
+      'MEDIA-ACTIVO\tBEST\t\t10\t20\t2\t10\t12\t2',
+      'SIN-MOVIMIENTO\tGOOD\tUSA\t1\t20\t0\t0\t20\t20',
+      'EOL-VENCIDO\tEOL\tUSA\t1\t10\t0\t0\t10\t10',
+      'EOL-FUTURO\tEOL\tCHINA\t1\t5\t0\t1\t4\t4',
+      'SIN-MAESTRO\tGOOD\tUSA\t1\t3\t0\t1\t2\t2',
+    ].join('\n'),
+    config: CONFIG,
+  });
+  const product = (sku, overrides = {}) => ({
+    sku,
+    productName: `Producto ${sku}`,
+    brand: 'SKULLCANDY',
+    category: 'AUDIO',
+    discontinuationDate: null,
+    creationDate: '2025-01-01T00:00:00.000Z',
+    level: 'BEST',
+    status: 'ACTIVO',
+    imageUrl: `https://images.example.test/${sku.toLowerCase()}.png`,
+    productUrl: `https://products.example.test/${sku.toLowerCase()}`,
+    priceUSA: 10,
+    priceChina: 8,
+    ...overrides,
+  });
+  const execution = processSellThrough(repository, {
+    products: [
+      product('MEDIA-ACTIVO'),
+      product('SIN-MOVIMIENTO'),
+      product('EOL-VENCIDO', {
+        status: 'EOL',
+        discontinuationDate: '2025-01-01T00:00:00.000Z',
+      }),
+      product('EOL-FUTURO', {
+        status: 'EOL',
+        discontinuationDate: '2026-10-01T00:00:00.000Z',
+      }),
+      product('NUEVO-AUSENTE', {
+        creationDate: '2026-07-15T00:00:00.000Z',
+      }),
+    ],
+  });
+  if (execution.error) throw new Error(execution.error);
+  return execution.resultados;
+};
+
 const renderDashboard = (resultados, { showActives = false, showKnowledge = false } = {}) => {
   stateHarness.overrides = {
     2: resultados,
@@ -143,6 +192,76 @@ afterAll(() => {
 });
 
 describe('AP01 — presentación del Dashboard', () => {
+  it('aplica ProductSkuCell en todas las tablas de detalle SKU del Dashboard', () => {
+    const resultados = buildProductMediaResults();
+    const tree = renderDashboard(resultados, { showActives: true });
+    const tableCases = [
+      ['Costo USA aplicado', 'MEDIA-ACTIVO'],
+      ['Merma (u)', 'MEDIA-ACTIVO'],
+      ['Reposición Final', 'MEDIA-ACTIVO'],
+      ['Fecha de creación', 'NUEVO-AUSENTE'],
+      ['Valor en tránsito', 'MEDIA-ACTIVO'],
+      ['% Acum.', 'MEDIA-ACTIVO'],
+      ['Compra / Tránsito', 'MEDIA-ACTIVO'],
+      ['Desc. Consumi $', 'EOL-VENCIDO'],
+      ['Días hasta EOL', 'EOL-FUTURO'],
+      ['Modelo (del inventario)', 'SIN-MAESTRO'],
+    ];
+
+    tableCases.forEach(([header, sku]) => {
+      const table = findElement(
+        tree,
+        (node) => node.type === 'table' && textContent(node).includes(header),
+      );
+      const cell = findElement(
+        table,
+        (node) => node.type === ProductSkuCell && textContent(node) === sku,
+      );
+
+      expect(table, header).not.toBeNull();
+      expect(cell, `${header}:${sku}`).not.toBeNull();
+      if (sku === 'SIN-MAESTRO') {
+        expect(cell.props).toMatchObject({ imageUrl: '', productUrl: '' });
+      } else {
+        expect(cell.props.imageUrl).toBe(`https://images.example.test/${sku.toLowerCase()}.png`);
+        expect(cell.props.productUrl).toBe(`https://products.example.test/${sku.toLowerCase()}`);
+      }
+    });
+
+    const activeSection = findElement(
+      tree,
+      (node) => node.type === 'div'
+        && node.props.className === 'bg-white border shadow-sm'
+        && textContent(node).includes('SKUs Activos ('),
+    );
+    const activeCell = findElement(
+      activeSection,
+      (node) => node.type === ProductSkuCell && textContent(node) === 'MEDIA-ACTIVO',
+    );
+    expect(activeCell).not.toBeNull();
+    expect(activeCell.props.productUrl).toBe('https://products.example.test/media-activo');
+  });
+
+  it('aplica ProductSkuCell compacto en las tres tablas SKU del Informe Ejecutivo', () => {
+    const resultados = buildProductMediaResults();
+    stateHarness.overrides = { 2: resultados, 6: 'informe' };
+    stateHarness.values = [];
+    stateHarness.nextIndex = 0;
+    const reportTree = App();
+    const expectedSkus = ['MEDIA-ACTIVO', 'EOL-VENCIDO', 'SIN-MOVIMIENTO'];
+
+    expectedSkus.forEach((sku) => {
+      const cell = findElement(
+        reportTree,
+        (node) => node.type === ProductSkuCell && textContent(node) === sku,
+      );
+      expect(cell, sku).not.toBeNull();
+      expect(cell.props.compact).toBe(true);
+      expect(cell.props.imageUrl).toBe(`https://images.example.test/${sku.toLowerCase()}.png`);
+      expect(cell.props.productUrl).toBe(`https://products.example.test/${sku.toLowerCase()}`);
+    });
+  });
+
   it('consolida Executive Summary y elimina las secciones independientes aprobadas', () => {
     const tree = renderDashboard(buildResults());
     const executiveSection = findElement(

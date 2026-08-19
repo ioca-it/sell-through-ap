@@ -2,6 +2,26 @@
 
 ## Fase actual
 
+PHASE1-092 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**. La UI consume
+exclusivamente `imageUrl` y `productUrl` del contrato
+Product normalizado mediante `ProductSkuCell`: miniatura compacta con fallback,
+alt basado en SKU y enlace seguro en nueva pestaña. Solo `http:`/`https:` son
+válidos; otros esquemas o URLs inválidas nunca se renderizan como imagen/link.
+
+El componente se aplica a las once tablas SKU del Dashboard, las tres tablas
+SKU del Informe Ejecutivo y Producto Héroe. El único gap derivado encontrado,
+Inventario en tránsito, conserva ahora ambos campos al agregarse. Datos
+Completos continúa como hoja Excel sin imágenes binarias; distribuciones,
+diagnóstico y referencias agregadas no cambian porque no contienen filas por
+producto. Providers local/Dataverse, mappings backend, Customer, precios,
+filtros, New, EOL, reposición, Brands y exportaciones permanecen intactos.
+
+La validación local cierra con frontend 405/405 y build Vite correcto; backend
+no se ejecuta porque no cambió ningún archivo bajo `server/`.
+
+La validación visual desktop/mobile y cualquier deploy requieren autorización
+externa separada. Phase1-092 no modifica backend ni sistemas externos.
+
 PHASE1-090 queda **IMPLEMENTED LOCALLY / NOT DEPLOYED**. Después de los filtros
 comerciales y de marca vigentes, Product Price Level Gateway agrupa por
 `SKU + ORIGIN + BUYER COMPANY` y conserva únicamente las filas empatadas en

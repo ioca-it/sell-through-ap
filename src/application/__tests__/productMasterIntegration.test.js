@@ -32,8 +32,8 @@ describe('Product normalizado en el pipeline existente', () => {
   it('alimenta motores y detalle SKU sin pasar por texto u OData', () => {
     const repository = createSellThroughRepository({
       rawInventario: [
-        'SKU\tORIGEN\tINV INICIAL\tVENTAS\tINV FINAL',
-        'SKU-001\tCHINA\t5\t1\t4',
+        'SKU\tORIGEN\tINV INICIAL\tCOMPRA\tVENTAS\tINV FINAL',
+        'SKU-001\tCHINA\t5\t2\t1\t4',
       ].join('\n'),
       config,
     });
@@ -52,6 +52,11 @@ describe('Product normalizado en el pipeline existente', () => {
       imageUrl: 'https://images.invalid/sku-001.png',
       productUrl: 'https://products.invalid/sku-001',
       level: 'BETTER',
+    });
+    expect(execution.resultados.alertas.productosEnTransito[0]).toMatchObject({
+      sku: 'SKU-001',
+      imageUrl: 'https://images.invalid/sku-001.png',
+      productUrl: 'https://products.invalid/sku-001',
     });
   });
 

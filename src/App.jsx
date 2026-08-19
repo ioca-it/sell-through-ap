@@ -41,6 +41,7 @@ import {
   subtractPrices,
   sumPriceValues,
 } from './domain/product/product.js';
+import { ProductSkuCell } from './components/ProductSkuCell.jsx';
 
 // La hidratación ocurre en el servicio; mantenerla fuera del componente permite
 // conservar los contratos de caracterización que ejecutan App como función pura.
@@ -2161,7 +2162,7 @@ export default function App({
                       <tbody>
                         {resultados.alertas.skusSinOrigen.map((r, i) => (
                           <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
-                            <Td bold>{r.sku}</Td>
+                            <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                             <Td className="text-stone-600">{r.modelo}</Td>
                             <Td>{r.estado}</Td>
                             <Td align="right" bold style={{ color: '#1e40af' }}>{fmtUSD(r.costoUSA)}</Td>
@@ -2200,7 +2201,7 @@ export default function App({
                       <tbody>
                         {resultados.alertas.skusConMerma.map((r, i) => (
                           <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
-                            <Td bold>{r.sku}</Td>
+                            <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                             <Td className="text-stone-600">{r.modelo}</Td>
                             <Td align="center">{r.invInicial}</Td>
                             <Td align="center">{r.compra}</Td>
@@ -2265,7 +2266,7 @@ export default function App({
                           const deltaColor = r.deltaInvSeguridad > 0 ? '#7f1d1d' : (r.deltaInvSeguridad < 0 ? '#065f46' : '#666');
                           return (
                             <tr key={i} className="border-t" style={{ borderColor: '#e5e0d5' }}>
-                              <Td bold>{r.sku}</Td>
+                              <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                               <Td className="text-stone-600">{r.modelo}</Td>
                               <Td align="center" bold>
                                 <span className="px-2 py-0.5 text-[10px]" style={{
@@ -2331,7 +2332,7 @@ export default function App({
                     )}
                     {productosNuevosNoPresentes.map((product) => (
                       <tr key={product.sku} className="border-t" style={{ borderColor: '#e5e0d5' }}>
-                        <Td bold>{product.sku}</Td>
+                        <Td><ProductSkuCell imageUrl={product.imageUrl} productUrl={product.productUrl}>{product.sku}</ProductSkuCell></Td>
                         <Td className="text-stone-600">{product.modelo}</Td>
                         <Td>{product.marca}</Td>
                         <Td>{product.categoria}</Td>
@@ -2375,7 +2376,7 @@ export default function App({
                     )}
                     {resultados.alertas.productosEnTransito.map((r) => (
                       <tr key={r.sku} className="border-t" style={{ borderColor: '#e5e0d5' }}>
-                        <Td bold>{r.sku}</Td>
+                        <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                         <Td className="text-stone-600">{r.modelo}</Td>
                         <Td align="center">{r.estado}</Td>
                         <Td align="center" bold>{r.tier || 'SIN CATEGORIA'}</Td>
@@ -2584,7 +2585,7 @@ export default function App({
                                   color: 'white',
                                 }}>{renderServiceValue(r.paretoClase)}</span>
                               </Td>
-                              <Td bold>{r.sku}</Td>
+                              <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                               <Td className="text-stone-600">{r.modelo}</Td>
                               <Td>{r.marca}</Td>
                               <Td align="center">
@@ -2645,7 +2646,7 @@ export default function App({
                     )}
                     {productosReposicionSugerida.map((record, index) => (
                       <tr key={`${record.sku}-${index}`} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
-                        <Td bold>{record.sku}</Td>
+                        <Td><ProductSkuCell imageUrl={record.imageUrl} productUrl={record.productUrl}>{record.sku}</ProductSkuCell></Td>
                         <Td className="text-stone-600">{record.modelo}</Td>
                         <Td align="center">{record.tier}</Td>
                         <Td align="center">{record.invProyectado}</Td>
@@ -2701,7 +2702,7 @@ export default function App({
                       const colorRot = colorIdxRotacion(r.indiceRotacion);
                       return (
                       <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
-                        <Td bold>{r.sku}</Td>
+                        <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                         <Td className="text-stone-600">{r.modelo}</Td>
                         <Td>{r.marca}</Td>
                         <Td align="center">{r.fechaStr}</Td>
@@ -2788,7 +2789,7 @@ export default function App({
                         const colorRot = colorIdxRotacion(r.indiceRotacion);
                         return (
                         <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
-                          <Td bold>{r.sku}</Td>
+                          <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                           <Td className="text-stone-600">{r.modelo}</Td>
                           <Td>{r.marca}</Td>
                           <Td align="center">{r.fechaStr}</Td>
@@ -2848,7 +2849,7 @@ export default function App({
                     <tbody>
                       {resultados.sinMaestro.map((r, i) => (
                         <tr key={i} className="border-t" style={{ borderColor: '#fde68a' }}>
-                          <Td bold>{r.sku}</Td>
+                          <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                           <Td className="text-stone-600">{r.modelo}</Td>
                           <Td>{r.tienda}</Td>
                           <Td align="center" bold>{r.invFinal}</Td>
@@ -2896,7 +2897,7 @@ export default function App({
                           const colorRot = colorIdxRotacion(r.indiceRotacion);
                           return (
                           <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
-                            <Td bold>{r.sku}</Td>
+                            <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
                             <Td className="text-stone-600">{r.modelo}</Td>
                             <Td>{r.marca}</Td>
                             <Td align="center" bold>
@@ -3364,7 +3365,7 @@ export default function App({
                         <tbody>
                           {informe.topReponer.map((r, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
-                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{renderServiceValue(r.sku)}</td>
+                              <td style={{ padding: '6px 8px' }}><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl} compact>{r.sku}</ProductSkuCell></td>
                               <td style={{ padding: '6px 8px', color: '#666' }}>{renderServiceValue(r.modelo)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center' }}>{renderServiceValue(r.tier)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'right' }}>{renderServiceValue(r.ventas)}</td>
@@ -3394,7 +3395,7 @@ export default function App({
                         <tbody>
                           {informe.topLiquidar.map((r, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
-                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{renderServiceValue(r.sku)}</td>
+                              <td style={{ padding: '6px 8px' }}><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl} compact>{r.sku}</ProductSkuCell></td>
                               <td style={{ padding: '6px 8px', color: '#666' }}>{renderServiceValue(r.modelo)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center' }}>{r.fase !== null ? `F${r.fase}` : '—'}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'right' }}>{renderServiceValue(r.diasDesc)}</td>
@@ -3423,7 +3424,7 @@ export default function App({
                         <tbody>
                           {informe.topEliminar.map((r, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #e5e0d5' }}>
-                              <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{renderServiceValue(r.sku)}</td>
+                              <td style={{ padding: '6px 8px' }}><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl} compact>{r.sku}</ProductSkuCell></td>
                               <td style={{ padding: '6px 8px', color: '#666' }}>{renderServiceValue(r.modelo)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'center' }}>{renderServiceValue(r.tier)}</td>
                               <td style={{ padding: '6px 8px', textAlign: 'right' }}>{renderServiceValue(r.invFinal)}</td>
@@ -3447,8 +3448,10 @@ export default function App({
                   
                   {informe.skuHeroe && (
                     <div style={{ background: '#faf8f3', border: '1px solid #d4af37', padding: '14px', marginBottom: '12px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540', marginBottom: '8px' }}>
-                        PRODUCTO HÉROE: {renderServiceValue(informe.skuHeroe.sku)} — {renderServiceValue(informe.skuHeroe.modelo)}
+                      <div className="flex items-center gap-2 flex-wrap" style={{ fontSize: '12px', fontWeight: 'bold', color: '#0a2540', marginBottom: '8px' }}>
+                        <span>PRODUCTO HÉROE:</span>
+                        <ProductSkuCell imageUrl={informe.skuHeroe.imageUrl} productUrl={informe.skuHeroe.productUrl} compact>{informe.skuHeroe.sku}</ProductSkuCell>
+                        <span>— {renderServiceValue(informe.skuHeroe.modelo)}</span>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '11px', lineHeight: '1.5' }}>
                         <div><strong style={{ color: '#d4af37' }}>Tier / Categoría:</strong> {renderServiceValue(informe.skuHeroe.tier)} · {renderServiceValue(informe.skuHeroe.categoria)}</div>

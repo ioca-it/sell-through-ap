@@ -294,6 +294,49 @@ describe('Pre-filtro Marca en Configuración', () => {
     expect(brandInput(tree).props.value).toBe('SKULLCANDY');
   });
 
+  it('cambiar de marca elimina imageUrl/productUrl anteriores antes de aceptar el nuevo dataset', async () => {
+    const productsByBrand = {
+      ANKER: [{
+        sku: 'ANKER-1',
+        imageUrl: 'https://images.example.test/anker-1.png',
+        productUrl: 'https://products.example.test/anker-1',
+      }],
+      SKULLCANDY: [{
+        sku: 'SKULL-1',
+        imageUrl: 'https://images.example.test/skull-1.png',
+        productUrl: 'https://products.example.test/skull-1',
+      }],
+    };
+    productMasterService.loadProducts.mockImplementation(async ({ brand }) => productsByBrand[brand]);
+    let tree = await loadBrandOptions();
+
+    brandOption(tree, 'ANKER').props.onClick();
+    await vi.waitFor(() => {
+      tree = renderDataverseApp();
+      expect(stateHarness.values[21]).toMatchObject({
+        status: 'ready',
+        brand: 'ANKER',
+        products: productsByBrand.ANKER,
+      });
+    });
+
+    brandInput(tree).props.onChange({ target: { value: 'SKULL' } });
+    expect(stateHarness.values[21]).toMatchObject({ status: 'idle', brand: '', products: [] });
+    expect(JSON.stringify(stateHarness.values[21])).not.toMatch(/anker-1/);
+
+    tree = renderDataverseApp();
+    brandOption(tree, 'SKULLCANDY').props.onClick();
+    await vi.waitFor(() => {
+      tree = renderDataverseApp();
+      expect(stateHarness.values[21]).toMatchObject({
+        status: 'ready',
+        brand: 'SKULLCANDY',
+        products: productsByBrand.SKULLCANDY,
+      });
+    });
+    expect(JSON.stringify(stateHarness.values[21])).not.toMatch(/anker-1/);
+  });
+
   it('recorre Factory Dataverse, Repository y Service hasta mostrar las 33 marcas', async () => {
     const brands = [
       ...Array.from({ length: 32 }, (_, index) => `MARCA-${String(index + 1).padStart(2, '0')}`),

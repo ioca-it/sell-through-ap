@@ -190,6 +190,8 @@ const analyzePortfolio = ({
       modelo: record.modelo,
       estado: record.estado,
       tier: record.tier,
+      imageUrl: record.imageUrl,
+      productUrl: record.productUrl,
       unidadesEnTransito: record.compra,
       valorEnTransito,
     });

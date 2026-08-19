@@ -75,6 +75,25 @@ describe('DataverseProductProvider vía backend portable', () => {
     expect(Object.keys((await provider.loadProducts({ brand: 'Marca' }))[0])).not.toContain('extra');
   });
 
+  it('conserva imageUrl y productUrl normalizadas en el contrato público', async () => {
+    const { provider } = createProvider({
+      payload: {
+        products: [{
+          ...apiProduct,
+          imageUrl: ' https://images.example.test/sku-001.png ',
+          productUrl: ' https://products.example.test/sku-001 ',
+        }],
+      },
+    });
+
+    await expect(provider.loadProducts({ brand: 'Marca' })).resolves.toEqual([
+      expect.objectContaining({
+        imageUrl: 'https://images.example.test/sku-001.png',
+        productUrl: 'https://products.example.test/sku-001',
+      }),
+    ]);
+  });
+
   it('preserva precios null y cero sin aplicar fallback', async () => {
     const { provider } = createProvider({
       payload: { products: [{ ...apiProduct, priceUSA: 0, priceChina: null }] },

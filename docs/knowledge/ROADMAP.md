@@ -1,5 +1,22 @@
 # Roadmap aprobado
 
+## Phase1-092 — Apply Product Images and SKU Hyperlinks Across Detail Tables
+
+La presentación reutiliza el contrato normalizado Product para mostrar una
+miniatura y convertir el SKU en link seguro en todas las vistas de detalle.
+`ProductSkuCell` acepta únicamente `http:`/`https:`, abre `productUrl` en otra
+pestaña con `noopener noreferrer` y usa fallback neutro ante ausencia, URL
+inválida o fallo de imagen.
+
+Se cubren once tablas SKU del Dashboard, tres del Informe y Producto Héroe.
+Tránsito preserva ahora `imageUrl/productUrl`; el resto del pipeline ya los
+mantenía. Datos Completos sigue siendo exportación Excel sin binarios y las
+tablas agregadas no cambian.
+
+Siguiente acción externa exacta: validar visualmente desktop/mobile con media
+real y, si se autoriza, desplegar el frontend con Product Dataverse activo. El
+hito no cambia backend, variables, Dataverse, Entra, Render o Vercel.
+
 ## Phase1-090 — Resolve Product Duplicates by Latest Record
 
 Product Master aplica la precedencia funcional aprobada después de sus filtros
