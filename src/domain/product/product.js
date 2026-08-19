@@ -65,12 +65,18 @@ export const subtractPrices = (left, right) => (
 );
 
 export const sumPriceValues = (values) => {
+  // Opti ChatGPT: un precio ausente invalida ese SKU, no los importes válidos
+  // del resto del bloque. Si ningún importe está disponible se conserva null.
+  if (values.length === 0) return 0;
   let total = 0;
+  let availableValues = 0;
   for (const value of values) {
-    if (!isAvailablePrice(value)) return null;
-    total += value;
+    if (isAvailablePrice(value)) {
+      total += value;
+      availableValues += 1;
+    }
   }
-  return total;
+  return availableValues > 0 ? total : null;
 };
 
 export const normalizeProduct = (product = {}) => {

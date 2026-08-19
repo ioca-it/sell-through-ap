@@ -146,3 +146,21 @@ export const obtenerAccionQuiebreEOL = ({ alertaQuiebre, bucket }) => {
   }
   return 'Verificar Maestro y decidir';
 };
+
+// EOL siempre bloquea la reposición normal. La recomendación combina la
+// prioridad temporal con la clase Pareto real ya calculada por el caso de uso.
+export const obtenerRecomendacionEOL = ({ bucket, paretoClase }) => {
+  if (bucket === 'EOL Vencido' || bucket === 'EOL Crítico') {
+    return 'Liquidar / no reponer';
+  }
+  if (paretoClase === 'A') {
+    return 'Rebalancear / agotar stock · no reponer';
+  }
+  if (paretoClase === 'B') {
+    return 'Reducción / rebalanceo selectivo · no reponer';
+  }
+  if (bucket === 'EOL Próximo' || bucket === 'EOL Planificado') {
+    return 'Liquidar selectivamente / no reponer';
+  }
+  return 'Revisar Maestro / no reponer';
+};

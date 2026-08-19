@@ -38,7 +38,7 @@ import {
   obtenerSemanasPeriodo,
   calcularInventarioProyectado,
   calcularMerma,
-  calcularIndiceRotacion,
+  calcularPorcentajeRotacion,
   seleccionarOrigen,
   seleccionarCostoPorOrigen,
   calcularInventarioSeguridadIOCA,
@@ -302,11 +302,11 @@ describe('Inventory Engine extraído', () => {
   });
 
   it.each([
-    ['un valor normal', 20, 10, 2],
-    ['otro valor numérico', 30, 10, 3],
-    ['ventas en cero', 10, 0, null],
-  ])('congela el índice de rotación para %s', (_case, invInicial, ventas, expected) => {
-    expect(calcularIndiceRotacion({ invInicial, ventas })).toBe(expected);
+    ['el ejemplo aprobado', 500, 125, 25],
+    ['ventas en cero', 10, 0, 0],
+    ['inventario inicial en cero', 0, 10, null],
+  ])('calcula el Porcentaje de Rotación para %s', (_case, invInicial, ventas, expected) => {
+    expect(calcularPorcentajeRotacion({ invInicial, ventas })).toBe(expected);
   });
 
   it.each([
@@ -398,7 +398,7 @@ describe('Inventory Engine extraído', () => {
     expect(bridgeRecords['ACTIVE-USA']).toMatchObject({
       merma: 3,
       mermaPct: 0.15,
-      indiceRotacion: 2,
+      porcentajeRotacion: 50,
       origen: 'USA',
       costo: 100,
       invSeguridadIOCA: 19,
@@ -420,7 +420,7 @@ describe('Inventory Engine extraído', () => {
       estado: 'SIN MAESTRO',
       origen: '—',
       sinOrigenInv: true,
-      costo: 0,
+      costo: null,
       invSeguridadIOCA: 3,
       fuenteInvSeguridad: 'Cliente',
       alertaQuiebre: true,

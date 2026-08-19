@@ -1,6 +1,6 @@
 // Caracteriza los contratos visibles de formato sin depender de componentes React.
 import { describe, expect, it } from 'vitest';
-import { fmtUSD, fmtPct, fmtIdx, fmtUSDInline } from '../formatters.js';
+import { fmtUSD, fmtPct, fmtUSDInline } from '../formatters.js';
 
 const usdCases = [
   ['redondea 255142.86 al entero más cercano', 255142.86, '$255,143'],
@@ -26,14 +26,14 @@ describe.each([
     expect(formatter(value)).toBe(expected);
   });
 
-  it.each(absentNumberCases)('devuelve guion para %s', (_case, value) => {
-    expect(formatter(value)).toBe('—');
+  it.each(absentNumberCases)('devuelve N/D para %s', (_case, value) => {
+    expect(formatter(value)).toBe('N/D');
   });
 });
 
 it('no representa un precio null como $0', () => {
-  expect(fmtUSD(null)).toBe('—');
-  expect(fmtUSDInline(null)).toBe('—');
+  expect(fmtUSD(null)).toBe('N/D');
+  expect(fmtUSDInline(null)).toBe('N/D');
 });
 
 describe('fmtPct', () => {
@@ -47,19 +47,5 @@ describe('fmtPct', () => {
 
   it.each(absentNumberCases)('devuelve guion para %s', (_case, value) => {
     expect(fmtPct(value)).toBe('—');
-  });
-});
-
-describe('fmtIdx', () => {
-  it.each([
-    ['formatea un índice normal', 1.234, '1.23'],
-    ['formatea cero', 0, '0.00'],
-    ['formatea un índice negativo', -1.2, '-1.20'],
-  ])('%s', (_case, value, expected) => {
-    expect(fmtIdx(value)).toBe(expected);
-  });
-
-  it.each(absentNumberCases)('devuelve guion para %s', (_case, value) => {
-    expect(fmtIdx(value)).toBe('—');
   });
 });

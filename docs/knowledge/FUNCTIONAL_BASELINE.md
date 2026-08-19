@@ -362,7 +362,8 @@ Responsabilidades:
 
 - resolución de origen y costo;
 - Inventario Proyectado y merma;
-- índice de rotación;
+- Porcentaje de Rotación (`Ventas / Inventario Inicial × 100`), no calculable
+  cuando el inventario inicial es cero;
 - Inventario de Seguridad IOCA con redondeo hacia arriba;
 - delta contra inventario de seguridad del cliente;
 - alerta de quiebre, reposición para activos y acción sugerida;

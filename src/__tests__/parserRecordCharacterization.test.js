@@ -135,7 +135,7 @@ const PRESENT_MASTER_RECORD_KEYS = [
   'fase',
   'fechaStr',
   'fuenteInvSeguridad',
-  'indiceRotacion',
+  'porcentajeRotacion',
   'imageUrl',
   'invFinal',
   'invInicial',
@@ -549,16 +549,16 @@ describe('registros SIN MAESTRO y contratos finales', () => {
       fase: null,
       origen: 'CHINA',
       sinOrigenInv: false,
-      costo: 0,
+      costo: null,
       invSeguridadIOCA: 5,
       fuenteInvSeguridad: 'Cliente',
       reposicionSugerida: 0,
-      valorInv: 0,
-      valorVentas: 0,
+      valorInv: null,
+      valorVentas: null,
     });
     expect(record).not.toHaveProperty('ioaPct');
     expect(record).not.toHaveProperty('retailPct');
-    expect(record).not.toHaveProperty('valorReposicion');
+    expect(record.valorReposicion).toBeNull();
   });
 
   it('aplica nombre, origen y acción actuales cuando faltan Maestro y datos opcionales', () => {

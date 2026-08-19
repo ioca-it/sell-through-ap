@@ -84,7 +84,8 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 
 ### BR-005 — SKU sin maestro
 
-- Se conserva como `SIN MAESTRO`, con categoría `SIN CATEGORIA`, costo y valores financieros en cero.
+- Se conserva como `SIN MAESTRO`, con categoría `SIN CATEGORIA`; costo y
+  valores financieros permanecen `null` porque no existe precio aplicable.
 - Su Inventario de Seguridad IOCA se iguala al informado por el cliente.
 - No obtiene reposición sugerida automática.
 - Si queda bajo el inventario de seguridad del cliente, la acción es agregarlo al maestro y decidir.
@@ -161,6 +162,10 @@ ceil((Ventas / Semanas del período) × (Safety Stock en semanas + Lead Time del
 - La alerta de nivel de seguridad ocurre si el Inventario de Seguridad IOCA es mayor que cero y el Inventario Proyectado es menor. No usa Inventario Final para esa comparación.
 - Inventario Proyectado conserva valores negativos.
 - Un EOL en quiebre no genera reposición: la acción depende del bucket (`rebalanceo`, aceptar quiebre, liquidar o dejar morir).
+- La recomendación ejecutiva EOL mantiene prioridad sobre Pareto: vencido o
+  crítico se liquida; un futuro A puede rebalancearse/agotar stock; un futuro B
+  reduce o rebalancea selectivamente; los futuros restantes se liquidan
+  selectivamente. Todas las variantes terminan en no reponer.
 - Las alertas operativas, conteos y tablas de bajo inventario/seguridad exponen únicamente productos `ACTIVO`. La señal calculada por el Inventory Engine para EOL se conserva internamente y no participa en esos indicadores.
 
 ### BR-013 — Merma
@@ -169,20 +174,32 @@ ceil((Ventas / Semanas del período) × (Safety Stock en semanas + Lead Time del
 - `merma % = merma / Inv. Inicial` cuando Inv. Inicial es mayor que cero; en otro caso es cero.
 - La alerta exige Inv. Inicial mayor que cero y merma estrictamente superior al umbral actual de `10%`.
 
-### BR-014 — Índice de rotación
+### BR-014 — Porcentaje de Rotación
 
-- `índice de rotación = Inv. Inicial / Ventas`.
-- Si Ventas es cero, el índice es `null`.
-- Interpretación visual actual: menor que 1, alta; de 1 a 3, normal; mayor que 3 y hasta 10, lenta; mayor que 10, muy lenta.
-- El informe considera sobreinventario activo cuando el índice es mayor que 5.
+- `Porcentaje de Rotación = Ventas / Inv. Inicial × 100`.
+- Si Inventario Inicial es cero, el porcentaje es `null`; Ventas cero con
+  Inventario Inicial positivo produce `0%`.
+- Interpretación visual: mayor que `100%`, alta; de `33.33%` a `100%`, normal;
+  de `10%` a menos de `33.33%`, lenta; menos de `10%`, crítica.
+- El informe considera sobreinventario activo con ventas positivas cuando el
+  porcentaje es menor que `20%`.
 
 ### BR-015 — Valores financieros
 
 - Valor de inventario: costo aplicado por Inventario Final.
 - Valor de ventas: costo aplicado por Ventas.
 - Valor de reposición: costo aplicado por Reposición Sugerida.
-- El costo aplicado conserva la selección vigente: China usa costo China; USA y otros/vacío usan el fallback USA.
-- `Valor Total Inventario = Valor Activo + Valor EOL + Valor EOL Futuro + Valor Sin Maestro`.
+- El costo aplicado conserva la selección vigente: China usa costo China; USA
+  y otros/vacío usan el precio USA. No se suman precios ni existe fallback entre
+  orígenes.
+- Precio cero es un valor real. Precio ausente invalida únicamente la
+  valorización de ese SKU; no se convierte a cero ni anula otros importes
+  calculables del bloque.
+- `Valor Total Inventario = Σ(valorInv calculable por record)`. Los valores
+  Activo, EOL total, EOL vencido, EOL futuro, Sin Ventas y Sin Maestro son
+  segmentos informativos que no se suman entre sí porque pueden superponerse.
+- `% Valor = valor USD del segmento / valor USD total válido del bloque × 100`;
+  un denominador no positivo o no disponible produce `null`.
 
 ## Análisis de portafolio
 
@@ -201,6 +218,9 @@ Distribution y Pareto no forman parte de este Business Service. Application Serv
 - El Mix Balanceado y la distribución Tier incluyen, en este orden, `GOOD`, `BETTER`, `BEST` y `EOL`; deben conservar todas las unidades y sumar `100%` cuando existe base positiva.
 - `SIN CATEGORIA` solo se agrega para registros sin correspondencia en Maestro.
 - Las categorías de producto nacen dinámicamente del Maestro; una categoría vacía del Maestro se presenta como `—`.
+- El valor agrega únicamente filas con precio aplicable; una categoría con
+  filas pero sin ningún valor calculable conserva `null`. `% Valor` usa el total
+  válido del mismo bloque y no suma categorías superpuestas.
 
 ### BR-017 — Pareto A/B/C
 
@@ -252,6 +272,10 @@ Las recomendaciones narrativas se generan con reglas fijas en `App.jsx`; no son 
 - Total Unidades Maestro suma Inventario Final de registros con correspondencia en Maestro.
 - Unidades, cantidades, porcentajes y KPI se muestran sin decimales; los importes conservan formato monetario.
 - Las etiquetas financieras omiten los sufijos `(20%)` y `(80%)` sin cambiar los cálculos de aportes.
+- Todo KPI identifica su unidad (`SKU`, `unidades`, `USD`, `%`, semanas o días).
+- `SKU con EOL definido` cuenta todo Product con estado EOL; la tabla `EOL
+  vencido/descontinuado` exige fecha EOL igual o anterior a la fecha base.
+- La UI y el Informe reutilizan una leyenda compacta de definiciones y fórmulas.
 
 ### BR-025 — Producto Nuevo
 
@@ -276,11 +300,16 @@ Las recomendaciones narrativas se generan con reglas fijas en `App.jsx`; no son 
 
 ### BR-019 — CSV
 
-Genera un archivo local con detalle general de EOL, inventario, rotación, descuentos y aportes.
+Genera un CSV principal procesable con detalle general y `Porcentaje de
+Rotación`. Un segundo CSV complementario contiene definiciones y fórmulas, sin
+insertar narrativa dentro de las filas del dataset.
 
 ### BR-020 — Excel
 
-Genera un libro local con resumen, hojas condicionales de alertas y segmentos, datos completos, distribuciones, Pareto y referencias EOL/fases.
+Genera un libro local con resumen, hojas condicionales de alertas y segmentos,
+datos completos, distribuciones, Pareto, referencias EOL/fases y la hoja
+`Definiciones y Fórmulas`. El SKU enlaza `productUrl` y `Ver imagen` enlaza
+`imageUrl` cuando son HTTP(S) válidas. SheetJS CE 0.20.3 no incrusta imágenes.
 
 ### BR-021 — Informe imprimible
 
@@ -291,7 +320,7 @@ El informe ejecutivo usa `window.print()` y estilos de impresión del navegador.
 Prompt 013 caracteriza sin modificar producción los aspectos del alcance contenidos en BR-006 a BR-015 para Inventory Engine y EOL Engine. La suite congela:
 
 - merma, porcentaje y umbral estricto superior a `10%`;
-- índice de rotación y `null` cuando Ventas es cero;
+- Porcentaje de Rotación y `null` cuando Inventario Inicial es cero;
 - fórmula IOCA con período Mensual `4.33`, safety stock `4` y lead times USA `4`/China `12`;
 - fallback al valor del cliente cuando Ventas es cero;
 - quiebre, reposición exclusiva de activos y acción EOL;
@@ -309,7 +338,7 @@ La extracción cambia ubicación, no contenido funcional:
 
 | Reglas protegidas | Módulo/contrato actual |
 | --- | --- |
-| Período, proyectado, merma y rotación | `inventoryEngine.js`: `obtenerSemanasPeriodo`, `calcularInventarioProyectado`, `calcularMerma`, `calcularIndiceRotacion`. |
+| Período, proyectado, merma y rotación | `inventoryEngine.js`: `obtenerSemanasPeriodo`, `calcularInventarioProyectado`, `calcularMerma`, `calcularPorcentajeRotacion`. |
 | Origen y costo | `inventoryEngine.js`: `seleccionarOrigen`, `seleccionarCostoPorOrigen`. |
 | Seguridad IOCA, quiebre y reposición | `inventoryEngine.js`: `calcularInventarioSeguridadIOCA`, `calcularQuiebreYReposicion`, `obtenerAccionQuiebreActivo`. |
 | Días, bucket y fase EOL | `eolEngine.js`: `calcularDiasEOL`, `seleccionarBucketEOL`, `seleccionarFaseEOL`. |

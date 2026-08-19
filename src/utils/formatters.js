@@ -8,7 +8,7 @@
 
 // Redondea únicamente la presentación monetaria; el valor numérico recibido no se modifica.
 const formatRoundedUSD = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
+  if (v === null || v === undefined || isNaN(v)) return 'N/D';
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 };
 
@@ -25,12 +25,6 @@ export const fmtPct = (v) => {
 export const fmtPctPoints = (v) => {
   if (v === null || v === undefined || typeof v !== 'number' || Number.isNaN(v)) return '—';
   return `${v.toFixed(0)}%`;
-};
-
-// Presenta índices numéricos con la precisión usada en las tablas actuales.
-export const fmtIdx = (v) => {
-  if (v === null || v === undefined || isNaN(v)) return '—';
-  return v.toFixed(2);
 };
 
 // Conserva el export específico de distribución sobre la misma regla monetaria común.

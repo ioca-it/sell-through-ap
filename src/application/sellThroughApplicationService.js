@@ -60,13 +60,13 @@ export const calculateTierDistribution = (records, unitField, valueField) => {
   const tiers = ['GOOD', 'BETTER', 'BEST', 'EOL', 'SIN CATEGORIA'];
   const result = {};
   let totalU = 0;
-  let totalV = 0;
+  let totalV = null;
   let totalSKUs = 0;
 
   tiers.forEach((tier) => {
     result[tier] = {
       unidades: 0,
-      valor: 0,
+      valor: null,
       skus: 0,
       pctUnidades: 0,
       pctValor: 0,
@@ -82,26 +82,30 @@ export const calculateTierDistribution = (records, unitField, valueField) => {
     const value = record[valueField];
     if (units > 0) {
       result[validTier].unidades += units;
-      result[validTier].valor = isAvailablePrice(result[validTier].valor)
-        && isAvailablePrice(value)
-        ? result[validTier].valor + value
-        : null;
+      if (isAvailablePrice(value)) {
+        // Opti ChatGPT: agregar solo valores calculables conserva la
+        // nulabilidad del SKU sin ocultar los demás importes válidos.
+        result[validTier].valor = isAvailablePrice(result[validTier].valor)
+          ? result[validTier].valor + value
+          : value;
+        totalV = isAvailablePrice(totalV) ? totalV + value : value;
+      }
       result[validTier].skus += 1;
       totalU += units;
-      totalV = isAvailablePrice(totalV) && isAvailablePrice(value)
-        ? totalV + value
-        : null;
       totalSKUs += 1;
     }
   });
   tiers.forEach((tier) => {
+    if (result[tier].skus === 0) result[tier].valor = 0;
     result[tier].pctUnidades = totalU > 0 ? result[tier].unidades / totalU : 0;
     result[tier].pctValor = isAvailablePrice(totalV)
       && isAvailablePrice(result[tier].valor)
-      ? (totalV > 0 ? result[tier].valor / totalV : 0)
+      ? (totalV > 0 ? result[tier].valor / totalV : null)
       : null;
     result[tier].pctSKUs = totalSKUs > 0 ? result[tier].skus / totalSKUs : 0;
   });
+
+  if (totalSKUs === 0) totalV = 0;
 
   return { tiers: result, lista: tiers, totalU, totalV, totalSKUs };
 };
@@ -110,13 +114,13 @@ export const calculateTierDistribution = (records, unitField, valueField) => {
 const calculateCategoryDistribution = (records, categories, unitField, valueField) => {
   const result = {};
   let totalU = 0;
-  let totalV = 0;
+  let totalV = null;
   let totalSKUs = 0;
 
   categories.forEach((category) => {
     result[category] = {
       unidades: 0,
-      valor: 0,
+      valor: null,
       skus: 0,
       pctUnidades: 0,
       pctValor: 0,
@@ -129,26 +133,28 @@ const calculateCategoryDistribution = (records, categories, unitField, valueFiel
     const value = record[valueField];
     if (units > 0 && result[category]) {
       result[category].unidades += units;
-      result[category].valor = isAvailablePrice(result[category].valor)
-        && isAvailablePrice(value)
-        ? result[category].valor + value
-        : null;
+      if (isAvailablePrice(value)) {
+        result[category].valor = isAvailablePrice(result[category].valor)
+          ? result[category].valor + value
+          : value;
+        totalV = isAvailablePrice(totalV) ? totalV + value : value;
+      }
       result[category].skus += 1;
       totalU += units;
-      totalV = isAvailablePrice(totalV) && isAvailablePrice(value)
-        ? totalV + value
-        : null;
       totalSKUs += 1;
     }
   });
   categories.forEach((category) => {
+    if (result[category].skus === 0) result[category].valor = 0;
     result[category].pctUnidades = totalU > 0 ? result[category].unidades / totalU : 0;
     result[category].pctValor = isAvailablePrice(totalV)
       && isAvailablePrice(result[category].valor)
-      ? (totalV > 0 ? result[category].valor / totalV : 0)
+      ? (totalV > 0 ? result[category].valor / totalV : null)
       : null;
     result[category].pctSKUs = totalSKUs > 0 ? result[category].skus / totalSKUs : 0;
   });
+
+  if (totalSKUs === 0) totalV = 0;
 
   return { categorias: result, totalU, totalV, totalSKUs };
 };

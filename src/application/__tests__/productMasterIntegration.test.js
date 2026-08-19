@@ -133,4 +133,41 @@ describe('Product normalizado en el pipeline existente', () => {
     expect(execution.resultados.totales.valorTotalInventario).toBeNull();
     expect(execution.resultados.distribucionTier.inventario.totalV).toBeNull();
   });
+
+  it('valoriza USA/CHINA, cero y null con una única selección por origen', () => {
+    const repository = createSellThroughRepository({
+      rawInventario: [
+        'SKU\tORIGEN\tINV INICIAL\tVENTAS\tINV FINAL',
+        'USA-ONLY\tUSA\t4\t1\t2',
+        'CHINA-ONLY\tCHINA\t4\t1\t2',
+        'PRICE-ZERO\tUSA\t4\t1\t2',
+        'PRICE-NULL\tUSA\t4\t1\t2',
+      ].join('\n'),
+      config,
+    });
+    const execution = processSellThrough(repository, {
+      products: [
+        product({ sku: 'USA-ONLY', priceUSA: 11, priceChina: 99 }),
+        product({ sku: 'CHINA-ONLY', priceUSA: 99, priceChina: 7 }),
+        product({ sku: 'PRICE-ZERO', priceUSA: 0, priceChina: 50 }),
+        product({ sku: 'PRICE-NULL', priceUSA: null, priceChina: 50 }),
+      ],
+    });
+
+    expect(execution.error).toBeNull();
+    expect(execution.resultados.recs.map(({ sku, costo, valorInv, valorVentas }) => ({
+      sku, costo, valorInv, valorVentas,
+    }))).toEqual([
+      { sku: 'USA-ONLY', costo: 11, valorInv: 22, valorVentas: 11 },
+      { sku: 'CHINA-ONLY', costo: 7, valorInv: 14, valorVentas: 7 },
+      { sku: 'PRICE-ZERO', costo: 0, valorInv: 0, valorVentas: 0 },
+      { sku: 'PRICE-NULL', costo: null, valorInv: null, valorVentas: null },
+    ]);
+    expect(execution.resultados.totales).toMatchObject({
+      valorActivo: 36,
+      valorTotalInventario: 36,
+    });
+    expect(execution.resultados.distribucionCategoria.inventario.totalV).toBe(36);
+    expect(execution.resultados.distribucionCategoria.ventas.totalV).toBe(18);
+  });
 });

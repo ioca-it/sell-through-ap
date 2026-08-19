@@ -1,5 +1,21 @@
 # Roadmap aprobado
 
+## Phase1-094 — Final Presentation Audit and Consolidated UX/Data Corrections
+
+Hito consolidado para presentación: corrige agregados monetarios parciales,
+separa EOL total/vencido, sustituye rotación por porcentaje, expone unidades y
+fórmulas, y alinea Dashboard, Informe, Excel y CSV con los mismos contratos.
+Mantiene el motor de reposición real de dos etapas y la prioridad EOL.
+
+`ProductSkuCell` agrega lightbox, nowrap y seguridad HTTP(S). Excel usa
+hyperlinks Product/imagen y hoja de definiciones; la imagen embebida queda fuera
+porque SheetJS CE no la soporta sin reescritura/dependencia. CSV entrega datos y
+definiciones en archivos separados.
+
+Siguiente acción externa exacta: validar visualmente una vez desktop/mobile con
+media real y, solo con autorización separada, desplegar. No se cambian backend,
+Dataverse, Entra, Render/Vercel ni variables.
+
 ## Phase1-092 — Apply Product Images and SKU Hyperlinks Across Detail Tables
 
 La presentación reutiliza el contrato normalizado Product para mostrar una

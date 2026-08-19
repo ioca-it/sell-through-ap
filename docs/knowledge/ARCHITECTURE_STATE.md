@@ -2,6 +2,30 @@
 
 ## Fase actual
 
+PHASE1-094 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**. Valorización
+usa una sola selección por origen y agrega únicamente
+importes calculables sin convertir `null` a cero; el total se obtiene desde
+records y no suma subconjuntos EOL superpuestos. Dashboard, Informe, Excel y
+CSV reutilizan esos resultados y una fuente común de definiciones.
+
+El motor real conserva su etapa adicional aprobada: Necesidad compara Seguridad
+IOCA contra Inventario Final y Reposición Final descuenta Compra/Tránsito. El
+Inventario Proyectado informado —o `Inicial + Compra - Ventas` cuando falta la
+columna completa— continúa alimentando quiebre y merma. EOL total queda separado
+de EOL vencido y su matriz ejecutiva combina bucket/Pareto sin habilitar
+reposición normal. `Porcentaje de Rotación` sustituye transversalmente el
+recíproco anterior.
+
+La presentación añade unidades explícitas, leyendas reutilizables y lightbox
+seguro; SKU permanece en una línea y `productUrl`/`imageUrl` aceptan solo
+HTTP(S). Excel incorpora hyperlinks y hoja de definiciones; SheetJS CE 0.20.3
+no incrusta imágenes, por lo que usa `Ver imagen`. CSV conserva el dataset
+principal y descarga definiciones aparte. No cambian backend, fuentes, filtros,
+mappings, seguridad, variables o infraestructura. La validación final cierra
+con frontend 411/411 y build Vite de 1,689 módulos; backend no aplica al no
+existir cambios bajo `server/`. La evidencia completa queda en el log
+Phase1-094.
+
 PHASE1-092 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**. La UI consume
 exclusivamente `imageUrl` y `productUrl` del contrato
 Product normalizado mediante `ProductSkuCell`: miniatura compacta con fallback,

@@ -188,11 +188,32 @@
 - Reversibilidad: retirar la selección temporal y restaurar `creationDate` como
   atributo conflictivo; no existe migración ni estado externo que recuperar.
 
+## D-025 — Métricas y presentación final consolidadas
+
+- Estado: aprobado e implementado localmente por Phase1-094; no desplegado.
+- Valorización: precio cero es real y precio ausente permanece `null` por SKU;
+  los agregados suman importes calculables y no mezclan ni suman segmentos
+  superpuestos. `% Valor` usa exclusivamente el total válido del bloque.
+- Rotación: la única métrica visible y exportable es `Porcentaje de Rotación =
+  Ventas / Inventario Inicial × 100`; denominador cero produce `null`.
+- EOL: `SKU con EOL definido` y `EOL vencido/descontinuado` son conceptos
+  distintos. EOL conserva prioridad absoluta sobre reposición; la recomendación
+  ejecutiva combina bucket y Pareto sin habilitar compra normal.
+- Explicabilidad: UI, Informe, Excel y CSV derivan definiciones y fórmulas de
+  `metricDefinitions.js`; los cálculos continúan en Domain/Application.
+- Media segura: solo URLs absolutas `http:`/`https:` habilitan miniatura,
+  lightbox o hyperlink. Excel usa hyperlinks porque SheetJS CE 0.20.3 no ofrece
+  inserción pública de imágenes.
+- Reversibilidad: retirar componentes/helpers y restaurar etiquetas/consumidores
+  anteriores; no hay migración, persistencia o estado externo que recuperar.
+
 ## Asuntos observados sin decisión de cambio
 
 - La fecha de corte no controla el cálculo EOL.
 - `App.jsx` todavía concentra estado, UI, informe y exportaciones, pero ya no parsing, ensamblaje o agregaciones del procesamiento.
 - El acceso remoto requerirá asincronía.
-- Las pruebas automatizadas cubren utilidades, Inventory/EOL, parsers y ensamblaje, pero no la UI renderizada, Pareto, Distribution, Executive Report o exportaciones.
+- Las pruebas automatizadas cubren utilidades, Inventory/EOL, parsers,
+  ensamblaje, Pareto/Distribution, DTO ejecutivo, árboles de UI y exportaciones;
+  la validación visual real en navegador sigue siendo externa.
 
 Estos puntos están documentados como hechos o riesgos; no deben corregirse sin alcance aprobado.

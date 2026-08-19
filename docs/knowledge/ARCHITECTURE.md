@@ -81,7 +81,7 @@ Las entradas del usuario siguen un segundo flujo interno:
 
 Prompt 011 extrajo de `App.jsx` ocho funciones sin cambiar firmas, parámetros, cuerpos ni consumidores:
 
-- `formatters.js`: `fmtUSD`, `fmtPct`, `fmtIdx`, `fmtUSDInline`;
+- `formatters.js`: `fmtUSD`, `fmtPct`, `fmtPctPoints`, `fmtUSDInline`;
 - `dateUtils.js`: `parseFecha`, `diasEntre`, `primerDiaMes`;
 - `headerUtils.js`: `normalizeHeader`.
 

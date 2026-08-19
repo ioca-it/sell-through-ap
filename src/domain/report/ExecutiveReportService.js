@@ -42,8 +42,8 @@ const buildExecutiveReport = (portfolioAnalysis) => {
     unidadesActivas: totales.unidadesActivas,
     skuVencidos: totales.skuVencidos,
     unidadesVencidas: totales.unidadesVencidas,
-    skuEOL: totales.skuVencidos,
-    unidadesEOL: totales.unidadesVencidas,
+    skuEOL: totales.skuEOL,
+    unidadesEOL: totales.unidEOL,
     skuPorVencer: totales.skuPorVencer,
     unidadesPorVencer: totales.unidadesPorVencer,
     skuSinVentas: totales.skuSinVentas,
@@ -56,11 +56,14 @@ const buildExecutiveReport = (portfolioAnalysis) => {
     valorTotalInventario: totales.valorTotalInventario,
     valorActivo: totales.valorActivo,
     valorEOL: totales.valorEOL,
+    valorEOLVencido: totales.valorEOLVencido,
+    valorEOLFuturo: totales.valorEOLFuturo,
     valorSinMaestro: totales.valorSinMaestro,
   };
 
   const kpis = {
     valorEOL: totales.valorEOL,
+    valorEOLVencido: totales.valorEOLVencido,
     unidEOL: totales.unidEOL,
     totalReposicionUnid: alertas.totalReposicionUnid,
     totalReposicionValor: alertas.totalReposicionValor,

@@ -6,7 +6,6 @@ import {
   fmtUSD,
   fmtPct,
   fmtPctPoints,
-  fmtIdx,
   fmtUSDInline,
   toDisplayValue,
 } from './utils/formatters.js';
@@ -41,7 +40,17 @@ import {
   subtractPrices,
   sumPriceValues,
 } from './domain/product/product.js';
-import { ProductSkuCell } from './components/ProductSkuCell.jsx';
+import { obtenerRecomendacionEOL } from './domain/eol/eolEngine.js';
+import { ProductSkuCell, getSafeProductUrl } from './components/ProductSkuCell.jsx';
+import { DefinitionLegend } from './components/DefinitionLegend.jsx';
+import {
+  DEFINITION_GROUPS,
+  metricDefinitionsAsRows,
+} from './presentation/metricDefinitions.js';
+import {
+  buildDefinitionsCsv,
+  buildSellThroughCsv,
+} from './presentation/csvExport.js';
 
 // La hidratación ocurre en el servicio; mantenerla fuera del componente permite
 // conservar los contratos de caracterización que ejecutan App como función pura.
@@ -99,10 +108,6 @@ const PARETO_CLASS_STYLES = Object.freeze({
 // HELPERS
 // ============================================================
 
-const formatNullableFixed = (value, digits = 2) => (
-  isAvailablePrice(value) ? value.toFixed(digits) : ''
-);
-
 const compareNullableMoneyDescending = (left, right) => {
   if (isAvailablePrice(left) && isAvailablePrice(right)) return right - left;
   if (isAvailablePrice(left)) return -1;
@@ -110,13 +115,12 @@ const compareNullableMoneyDescending = (left, right) => {
   return 0;
 };
 
-const colorIdxRotacion = (v) => {
-  // Color según interpretación del índice
+const colorPorcentajeRotacion = (v) => {
   if (v === null || v === undefined || isNaN(v)) return { bg: '#f5f5f0', fg: '#999' };
-  if (v < 1) return { bg: '#d1fae5', fg: '#065f46' };       // rotación alta — verde
-  if (v <= 3) return { bg: '#dbeafe', fg: '#1e40af' };      // normal — azul
-  if (v <= 10) return { bg: '#fef3c7', fg: '#92400e' };     // lenta — ámbar
-  return { bg: '#fee2e2', fg: '#7f1d1d' };                  // muy lenta — rojo
+  if (v > 100) return { bg: '#d1fae5', fg: '#065f46' };
+  if (v >= (100 / 3)) return { bg: '#dbeafe', fg: '#1e40af' };
+  if (v >= 10) return { bg: '#fef3c7', fg: '#92400e' };
+  return { bg: '#fee2e2', fg: '#7f1d1d' };
 };
 
 const generarInformeEjecutivo = (resultados, config) => {
@@ -130,12 +134,12 @@ const generarInformeEjecutivo = (resultados, config) => {
   const totales = resultados.totales;
   
   // ===== DIAGNÓSTICO DE ROTACIÓN =====
-  const altaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion < 1 && r.estado === 'ACTIVO');
-  const bajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 3 && r.indiceRotacion <= 10 && r.estado === 'ACTIVO');
-  const muyBajaRotacion = recs.filter(r => r.indiceRotacion !== null && r.indiceRotacion > 10 && r.estado === 'ACTIVO');
+  const altaRotacion = recs.filter(r => r.porcentajeRotacion !== null && r.porcentajeRotacion > 100 && r.estado === 'ACTIVO');
+  const bajaRotacion = recs.filter(r => r.porcentajeRotacion !== null && r.porcentajeRotacion >= 10 && r.porcentajeRotacion < (100 / 3) && r.ventas > 0 && r.estado === 'ACTIVO');
+  const muyBajaRotacion = recs.filter(r => r.porcentajeRotacion !== null && r.porcentajeRotacion < 10 && r.ventas > 0 && r.estado === 'ACTIVO');
   const sinMovimiento = resultados.alertas.productosSinRotacion;
   const sinMovValor = sumPriceValues(sinMovimiento.map((r) => r.valorInv));
-  const sobreinventario = recs.filter(r => r.estado === 'ACTIVO' && r.indiceRotacion !== null && r.indiceRotacion > 5);
+  const sobreinventario = recs.filter(r => r.estado === 'ACTIVO' && r.ventas > 0 && r.porcentajeRotacion !== null && r.porcentajeRotacion < 20);
   const subinventario = alertas.skusEnQuiebreActivos;
   const enQuiebreActivo = alertas.skusEnQuiebreActivos;
   const enQuiebreEOL = alertas.skusEnQuiebreEOL;
@@ -145,10 +149,10 @@ const generarInformeEjecutivo = (resultados, config) => {
   
   // Métricas agregadas
   const valorTotalInventario = totales.valorTotalInventario;
-  const pctValorEOL = totales.pctValorEOL;
+  const pctValorEOL = totales.pctValorEOLVencido;
   const pctValorSinMov = isAvailablePrice(valorTotalInventario)
     && isAvailablePrice(sinMovValor)
-    ? (valorTotalInventario > 0 ? (sinMovValor / valorTotalInventario) * 100 : 0)
+    ? (valorTotalInventario > 0 ? (sinMovValor / valorTotalInventario) * 100 : null)
     : null;
   
   // SKU héroe (mayor venta)
@@ -190,7 +194,7 @@ const generarInformeEjecutivo = (resultados, config) => {
   if (isAvailablePrice(pctValorEOL) && pctValorEOL > 20) {
     hallazgos.push({
       titulo: 'Alto valor inmovilizado en SKUs descontinuados',
-      hallazgo: `El ${pctValorEOL.toFixed(0)}% del valor del inventario (${fmtUSD(totales.valorEOL)}) está en SKUs ya descontinuados (EOL Vencidos).`,
+      hallazgo: `El ${pctValorEOL.toFixed(0)}% del valor del inventario (${fmtUSD(totales.valorEOLVencido)}) está en SKUs ya descontinuados (EOL Vencidos).`,
       importa: 'Capital atrapado que no rota y deteriora la liquidez del cliente. Cada semana adicional sin liquidar acelera la obsolescencia comercial.',
       impacto: `Pérdida potencial de margen del 30-50% si no se activa una liquidación estructurada en los próximos 60 días.`,
       accion: `Lanzar campaña de liquidación con descuentos escalonados por fase (F1 → F4) y aportes según la fase aplicable.`,
@@ -293,7 +297,7 @@ const generarInformeEjecutivo = (resultados, config) => {
   // ===== CAUSAS RAÍZ =====
   const causasRaiz = [];
   if (isAvailablePrice(pctValorEOL) && pctValorEOL > 20) causasRaiz.push({ causa: 'Compra inicial mal calculada', evidencia: `${pctValorEOL.toFixed(0)}% del valor en EOL sugiere sobre-compra del ciclo anterior.` });
-  if (sobreinventario.length > 5) causasRaiz.push({ causa: 'Exceso de SKUs sin movimiento', evidencia: `${sobreinventario.length} SKUs con índice de rotación > 5 — surtido inflado.` });
+  if (sobreinventario.length > 5) causasRaiz.push({ causa: 'Exceso de SKUs de baja rotación', evidencia: `${sobreinventario.length} SKUs con Porcentaje de Rotación menor a 20% y ventas positivas — surtido inflado.` });
   if (requierenActivacion.length > 0) causasRaiz.push({ causa: 'Falta de comunicación de beneficios', evidencia: `${requierenActivacion.length} SKUs BEST con inventario y sin venta — exhibición o entrenamiento débil.` });
   if (categoriasEnObsolescencia.length > 0) causasRaiz.push({ causa: 'Portafolio no alineado al consumidor', evidencia: `${categoriasEnObsolescencia.length} categoría(s) con +75% EOL — el cliente no ha refrescado el surtido.` });
   if (enQuiebreActivo.length > 0) causasRaiz.push({ causa: 'Falta de reposición / lead time mal estimado', evidencia: `${enQuiebreActivo.length} SKUs Activos en sub-stock — el ciclo de orden no anticipa la velocidad real.` });
@@ -772,6 +776,11 @@ export default function App({
   const productosReposicionSugerida = resultados?.recs
     ?.filter((record) => record.reposicionSugerida > 0) ?? [];
   const productosNuevosNoPresentes = resultados?.newProductsMissingInventory ?? [];
+  const paretoClassBySku = new Map([
+    ...(resultados?.analisisPareto?.skusParetoA ?? []),
+    ...(resultados?.analisisPareto?.skusParetoB ?? []),
+    ...(resultados?.analisisPareto?.skusParetoC ?? []),
+  ].map((record) => [record.sku, record.paretoClase]));
 
   const procesar = async () => {
     setError(null);
@@ -825,25 +834,19 @@ export default function App({
 
   const exportarCSV = () => {
     if (!resultados) return;
-    const headers = ['SKU','Tienda','Modelo','Marca','Estado','Fecha EOL','Dias Desc','Bucket','Fase','Origen','Costo USD','Inv Inicial','Ventas','Inv Final','Indice Rotacion','Desc %','Desc Consumi $','Aporte IOCA %','Aporte IOCA $','Aporte Retail %','Aporte Retail $','Desc Total $'];
-    const rows = resultados.recs.map(r => [
-      r.sku, r.tienda, r.modelo, r.marca, r.estado, r.fechaStr,
-      r.diasDesc ?? '', r.bucket ?? '', r.fase ?? '', r.origen,
-      formatNullableFixed(r.costo), r.invInicial, r.ventas, r.invFinal,
-      r.indiceRotacion !== null ? r.indiceRotacion.toFixed(2) : '—',
-      (r.descPct*100).toFixed(0)+'%', formatNullableFixed(r.descUSD),
-      ((r.ioaPct || 0)*100).toFixed(0)+'%', formatNullableFixed(r.ioaUSD),
-      ((r.retailPct || 0)*100).toFixed(0)+'%', formatNullableFixed(r.retailUSD),
-      formatNullableFixed(r.descTotal)
-    ]);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `IOCA_Fases_EOL_${resultados.fechaCalculo.toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const fecha = resultados.fechaCalculo.toISOString().slice(0, 10);
+    const downloadCsv = (content, filename) => {
+      const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    };
+
+    downloadCsv(buildSellThroughCsv(resultados), `IOCA_Fases_EOL_${fecha}.csv`);
+    downloadCsv(buildDefinitionsCsv(), `IOCA_Definiciones_y_Formulas_${fecha}.csv`);
   };
 
   const exportarExcel = () => {
@@ -860,6 +863,30 @@ export default function App({
         for (let row = range.s.r + 1; row <= range.e.r; row++) {
           const ref = XLSX.utils.encode_cell({ r: row, c });
           if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = fmt;
+        }
+      });
+    };
+
+    const aplicarEnlacesProducto = (
+      ws,
+      records,
+      { startRow = 1, skuColumn = 0, imageColumn = null } = {},
+    ) => {
+      records.forEach((record, index) => {
+        const row = startRow + index;
+        const productUrl = getSafeProductUrl(record.productUrl);
+        const imageUrl = getSafeProductUrl(record.imageUrl);
+        if (productUrl) {
+          const skuRef = XLSX.utils.encode_cell({ r: row, c: skuColumn });
+          if (ws[skuRef]) {
+            ws[skuRef].l = { Target: productUrl, Tooltip: `Abrir producto ${record.sku}` };
+          }
+        }
+        if (imageColumn !== null && imageUrl) {
+          const imageRef = XLSX.utils.encode_cell({ r: row, c: imageColumn });
+          if (ws[imageRef]) {
+            ws[imageRef].l = { Target: imageUrl, Tooltip: `Ver imagen ${record.sku}` };
+          }
         }
       });
     };
@@ -895,8 +922,8 @@ export default function App({
       ['Total Unidades', resultados.totales.totalUnidades],
       ['SKUs Activos', resultados.totales.skuActivos],
       ['Total Unidades Activas', resultados.totales.unidadesActivas],
-      ['SKUs Vencidos', resultados.totales.skuVencidos],
-      ['Total Unidades Vencidas', resultados.totales.unidadesVencidas],
+      ['SKUs con EOL definido', resultados.totales.skuEOL],
+      ['Total Unidades EOL', resultados.totales.unidEOL],
       ['SKUs sin ventas', resultados.totales.skuSinVentas],
       ['Total Unidades sin ventas', resultados.totales.unidadesSinVentas],
       ['Valor inventario sin ventas', resultados.totales.valorInventarioSinVentas],
@@ -908,13 +935,14 @@ export default function App({
       ['Valor Total Inventario', resultados.totales.valorTotalInventario],
       ['Valor Activo', resultados.totales.valorActivo],
       ['Valor EOL', resultados.totales.valorEOL],
+      ['Valor EOL Vencido', resultados.totales.valorEOLVencido],
       ['Valor EOL Futuro', resultados.totales.valorEOLFuturo],
       ['Valor Sin Maestro', resultados.totales.valorSinMaestro],
       [],
       ['IMPACTO FINANCIERO EOL', ''],
       ['Métrica', 'Valor USD'],
-      ['Inventario EOL en piso (unidades)', resultados.totales.unidEOL],
-      ['Valor del Inventario EOL', resultados.totales.valorEOL],
+      ['Inventario EOL vencido en piso (unidades)', resultados.totales.unidadesEOLVencidas],
+      ['Valor del Inventario EOL vencido', resultados.totales.valorEOLVencido],
       ['Descuento Total al Consumidor', resultados.totales.descEOL],
       ['Absorbe IOCA', resultados.totales.ioaEOL],
       ['Absorbe Retail', resultados.totales.retailEOL],
@@ -933,8 +961,8 @@ export default function App({
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
     wsResumen['!cols'] = [{ wch: 48 }, { wch: 28 }];
     const etiquetasMoneda = new Set([
-      'Valor Total Inventario', 'Valor Activo', 'Valor EOL', 'Valor EOL Futuro',
-      'Valor Sin Maestro', 'Valor del Inventario EOL', 'Descuento Total al Consumidor',
+      'Valor Total Inventario', 'Valor Activo', 'Valor EOL', 'Valor EOL Vencido', 'Valor EOL Futuro',
+      'Valor Sin Maestro', 'Valor del Inventario EOL vencido', 'Descuento Total al Consumidor',
       'Absorbe IOCA', 'Absorbe Retail', 'Valor total de Merma (USD)',
       'Valor total Reposición (USD)', 'Valor inventario sin ventas',
     ]);
@@ -947,37 +975,39 @@ export default function App({
     
     // ===== HOJA 2: EOL CON FASE ACTIVA =====
     if (resultados.eolVencidos.length > 0) {
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Fecha EOL', 'Días Desc.', 'Fase', 'Origen', 'Costo', 'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $', 'Inv. Inicial', 'Ventas', 'Inv. Final', 'Índice Rotación', 'Desc. Total $', 'Valor Inv.'];
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Fecha EOL', 'Días Desc.', 'Fase', 'Origen', 'Costo', 'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $', 'Inv. Inicial', 'Ventas', 'Inv. Final', 'Porcentaje de Rotación', 'Desc. Total $', 'Valor Inv.', 'Imagen'];
       const rows = resultados.eolVencidos.map(r => [
         r.sku, r.modelo, r.marca, r.fechaStr, r.diasDesc,
         r.fase !== null ? `F${r.fase}` : '—', r.origen,
         r.costo, r.descPct, r.descUSD,
         r.ioaPct, r.ioaUSD, r.retailPct, r.retailUSD,
         r.invInicial, r.ventas, r.invFinal,
-        r.indiceRotacion !== null ? r.indiceRotacion : '—',
-        r.descTotal, r.valorInv
+        r.porcentajeRotacion !== null ? r.porcentajeRotacion / 100 : null,
+        r.descTotal, r.valorInv, getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : ''
       ]);
       // Fila de totales
-      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', resultados.totales.unidEOL, '', resultados.totales.descEOL, resultados.totales.valorEOL]);
+      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', resultados.totales.unidadesEOLVencidas, '', resultados.totales.descEOL, resultados.totales.valorEOLVencido, '']);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
-      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 7 }, { wch: 9 }, { wch: 11 }, { wch: 9 }, { wch: 15 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 15 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 13 }];
-      aplicarFormato(ws, { 7: '$#,##0.00', 8: '0%', 9: '$#,##0.00', 10: '0%', 11: '$#,##0.00', 12: '0%', 13: '$#,##0.00', 17: '0.00', 18: '$#,##0.00', 19: '$#,##0.00' });
+      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 7 }, { wch: 9 }, { wch: 11 }, { wch: 9 }, { wch: 15 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 15 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 22 }, { wch: 14 }, { wch: 13 }, { wch: 14 }];
+      aplicarFormato(ws, { 7: '$#,##0.00', 8: '0%', 9: '$#,##0.00', 10: '0%', 11: '$#,##0.00', 12: '0%', 13: '$#,##0.00', 17: '0%', 18: '$#,##0.00', 19: '$#,##0.00' });
+      aplicarEnlacesProducto(ws, resultados.eolVencidos, { imageColumn: 20 });
       XLSX.utils.book_append_sheet(wb, ws, 'EOL Fase Activa');
     }
     
     // ===== HOJA 3: EOL POR DESCONTINUARSE =====
     if (resultados.eolFuturos.length > 0) {
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Fecha EOL', 'Días hasta EOL', 'Bucket', 'Origen', 'Costo', 'Inv. Inicial', 'Ventas', 'Inv. Final', 'Índice Rotación', 'Valor Inv.'];
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Fecha EOL', 'Días hasta EOL', 'Bucket', 'Origen', 'Costo', 'Inv. Inicial', 'Ventas', 'Inv. Final', 'Porcentaje de Rotación', 'Valor Inv.', 'Imagen'];
       const rows = resultados.eolFuturos.map(r => [
         r.sku, r.modelo, r.marca, r.fechaStr,
         Math.abs(r.diasDesc), r.bucket, r.origen,
         r.costo, r.invInicial, r.ventas, r.invFinal,
-        r.indiceRotacion !== null ? r.indiceRotacion : '—',
-        r.valorInv
+        r.porcentajeRotacion !== null ? r.porcentajeRotacion / 100 : null,
+        r.valorInv, getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : ''
       ]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
-      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 18 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 14 }];
-      aplicarFormato(ws, { 7: '$#,##0.00', 11: '0.00', 12: '$#,##0.00' });
+      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 18 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 22 }, { wch: 14 }, { wch: 14 }];
+      aplicarFormato(ws, { 7: '$#,##0.00', 11: '0%', 12: '$#,##0.00' });
+      aplicarEnlacesProducto(ws, resultados.eolFuturos, { imageColumn: 13 });
       XLSX.utils.book_append_sheet(wb, ws, 'EOL Por Descontinuarse');
     }
     
@@ -990,50 +1020,56 @@ export default function App({
         ['Condiciones: Si Ventas > 0 → aplica fórmula IOCA (Fuente: IOCA). Si Ventas = 0 → se mantiene valor del cliente (Fuente: Cliente).', '', '', '', '', '', '', '', '', '', '', '', '', ''],
         ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
       ];
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Bucket EOL', 'Origen', 'Ventas', 'Inv. Seg. Cliente', 'Inv. Seg. IOCA', 'Δ IOCA-Cliente', 'Fuente', 'Inv. Proyectado', 'Inv. Final', 'Compra / Tránsito', 'Necesidad', 'Reposición Final', 'Acción Sugerida'];
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Bucket EOL', 'Origen', 'Ventas', 'Inv. Seg. Cliente', 'Inv. Seg. IOCA', 'Δ IOCA-Cliente', 'Fuente', 'Inv. Proyectado', 'Inv. Final', 'Compra / Tránsito', 'Necesidad', 'Reposición Final', 'Acción Sugerida', 'Imagen'];
       const rows = resultados.alertas.skusEnQuiebre.map(r => [
         r.sku, r.modelo, r.marca, r.estado, r.bucket || '—', r.origen, r.ventas,
         r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
         r.invProyectado, r.invFinal, r.compra, r.necesidadReposicion,
         r.reposicionSugerida,
         r.accionSugerida,
+        getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
       ]);
       const totalRepoActivos = resultados.alertas.skusEnQuiebre
         .filter(r => r.estado === 'ACTIVO')
         .reduce((s, r) => s + r.reposicionSugerida, 0);
-      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', 'TOTAL Reposición (solo Activos)', totalRepoActivos, '']);
+      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', 'TOTAL Reposición (solo Activos)', totalRepoActivos, '', '']);
       const ws = XLSX.utils.aoa_to_sheet([...notaInfo, hdr, ...rows]);
-      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 18 }, { wch: 9 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 20 }, { wch: 42 }];
+      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 18 }, { wch: 9 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 10 }, { wch: 15 }, { wch: 11 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 42 }, { wch: 14 }];
+      aplicarEnlacesProducto(ws, resultados.alertas.skusEnQuiebre, { startRow: 6, imageColumn: 17 });
       XLSX.utils.book_append_sheet(wb, ws, 'Bajo Inv Seguridad V1');
     }
     
     // ===== HOJA 5: MERMA OPERATIVA =====
     if (resultados.alertas.skusConMerma.length > 0) {
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Merma (u)', 'Merma %', 'Costo', 'Costo Merma'];
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Merma (u)', 'Merma %', 'Costo', 'Costo Merma', 'Imagen'];
       const rows = resultados.alertas.skusConMerma.map(r => [
         r.sku, r.modelo, r.marca, r.estado,
         r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
-        r.merma, r.mermaPct, r.costo, multiplyPrice(r.costo, r.merma)
+        r.merma, r.mermaPct, r.costo, multiplyPrice(r.costo, r.merma),
+        getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
       ]);
-      rows.push(['', '', '', '', '', '', '', '', 'TOTAL', resultados.alertas.totalMermaUnid, '', '', resultados.alertas.totalMermaValor]);
+      rows.push(['', '', '', '', '', '', '', '', 'TOTAL', resultados.alertas.totalMermaUnid, '', '', resultados.alertas.totalMermaValor, '']);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
-      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 13 }];
+      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 9 }, { wch: 9 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 13 }, { wch: 14 }];
       aplicarFormato(ws, { 10: '0%', 11: '$#,##0.00', 12: '$#,##0.00' });
+      aplicarEnlacesProducto(ws, resultados.alertas.skusConMerma, { imageColumn: 13 });
       XLSX.utils.book_append_sheet(wb, ws, 'Merma Operativa');
     }
     
     // ===== HOJA 6: ACTIVOS COMPLETOS =====
     if (resultados.activos.length > 0) {
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Tier', 'Origen', 'Inv. Seguridad', 'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Índice Rotación', 'Costo', 'Valor Inv.', 'Reposición Sugerida', 'Valor Reposición'];
+      const hdr = ['SKU', 'Modelo', 'Marca', 'Tier', 'Origen', 'Inv. Seguridad', 'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Porcentaje de Rotación', 'Costo', 'Valor Inv.', 'Reposición Sugerida', 'Valor Reposición', 'Imagen'];
       const rows = resultados.activos.map(r => [
         r.sku, r.modelo, r.marca, r.tier, r.origen,
         r.invSeguridad, r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
-        r.indiceRotacion !== null ? r.indiceRotacion : '—',
-        r.costo, r.valorInv, r.reposicionSugerida, r.valorReposicion
+        r.porcentajeRotacion !== null ? r.porcentajeRotacion / 100 : null,
+        r.costo, r.valorInv, r.reposicionSugerida, r.valorReposicion,
+        getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
       ]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
-      ws['!cols'] = [{ wch: 14 }, { wch: 42 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 15 }, { wch: 11 }, { wch: 14 }, { wch: 11 }, { wch: 14 }, { wch: 20 }, { wch: 17 }];
-      aplicarFormato(ws, { 11: '0.00', 12: '$#,##0.00', 13: '$#,##0.00', 15: '$#,##0.00' });
+      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 15 }, { wch: 11 }, { wch: 22 }, { wch: 11 }, { wch: 14 }, { wch: 20 }, { wch: 17 }, { wch: 14 }];
+      aplicarFormato(ws, { 11: '0%', 12: '$#,##0.00', 13: '$#,##0.00', 15: '$#,##0.00' });
+      aplicarEnlacesProducto(ws, resultados.activos, { imageColumn: 16 });
       XLSX.utils.book_append_sheet(wb, ws, 'Activos');
     }
     
@@ -1050,19 +1086,21 @@ export default function App({
     
     // ===== HOJA 9: SIN ORIGEN EN INV =====
     if (resultados.alertas.skusSinOrigen.length > 0) {
-      const hdr = ['SKU', 'Modelo', 'Estado', 'Costo USA (aplicado)', 'Costo CHINA (alterno)', 'Delta USA-CHINA'];
+      const hdr = ['SKU', 'Modelo', 'Estado', 'Costo USA (aplicado)', 'Costo CHINA (alterno)', 'Delta USA-CHINA', 'Imagen'];
       const rows = resultados.alertas.skusSinOrigen.map(r => [
         r.sku, r.modelo, r.estado, r.costoUSA, r.costoCHINA,
-        subtractPrices(r.costoUSA, r.costoCHINA)
+        subtractPrices(r.costoUSA, r.costoCHINA),
+        getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
       ]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
-      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 11 }, { wch: 20 }, { wch: 22 }, { wch: 18 }];
+      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 11 }, { wch: 20 }, { wch: 22 }, { wch: 18 }, { wch: 14 }];
       aplicarFormato(ws, { 3: '$#,##0.00', 4: '$#,##0.00', 5: '$#,##0.00' });
+      aplicarEnlacesProducto(ws, resultados.alertas.skusSinOrigen, { imageColumn: 6 });
       XLSX.utils.book_append_sheet(wb, ws, 'Sin Origen en Inv');
     }
 
     const transitHeader = [
-      'SKU', 'Modelo', 'Estado', 'Nivel', 'Unidades en tránsito', 'Valor en tránsito',
+      'SKU', 'Modelo', 'Estado', 'Nivel', 'Unidades en tránsito', 'Valor en tránsito', 'Imagen',
     ];
     const transitRows = resultados.alertas.productosEnTransito.map((record) => [
       record.sku,
@@ -1071,17 +1109,19 @@ export default function App({
       record.tier || 'SIN CATEGORIA',
       record.unidadesEnTransito,
       record.valorEnTransito,
+      getSafeProductUrl(record.imageUrl) ? 'Ver imagen' : '',
     ]);
     const wsTransit = XLSX.utils.aoa_to_sheet([transitHeader, ...transitRows]);
     wsTransit['!cols'] = [
-      { wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 16 }, { wch: 22 }, { wch: 20 },
+      { wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 16 }, { wch: 22 }, { wch: 20 }, { wch: 14 },
     ];
     aplicarFormato(wsTransit, { 5: '$#,##0.00' });
+    aplicarEnlacesProducto(wsTransit, resultados.alertas.productosEnTransito, { imageColumn: 6 });
     XLSX.utils.book_append_sheet(wb, wsTransit, 'Inventario en tránsito');
 
     const replenishmentHeader = [
       'SKU', 'Modelo', 'Marca', 'Nivel', 'Inv. Proyectado', 'Compra / Tránsito',
-      'Reposición Sugerida', 'Valor Reposición',
+      'Necesidad', 'Reposición Sugerida', 'Valor Reposición', 'Imagen',
     ];
     const replenishmentRows = productosReposicionSugerida.map((record) => [
       record.sku,
@@ -1090,8 +1130,10 @@ export default function App({
       record.tier,
       record.invProyectado,
       record.compra,
+      record.necesidadReposicion,
       record.reposicionSugerida,
       record.valorReposicion,
+      getSafeProductUrl(record.imageUrl) ? 'Ver imagen' : '',
     ]);
     const wsReplenishment = XLSX.utils.aoa_to_sheet([
       replenishmentHeader,
@@ -1099,23 +1141,26 @@ export default function App({
     ]);
     wsReplenishment['!cols'] = [
       { wch: 18 }, { wch: 42 }, { wch: 14 }, { wch: 12 },
-      { wch: 17 }, { wch: 20 }, { wch: 22 }, { wch: 18 },
+      { wch: 17 }, { wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 14 },
     ];
-    aplicarFormato(wsReplenishment, { 7: '$#,##0.00' });
+    aplicarFormato(wsReplenishment, { 8: '$#,##0.00' });
+    aplicarEnlacesProducto(wsReplenishment, productosReposicionSugerida, { imageColumn: 9 });
     XLSX.utils.book_append_sheet(wb, wsReplenishment, 'Reposición sugerida');
 
-    const newProductHeader = ['SKU', 'Producto / Modelo', 'Marca', 'Categoría', 'Fecha de creación'];
+    const newProductHeader = ['SKU', 'Producto / Modelo', 'Marca', 'Categoría', 'Fecha de creación', 'Imagen'];
     const newProductRows = productosNuevosNoPresentes.map((product) => [
       product.sku,
       product.modelo,
       product.marca,
       product.categoria,
       normalizeFechaStr(product.creationDate),
+      getSafeProductUrl(product.imageUrl) ? 'Ver imagen' : '',
     ]);
     const wsNewProducts = XLSX.utils.aoa_to_sheet([newProductHeader, ...newProductRows]);
     wsNewProducts['!cols'] = [
-      { wch: 18 }, { wch: 42 }, { wch: 14 }, { wch: 24 }, { wch: 20 },
+      { wch: 18 }, { wch: 42 }, { wch: 14 }, { wch: 24 }, { wch: 20 }, { wch: 14 },
     ];
+    aplicarEnlacesProducto(wsNewProducts, productosNuevosNoPresentes, { imageColumn: 5 });
     XLSX.utils.book_append_sheet(wb, wsNewProducts, 'Nuevos no presentes');
     
     // ===== HOJA 10: DATOS COMPLETOS (auditoría) =====
@@ -1126,13 +1171,13 @@ export default function App({
       'Inv. Seguridad Cliente', 'Inv. Seguridad IOCA', 'Δ IOCA-Cliente', 'Fuente Inv. Seg.',
       'Semanas Período', 'Lead Time Aplicado',
       'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final',
-      'Índice Rotación',
+      'Porcentaje de Rotación',
       'Merma', 'Merma %', 'Alerta Merma',
       'Necesidad Reposición', 'Reposición Final', 'Alerta Quiebre', 'Acción Sugerida',
       'Costo USA', 'Costo CHINA', 'Costo Aplicado',
       'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $',
       'Inv. Mínimo Reconocido', 'Liquidación Solo Retail',
-      'Valor Inv.', 'Valor Ventas', 'Valor Reposición', 'Desc. Total $'
+      'Valor Inv.', 'Valor Ventas', 'Valor Reposición', 'Desc. Total $', 'Imagen'
     ];
     const rowsAll = resultados.recs.map(r => [
       r.sku, r.tienda, r.modelo, r.marca, r.categoria || 'SIN CATEGORIA', r.estado, r.tier,
@@ -1141,16 +1186,20 @@ export default function App({
       r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
       r.semanasPeriodo, r.leadTimeAplicado,
       r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
-      r.indiceRotacion !== null ? r.indiceRotacion : '',
+      r.porcentajeRotacion !== null ? r.porcentajeRotacion / 100 : null,
       r.merma, r.mermaPct, r.alertaMerma ? 'SI' : 'NO',
       r.necesidadReposicion, r.reposicionSugerida,
       r.alertaQuiebre ? 'SI' : 'NO', r.accionSugerida || '',
       r.costoUSA, r.costoCHINA, r.costo,
       r.descPct, r.descUSD, r.ioaPct, r.ioaUSD, r.retailPct, r.retailUSD,
       r.inventarioMinimoReconocido, r.liquidacionSoloRetail ? 'SI' : 'NO',
-      r.valorInv, r.valorVentas, r.valorReposicion, r.descTotal
+      r.valorInv, r.valorVentas, r.valorReposicion, r.descTotal,
+      getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
     ]);
     const wsAll = XLSX.utils.aoa_to_sheet([hdrAll, ...rowsAll]);
+    const rotationColumn = hdrAll.indexOf('Porcentaje de Rotación');
+    aplicarFormato(wsAll, { [rotationColumn]: '0%' });
+    aplicarEnlacesProducto(wsAll, resultados.recs, { imageColumn: hdrAll.indexOf('Imagen') });
     XLSX.utils.book_append_sheet(wb, wsAll, 'Datos Completos');
     
     // ===== HOJA: DISTRIBUCIÓN POR TIER (GOOD / BETTER / BEST / EOL) =====
@@ -1170,7 +1219,7 @@ export default function App({
         return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
       }),
       ['TOTAL', dT.inventario.totalSKUs, dT.inventario.totalU, 1,
-        dT.inventario.totalV, isAvailablePrice(dT.inventario.totalV) ? 1 : null],
+        dT.inventario.totalV, dT.inventario.totalV > 0 ? 1 : null],
       ['', '', '', '', '', ''],
       ['VENTAS DEL CLIENTE', '', '', '', '', ''],
       [`Total: ${dT.ventas.totalU} unidades · ${dT.ventas.totalSKUs} SKUs con venta`, '', '', '', '', ''],
@@ -1180,7 +1229,7 @@ export default function App({
         return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
       }),
       ['TOTAL', dT.ventas.totalSKUs, dT.ventas.totalU, 1,
-        dT.ventas.totalV, isAvailablePrice(dT.ventas.totalV) ? 1 : null],
+        dT.ventas.totalV, dT.ventas.totalV > 0 ? 1 : null],
       ['', '', '', '', '', ''],
       ['REPOSICIÓN SUGERIDA', '', '', '', '', ''],
       [`Total: ${dT.reposicion.totalU} unidades · ${dT.reposicion.totalSKUs} SKUs`, '', '', '', '', ''],
@@ -1190,7 +1239,7 @@ export default function App({
         return [t, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor];
       }),
       ['TOTAL', dT.reposicion.totalSKUs, dT.reposicion.totalU, 1,
-        dT.reposicion.totalV, isAvailablePrice(dT.reposicion.totalV) ? 1 : null],
+        dT.reposicion.totalV, dT.reposicion.totalV > 0 ? 1 : null],
       ['', '', '', '', '', ''],
       ['COMPARATIVA: ¿La reposición sigue al inventario o a las ventas?', '', '', '', '', ''],
       ['Tier', '% Inv. Actual', '% Ventas', '% Reposición', 'Lectura', ''],
@@ -1240,7 +1289,7 @@ export default function App({
       if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
     });
     distribCatData.push(['TOTAL', dC.inventario.totalSKUs, dC.inventario.totalU, 1,
-      dC.inventario.totalV, isAvailablePrice(dC.inventario.totalV) ? 1 : null]);
+      dC.inventario.totalV, dC.inventario.totalV > 0 ? 1 : null]);
     const invStart = 6; // primera fila de datos (tiers) en 0-indexed
     const invEnd = invStart + listaCats.length; // incluye fila TOTAL
     
@@ -1254,7 +1303,7 @@ export default function App({
       if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
     });
     distribCatData.push(['TOTAL', dC.ventas.totalSKUs, dC.ventas.totalU, 1,
-      dC.ventas.totalV, isAvailablePrice(dC.ventas.totalV) ? 1 : null]);
+      dC.ventas.totalV, dC.ventas.totalV > 0 ? 1 : null]);
     const vtsEnd = vtsStart + listaCats.length;
     
     distribCatData.push(['', '', '', '', '', '']);
@@ -1267,7 +1316,7 @@ export default function App({
       if (d) distribCatData.push([c, d.skus, d.unidades, d.pctUnidades, d.valor, d.pctValor]);
     });
     distribCatData.push(['TOTAL', dC.reposicion.totalSKUs, dC.reposicion.totalU, 1,
-      dC.reposicion.totalV, isAvailablePrice(dC.reposicion.totalV) ? 1 : null]);
+      dC.reposicion.totalV, dC.reposicion.totalV > 0 ? 1 : null]);
     const repEnd = repStart + listaCats.length;
     
     // Comparativa
@@ -1335,7 +1384,7 @@ export default function App({
         [pareto.interpretacion.linea2, '', '', '', '', '', '', '', '', '', ''],
         ['', '', '', '', '', '', '', '', '', '', ''],
         ['DETALLE SKU POR SKU (ordenado por velocidad de ventas)', '', '', '', '', '', '', '', '', '', ''],
-        ['Clase', 'SKU', 'Modelo', 'Marca', 'Estado', 'Tier', 'Ventas (u)', '% Ventas', '% Acum.', 'Inv. Final', 'Acción Reposición'],
+        ['Clase', 'SKU', 'Modelo', 'Marca', 'Estado', 'Tier', 'Ventas (u)', '% Ventas', '% Acum.', 'Inv. Final', 'Acción Reposición', 'Imagen'],
       ];
       
       const todosSkusOrdenados = [
@@ -1346,21 +1395,26 @@ export default function App({
       todosSkusOrdenados.forEach(r => {
         const esA = r.paretoClase === 'A';
         let accionRepo = '';
-        if (esA && r.estado === 'ACTIVO') accionRepo = 'Reposición prioritaria';
-        else if (esA && r.estado === 'EOL') accionRepo = 'Clase A pero EOL — rebalancear';
+        if (r.estado === 'EOL') {
+          accionRepo = obtenerRecomendacionEOL({
+            bucket: r.bucket,
+            paretoClase: r.paretoClase,
+          });
+        } else if (esA && r.estado === 'ACTIVO') accionRepo = 'Reposición prioritaria';
         else if (!esA && r.estado === 'ACTIVO') accionRepo = 'Stock mínimo';
-        else accionRepo = 'Liquidar / no reponer';
+        else accionRepo = 'Agregar al Maestro y decidir';
         
         paretoData.push([
           r.paretoClase, r.sku, r.modelo, r.marca, r.estado, r.tier || 'GOOD',
-          r.ventas, r.pctVentas, r.pctAcum, r.invFinal, accionRepo
+          r.ventas, r.pctVentas, r.pctAcum, r.invFinal, accionRepo,
+          getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
         ]);
       });
       
       const wsPareto = XLSX.utils.aoa_to_sheet(paretoData);
       wsPareto['!cols'] = [
         { wch: 8 }, { wch: 16 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 9 },
-        { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 32 }
+        { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 46 }, { wch: 14 }
       ];
       
       const fmtParetoCell = (r, c, fmt) => {
@@ -1380,9 +1434,24 @@ export default function App({
         fmtParetoCell(r, 7, '0%'); // % Ventas
         fmtParetoCell(r, 8, '0%'); // % Acum
       }
+      aplicarEnlacesProducto(wsPareto, todosSkusOrdenados, {
+        startRow: detalleStartRow,
+        skuColumn: 1,
+        imageColumn: 11,
+      });
       
       XLSX.utils.book_append_sheet(wb, wsPareto, 'Análisis Pareto ABC');
     }
+
+    const definitionRows = [
+      ['Indicador/Campo', 'Definición', 'Fórmula', 'Unidad', 'Fuente', 'Interpretación'],
+      ...metricDefinitionsAsRows(),
+    ];
+    const wsDefinitions = XLSX.utils.aoa_to_sheet(definitionRows);
+    wsDefinitions['!cols'] = [
+      { wch: 30 }, { wch: 58 }, { wch: 72 }, { wch: 20 }, { wch: 42 }, { wch: 62 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsDefinitions, 'Definiciones y Fórmulas');
     
     // ===== HOJA 11: REF BUCKET EOL =====
     const bucketData = [
@@ -1932,7 +2001,7 @@ export default function App({
                     {[
                       ['Total SKU', summary.totalSKUs, 'Total Unidades', summary.totalUnidades, 'Valor Inventario Total', summary.valorTotalInventario],
                       ['SKU Activos', summary.skuActivos, 'Unidades Activas', summary.unidadesActivas, 'Valor Inventario SKU Activos', summary.valorActivo],
-                      ['SKU EOL', summary.skuEOL, 'Unidades EOL', summary.unidadesEOL, 'Valor Inventario EOL', summary.valorEOL],
+                      ['SKU con EOL definido', summary.skuEOL, 'Unidades con EOL definido', summary.unidadesEOL, 'Valor Inventario EOL', summary.valorEOL],
                       ['SKU sin ventas', summary.skuSinVentas, 'Unidades sin ventas', summary.unidadesSinVentas, 'Valor inventario sin ventas', summary.valorInventarioSinVentas],
                       ['SKU Sin Maestro', summary.skuSinMaestro, 'Unidades Sin Maestro', summary.unidadesSinMaestro, 'Valor Inventario Sin Maestro', summary.valorSinMaestro],
                     ].map(([label, value, unitLabel, unitValue, moneyLabel, moneyValue]) => (
@@ -1964,6 +2033,9 @@ export default function App({
                         <div className="text-[10px] text-stone-500 mt-2">{help}</div>
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-3">
+                    <DefinitionLegend ids={DEFINITION_GROUPS.executive} />
                   </div>
                 </div>
 
@@ -2085,7 +2157,7 @@ export default function App({
               <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <KPIUnitPair label="Total SKU" value={resultados.totales.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.totales.totalUnidades} moneyLabel="Valor Inventario Total" moneyValue={fmtUSD(resultados.totales.valorTotalInventario)} />
                 <KPIUnitPair label="SKU Activos" value={resultados.totales.skuActivos} unitLabel="Unidades Activas" unitValue={resultados.totales.unidadesActivas} moneyLabel="Valor Inventario SKU Activos" moneyValue={fmtUSD(resultados.totales.valorActivo)} color="#065f46" bg="#d1fae5" />
-                <KPIUnitPair label="SKU EOL" value={resultados.totales.skuVencidos} unitLabel="Unidades EOL" unitValue={resultados.totales.unidadesVencidas} moneyLabel="Valor Inventario EOL" moneyValue={fmtUSD(resultados.totales.valorEOL)} color="#7f1d1d" bg="#fee2e2" />
+                <KPIUnitPair label="SKU con EOL definido" value={resultados.totales.skuEOL} unitLabel="Unidades con EOL definido" unitValue={resultados.totales.unidEOL} moneyLabel="Valor Inventario EOL" moneyValue={fmtUSD(resultados.totales.valorEOL)} color="#7f1d1d" bg="#fee2e2" />
                 <KPIUnitPair label="SKU sin ventas" value={resultados.totales.skuSinVentas} unitLabel="Unidades sin ventas" unitValue={resultados.totales.unidadesSinVentas} moneyLabel="Valor inventario sin ventas" moneyValue={fmtUSD(resultados.totales.valorInventarioSinVentas)} color="#92400e" bg="#fef3c7" />
                 <KPIUnitPair label="SKU Sin Maestro" value={resultados.totales.sinMaestro} unitLabel="Unidades Sin Maestro" unitValue={resultados.totales.unidadesSinMaestro} moneyLabel="Valor Inventario Sin Maestro" moneyValue={fmtUSD(resultados.totales.valorSinMaestro)} />
               </div>
@@ -2095,6 +2167,9 @@ export default function App({
                 <KPIBig label="Descuento Consumi total" value={fmtUSD(resultados.totales.descEOL)} sub="Descuento × Unidades" color="#d4af37" />
                 <KPIBig label="Absorbe IOCA" value={fmtUSD(resultados.totales.ioaEOL)} sub="Exposición financiera IOCA" color="#1e40af" />
                 <KPIBig label="Absorbe Retail" value={fmtUSD(resultados.totales.retailEOL)} sub="Carga del cliente" color="#065f46" />
+              </div>
+              <div className="px-6 pb-6">
+                <DefinitionLegend ids={DEFINITION_GROUPS.executive} />
               </div>
             </div>
 
@@ -2113,32 +2188,35 @@ export default function App({
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 border-b" style={{ borderColor: '#e5e0d5' }}>
                 <AlertaCard 
                   titulo="Sin Origen en Inv." 
-                  valor={resultados.alertas.skusSinOrigen.length}
+                  valor={`${resultados.alertas.skusSinOrigen.length} SKU`}
                   sub="Asumidos como USA por default"
                   color={resultados.alertas.skusSinOrigen.length > 0 ? '#92400e' : '#065f46'}
                   bg={resultados.alertas.skusSinOrigen.length > 0 ? '#fef3c7' : '#d1fae5'}
                 />
                 <AlertaCard 
                   titulo={`Merma > ${(resultados.alertas.umbralMermaPct * 100).toFixed(0)}%`}
-                  valor={resultados.alertas.skusConMerma.length}
-                  sub={`${resultados.alertas.totalMermaUnid} u · ${fmtUSD(resultados.alertas.totalMermaValor)}`}
+                  valor={`${resultados.alertas.skusConMerma.length} SKU`}
+                  sub={`${resultados.alertas.totalMermaUnid} unidades · ${fmtUSD(resultados.alertas.totalMermaValor)}`}
                   color={resultados.alertas.skusConMerma.length > 0 ? '#92400e' : '#065f46'}
                   bg={resultados.alertas.skusConMerma.length > 0 ? '#fef3c7' : '#d1fae5'}
                 />
                 <AlertaCard 
                   titulo="Bajo Inv. Seguridad" 
-                  valor={resultados.alertas.skusEnQuiebre.length}
+                  valor={`${resultados.alertas.skusEnQuiebre.length} SKU`}
                   sub="Solo productos ACTIVO"
                   color={resultados.alertas.skusEnQuiebre.length > 0 ? '#7f1d1d' : '#065f46'}
                   bg={resultados.alertas.skusEnQuiebre.length > 0 ? '#fee2e2' : '#d1fae5'}
                 />
                 <AlertaCard 
                   titulo="Reposición Sugerida" 
-                  valor={resultados.alertas.totalReposicionUnid}
+                  valor={`${resultados.alertas.totalReposicionUnid} unidades`}
                   sub={fmtUSD(resultados.alertas.totalReposicionValor)}
                   color="#1e40af"
                   bg="#dbeafe"
                 />
+              </div>
+              <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <DefinitionLegend ids={DEFINITION_GROUPS.alerts} />
               </div>
 
               {resultados.alertas.skusSinOrigen.length > 0 && (
@@ -2186,6 +2264,9 @@ export default function App({
                   </div>
                   <div className="text-xs text-stone-600 mb-3">
                     Merma = Inv Proyectado − Inv Final. Causas posibles: ventas no captadas, transferencias no reportadas, mermas físicas, ajustes de inventario. Validar con el KAM y el cliente.
+                  </div>
+                  <div className="mb-3">
+                    <DefinitionLegend ids={['merma', 'mermaPct', 'inventoryValue']} />
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-[11px] border" style={{ borderColor: '#e5e0d5' }}>
@@ -2241,6 +2322,13 @@ export default function App({
                     <div className="mt-1">
                       <strong>Semanas del período aplicadas:</strong> {renderServiceValue(resultados.semanasPeriodoUsadas)} · <strong>Safety Stock:</strong> {config.safetyStockSemanas} sem · <strong>Lead Time USA:</strong> {config.leadTimeUSA} sem · <strong>Lead Time China:</strong> {config.leadTimeCHINA} sem
                     </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <DefinitionLegend
+                      ids={DEFINITION_GROUPS.safety}
+                      title="Definiciones y fórmulas de todas las columnas"
+                    />
                   </div>
 
                   <div className="overflow-x-auto">
@@ -2319,6 +2407,9 @@ export default function App({
                   Productos del Maestro con menos de 90 días desde su fecha de creación y cuyo SKU no está presente en el inventario. Esta lista no calcula reposición.
                 </div>
               </div>
+              <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <DefinitionLegend ids={DEFINITION_GROUPS.newProducts} />
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px]">
                   <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
@@ -2364,6 +2455,9 @@ export default function App({
                     <div className="text-2xl font-bold">{fmtUSD(resultados.alertas?.totalValorTransito)}</div>
                   </div>
                 </div>
+              </div>
+              <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <DefinitionLegend ids={DEFINITION_GROUPS.transit} />
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px]">
@@ -2421,6 +2515,10 @@ export default function App({
                 />
               </div>
 
+              <div className="px-6 pt-3">
+                <DefinitionLegend ids={DEFINITION_GROUPS.distributions} />
+              </div>
+
               <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <DistribTierPanel
                   titulo="Inventario Actual del Cliente"
@@ -2450,6 +2548,10 @@ export default function App({
                 <div className="text-xs text-stone-500 mt-1">
                   Tres vistas paralelas por categoría del Maestro: lo que el cliente <strong>tiene en piso</strong>, lo que <strong>está vendiendo</strong>, y lo que IOCA <strong>sugiere reponer</strong>. Categorías detectadas: <strong>{resultados.distribucionCategoria.lista.join(' · ')}</strong>
                 </div>
+              </div>
+
+              <div className="px-6 pt-3">
+                <DefinitionLegend ids={DEFINITION_GROUPS.distributions} />
               </div>
 
               <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2491,21 +2593,21 @@ export default function App({
                 <AlertaCard
                   titulo="Pareto A"
                   valor={`${resultados.analisisPareto.skusParetoA.length} SKUs`}
-                  sub={`${resultados.analisisPareto.pctSKUsA.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas`}
+                  sub={`Mayor contribución · ${resultados.analisisPareto.pctSKUsA.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasA.toFixed(0)}% de las ventas`}
                   color="#065f46"
                   bg="#d1fae5"
                 />
                 <AlertaCard
                   titulo="Pareto B"
                   valor={`${resultados.analisisPareto.skusParetoB.length} SKUs`}
-                  sub={`${resultados.analisisPareto.pctSKUsB.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasB.toFixed(0)}% de las ventas`}
+                  sub={`Contribución intermedia · ${resultados.analisisPareto.pctSKUsB.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasB.toFixed(0)}% de las ventas`}
                   color="#92400e"
                   bg="#fef3c7"
                 />
                 <AlertaCard
                   titulo="Pareto C"
                   valor={`${resultados.analisisPareto.skusParetoC.length} SKUs`}
-                  sub={`${resultados.analisisPareto.pctSKUsC.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasC.toFixed(0)}% de las ventas`}
+                  sub={`Contribución restante/menor · ${resultados.analisisPareto.pctSKUsC.toFixed(0)}% del portafolio · ${resultados.analisisPareto.pctVentasC.toFixed(0)}% de las ventas`}
                   color="#7f1d1d"
                   bg="#fee2e2"
                 />
@@ -2516,6 +2618,10 @@ export default function App({
                   color={resultados.analisisPareto.interpretacion.color}
                   bg={resultados.analisisPareto.interpretacion.bg}
                 />
+              </div>
+
+              <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <DefinitionLegend ids={DEFINITION_GROUPS.pareto} />
               </div>
 
               {/* Interpretación de 2 líneas */}
@@ -2564,17 +2670,20 @@ export default function App({
                           const tierColor = TIER_COLORS[r.tier?.toUpperCase()] || TIER_COLORS.GOOD;
                           let accionRepo = '';
                           let accionColor = '#999';
-                          if (esA && r.estado === 'ACTIVO') {
+                          if (r.estado === 'EOL') {
+                            accionRepo = obtenerRecomendacionEOL({
+                              bucket: r.bucket,
+                              paretoClase: r.paretoClase,
+                            });
+                            accionColor = '#7f1d1d';
+                          } else if (esA && r.estado === 'ACTIVO') {
                             accionRepo = 'Reposición prioritaria';
                             accionColor = '#065f46';
-                          } else if (esA && r.estado === 'EOL') {
-                            accionRepo = 'A — pero EOL: rebalancear';
-                            accionColor = '#7f1d1d';
                           } else if (!esA && r.estado === 'ACTIVO') {
                             accionRepo = 'Stock mínimo';
                             accionColor = '#92400e';
                           } else {
-                            accionRepo = 'Liquidar / no reponer';
+                            accionRepo = 'Agregar al Maestro y decidir';
                             accionColor = '#999';
                           }
                           return (
@@ -2628,6 +2737,9 @@ export default function App({
                   Productos con reposición sugerida mayor que cero, según el cálculo vigente del dominio.
                 </div>
               </div>
+              <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <DefinitionLegend ids={DEFINITION_GROUPS.replenishment} />
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px]">
                   <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
@@ -2674,12 +2786,15 @@ export default function App({
                 <div>
                   <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
                     <Package className="w-5 h-5" style={{ color: '#7f1d1d' }} />
-                    SKUs EOL
+                    SKUs EOL vencidos / descontinuados
                   </h2>
                   <div className="text-xs text-stone-500 mt-1">
-                    Ordenados por días descontinuados descendente. El <strong>Origen</strong> aplicado por SKU viene del Inventario.
+                    Este detalle incluye solo EOL cuya fecha ya venció. El KPI “SKU con EOL definido” también incluye EOL futuros o sin fecha válida.
                   </div>
                 </div>
+              </div>
+              <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                <DefinitionLegend ids={DEFINITION_GROUPS.eol} />
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px]">
@@ -2690,16 +2805,16 @@ export default function App({
                       <Th align="right">Costo</Th><Th align="center">Desc. %</Th>
                       <Th align="right">Desc. Consumi $</Th><Th align="right">Aporte IOCA $</Th>
                       <Th align="right">Aporte Retail $</Th><Th align="center">Inv. Final</Th>
-                      <Th align="center">Índice Rot.</Th>
-                      <Th align="right">Desc. Total $</Th>
+                      <Th align="center">Porcentaje Rot.</Th>
+                      <Th align="right">Desc. Total $</Th><Th>Acción EOL</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {resultados.eolVencidos.length === 0 && (
-                      <tr><td colSpan={15} className="p-6 text-center text-stone-500">No hay SKUs EOL ya descontinuados en este inventario.</td></tr>
+                      <tr><td colSpan={16} className="p-6 text-center text-stone-500">No hay SKU EOL vencidos/descontinuados en este inventario; el KPI puede incluir EOL futuros o sin fecha válida.</td></tr>
                     )}
                     {resultados.eolVencidos.map((r, i) => {
-                      const colorRot = colorIdxRotacion(r.indiceRotacion);
+                      const colorRot = colorPorcentajeRotacion(r.porcentajeRotacion);
                       return (
                       <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
                         <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
@@ -2739,9 +2854,15 @@ export default function App({
                         </Td>
                         <Td align="center" bold>{r.invFinal}</Td>
                         <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
-                          {fmtIdx(r.indiceRotacion)}
+                          {fmtPctPoints(r.porcentajeRotacion)}
                         </Td>
                         <Td align="right" bold>{fmtUSD(r.descTotal)}</Td>
+                        <Td bold style={{ color: '#7f1d1d', fontSize: '10px' }}>
+                          {obtenerRecomendacionEOL({
+                            bucket: r.bucket,
+                            paretoClase: paretoClassBySku.get(r.sku),
+                          })}
+                        </Td>
                       </tr>
                       );
                     })}
@@ -2750,9 +2871,10 @@ export default function App({
                     <tfoot>
                       <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
                         <td colSpan={12} className="px-3 py-2 text-right font-bold">TOTALES</td>
-                        <td className="px-3 py-2 text-center font-bold">{renderServiceValue(resultados.totales?.unidEOL)}</td>
+                        <td className="px-3 py-2 text-center font-bold">{renderServiceValue(resultados.totales?.unidadesEOLVencidas)}</td>
                         <td className="px-3 py-2 text-center font-bold">—</td>
                         <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.descEOL)}</td>
+                        <td className="px-3 py-2">—</td>
                       </tr>
                     </tfoot>
                   )}
@@ -2772,6 +2894,9 @@ export default function App({
                     Aún no aplica fase de descuento. Se gestionan según el Bucket EOL pre-vencido.
                   </div>
                 </div>
+                <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                  <DefinitionLegend ids={DEFINITION_GROUPS.eol} />
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-[11px]">
                     <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
@@ -2780,13 +2905,13 @@ export default function App({
                         <Th align="center">Días hasta EOL</Th><Th align="center">Bucket Pre-EOL</Th>
                         <Th align="center">Origen</Th>
                         <Th align="right">Costo</Th><Th align="center">Inv. Final</Th>
-                        <Th align="center">Índice Rot.</Th>
-                        <Th align="right">Valor Inv.</Th>
+                        <Th align="center">Porcentaje Rot.</Th>
+                        <Th align="right">Valor Inv.</Th><Th>Acción EOL</Th>
                       </tr>
                     </thead>
                     <tbody>
                       {resultados.eolFuturos.map((r, i) => {
-                        const colorRot = colorIdxRotacion(r.indiceRotacion);
+                        const colorRot = colorPorcentajeRotacion(r.porcentajeRotacion);
                         return (
                         <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
                           <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
@@ -2813,9 +2938,15 @@ export default function App({
                           <Td align="right">{fmtUSD(r.costo)}</Td>
                           <Td align="center" bold>{r.invFinal}</Td>
                           <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
-                            {fmtIdx(r.indiceRotacion)}
+                            {fmtPctPoints(r.porcentajeRotacion)}
                           </Td>
                           <Td align="right" bold>{fmtUSD(r.valorInv)}</Td>
+                          <Td bold style={{ color: '#92400e', fontSize: '10px' }}>
+                            {obtenerRecomendacionEOL({
+                              bucket: r.bucket,
+                              paretoClase: paretoClassBySku.get(r.sku),
+                            })}
+                          </Td>
                         </tr>
                         );
                       })}
@@ -2838,6 +2969,9 @@ export default function App({
                       Estos códigos están en el inventario del cliente pero no aparecen en el Maestro IOCA cargado. Acción: actualizar el Maestro con su estado correcto, costos y fecha si aplica.
                     </div>
                   </div>
+                </div>
+                <div className="mb-3">
+                  <DefinitionLegend ids={DEFINITION_GROUPS.noMaster} />
                 </div>
                 <div className="overflow-x-auto bg-white border" style={{ borderColor: '#fbbf24' }}>
                   <table className="w-full text-[11px]">
@@ -2876,25 +3010,28 @@ export default function App({
                 {showActivos && (
                   <div className="overflow-x-auto">
                     <div className="px-6 py-3 text-[10px] text-stone-600 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
-                      <strong>Índice de rotación = Inv. Inicial ÷ Ventas.</strong>{' '}
-                      <span style={{ color: '#065f46' }}>Verde: alta, &lt;1</span> ·{' '}
-                      <span style={{ color: '#1e40af' }}>Azul: normal, 1–3</span> ·{' '}
-                      <span style={{ color: '#92400e' }}>Ámbar: lenta, &gt;3–10</span> ·{' '}
-                      <span style={{ color: '#7f1d1d' }}>Rojo: muy lenta, &gt;10</span> ·{' '}
-                      <span style={{ color: '#777' }}>Gris/—: Ventas = 0.</span>
+                      <strong>Porcentaje de Rotación = Ventas ÷ Inventario Inicial × 100.</strong>{' '}
+                      <span style={{ color: '#065f46' }}>Verde: alta, &gt;100%</span> ·{' '}
+                      <span style={{ color: '#1e40af' }}>Azul: normal, 33.33%–100%</span> ·{' '}
+                      <span style={{ color: '#92400e' }}>Ámbar: lenta, 10%–&lt;33.33%</span> ·{' '}
+                      <span style={{ color: '#7f1d1d' }}>Rojo: crítica, &lt;10%</span> ·{' '}
+                      <span style={{ color: '#777' }}>Gris/—: Inventario Inicial = 0.</span>
+                    </div>
+                    <div className="px-6 py-3 border-b" style={{ borderColor: '#e5e0d5' }}>
+                      <DefinitionLegend ids={DEFINITION_GROUPS.active} />
                     </div>
                     <table className="w-full text-[11px]">
                       <thead style={{ background: '#0a2540', color: '#faf8f3' }}>
                         <tr>
                           <Th>SKU</Th><Th>Modelo</Th><Th>Marca</Th><Th align="center">Origen</Th>
                           <Th align="right">Costo</Th><Th align="center">Inv. Final</Th>
-                          <Th align="center">Índice Rot.</Th>
+                          <Th align="center">Porcentaje Rot.</Th>
                           <Th align="right">Valor Inv.</Th>
                         </tr>
                       </thead>
                       <tbody>
                         {resultados.activos.map((r, i) => {
-                          const colorRot = colorIdxRotacion(r.indiceRotacion);
+                          const colorRot = colorPorcentajeRotacion(r.porcentajeRotacion);
                           return (
                           <tr key={i} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
                             <Td><ProductSkuCell imageUrl={r.imageUrl} productUrl={r.productUrl}>{r.sku}</ProductSkuCell></Td>
@@ -2909,7 +3046,7 @@ export default function App({
                             <Td align="right">{fmtUSD(r.costo)}</Td>
                             <Td align="center" bold>{r.invFinal}</Td>
                             <Td align="center" bold style={{ background: colorRot.bg, color: colorRot.fg }}>
-                              {fmtIdx(r.indiceRotacion)}
+                              {fmtPctPoints(r.porcentajeRotacion)}
                             </Td>
                             <Td align="right" bold style={{ background: '#d1fae5', color: '#065f46' }}>{fmtUSD(r.valorInv)}</Td>
                           </tr>
@@ -3089,9 +3226,9 @@ export default function App({
                     {[
                       ['Total SKU', resultados.totales.totalSKUs, 'Total Unidades', resultados.totales.totalUnidades],
                       ['SKU Activos', resultados.totales.skuActivos, 'Total Unidades Activas', resultados.totales.unidadesActivas],
-                      ['SKU Vencidos', resultados.totales.skuVencidos, 'Total Unidades Vencidas', resultados.totales.unidadesVencidas],
+                      ['SKU con EOL definido', resultados.totales.skuEOL, 'Total Unidades EOL', resultados.totales.unidEOL],
                       ['SKU sin ventas', resultados.totales.skuSinVentas, 'Unidades sin ventas', resultados.totales.unidadesSinVentas, 'Valor inventario sin ventas', resultados.totales.valorInventarioSinVentas],
-                      ['SKU Maestro', resultados.totales.skuMaestro, 'Total Unidades Maestro', resultados.totales.unidadesMaestro],
+                      ['SKU Sin Maestro', resultados.totales.sinMaestro, 'Total Unidades Sin Maestro', resultados.totales.unidadesSinMaestro],
                     ].map(([label, value, unitLabel, unitValue, moneyLabel, moneyValue]) => (
                       <div key={label} style={{ border: '1px solid #e5e0d5', padding: '8px', background: '#faf8f3' }}>
                         <div style={{ fontSize: '8px', textTransform: 'uppercase', color: '#666' }}>{label}</div>
@@ -3105,11 +3242,12 @@ export default function App({
 
                   <div style={{ border: '1px solid #d4af37', padding: '12px', marginBottom: '16px' }}>
                     <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#0a2540', marginBottom: '8px', textTransform: 'uppercase' }}>Valorización del inventario</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
                       {[
                         ['Valor Total Inventario', resultados.totales.valorTotalInventario],
                         ['Valor Activo', resultados.totales.valorActivo],
-                        ['Valor EOL', resultados.totales.valorEOL],
+                        ['Valor EOL (todos)', resultados.totales.valorEOL],
+                        ['Valor EOL Vencido', resultados.totales.valorEOLVencido],
                         ['Valor EOL Futuro', resultados.totales.valorEOLFuturo],
                         ['Valor Sin Maestro', resultados.totales.valorSinMaestro],
                       ].map(([label, value]) => (
@@ -3174,17 +3312,17 @@ export default function App({
                     </thead>
                     <tbody>
                       <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
-                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Alta rotación (índice &lt; 1)</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Alta rotación (&gt;100%)</td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', background: '#d1fae5', color: '#065f46', fontWeight: 'bold' }}>{informe.altaRotacion.length}</td>
                         <td style={{ padding: '8px 10px' }}>SKUs vendiendo más rápido que el stock inicial. Asegurar reposición continua.</td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
-                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Baja rotación (índice 3–10)</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Baja rotación (10%–&lt;33.33%)</td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fef3c7', color: '#92400e', fontWeight: 'bold' }}>{informe.bajaRotacion.length}</td>
                         <td style={{ padding: '8px 10px' }}>SKUs con cobertura alta. Revisar exhibición, precio y bundles para acelerar.</td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #e5e0d5' }}>
-                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Rotación crítica (índice &gt; 10)</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>Rotación crítica (&lt;10%)</td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', background: '#fee2e2', color: '#7f1d1d', fontWeight: 'bold' }}>{informe.muyBajaRotacion.length}</td>
                         <td style={{ padding: '8px 10px' }}>Inventario por décadas — candidatos a liquidación o eliminación del surtido.</td>
                       </tr>
@@ -3232,6 +3370,14 @@ export default function App({
                   <div style={{ fontSize: '10px', fontStyle: 'italic', color: '#666', borderTop: '1px solid #e5e0d5', paddingTop: '8px' }}>
                     <strong>Propósito consultivo:</strong> {NOTA_INV_SEGURIDAD.propositoConsultivo}
                   </div>
+                </div>
+
+                <div className="no-page-break" style={{ marginBottom: '32px' }}>
+                  <DefinitionLegend
+                    ids={DEFINITION_GROUPS.report}
+                    expanded
+                    title="Definiciones y fórmulas del Informe Ejecutivo"
+                  />
                 </div>
                 
                 {/* 3. HALLAZGOS CLAVE */}

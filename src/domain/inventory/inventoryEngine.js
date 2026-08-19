@@ -36,9 +36,10 @@ export const calcularMerma = ({ invProyectado, invFinal, invInicial, umbralMerma
   return { merma, mermaPct, alertaMerma };
 };
 
-// Mantiene null cuando no existen ventas para evitar una división indefinida.
-export const calcularIndiceRotacion = ({ invInicial, ventas }) =>
-  ventas > 0 ? invInicial / ventas : null;
+// Expresa las ventas del período como porcentaje del inventario inicial. Un
+// inventario inicial igual a cero no tiene denominador matemáticamente válido.
+export const calcularPorcentajeRotacion = ({ invInicial, ventas }) =>
+  invInicial > 0 ? (ventas / invInicial) * 100 : null;
 
 // Normaliza el origen efectivo: únicamente CHINA evita el fallback USA.
 export const seleccionarOrigen = (origenInv) => ({

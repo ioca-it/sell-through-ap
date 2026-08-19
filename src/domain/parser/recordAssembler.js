@@ -11,7 +11,7 @@ import {
   obtenerSemanasPeriodo,
   calcularInventarioProyectado,
   calcularMerma,
-  calcularIndiceRotacion,
+  calcularPorcentajeRotacion,
   seleccionarOrigen,
   seleccionarCostoPorOrigen,
   calcularInventarioSeguridadIOCA,
@@ -70,7 +70,7 @@ export const assembleRecord = ({
     invInicial,
     umbralMermaPct,
   });
-  const indiceRotacion = calcularIndiceRotacion({ invInicial, ventas });
+  const porcentajeRotacion = calcularPorcentajeRotacion({ invInicial, ventas });
 
   if (!masterRecord) {
     const {
@@ -92,9 +92,9 @@ export const assembleRecord = ({
       fechaStr: '', creationDate: null, diasDesc: null, diasRestantes: null,
       clasificacionTemporal: 'SIN MAESTRO', bucket: null, fase: null,
       origen: origenInv || '—', sinOrigenInv: !origenInv,
-      costo: 0, costoUSA: 0, costoCHINA: 0,
+      costo: null, costoUSA: null, costoCHINA: null,
       level: '', imageUrl: '', productUrl: '',
-      descPct: 0, descUSD: 0, ioaUSD: 0, retailUSD: 0,
+      descPct: 0, descUSD: null, ioaUSD: null, retailUSD: null,
       inventarioMinimoReconocido: 0, liquidacionSoloRetail: false,
       invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
       invSeguridadIOCA: invSeguridad, deltaInvSeguridad: 0, fuenteInvSeguridad: 'Cliente',
@@ -105,13 +105,14 @@ export const assembleRecord = ({
       ),
       leadTimeAplicado: 0,
       merma, mermaPct, alertaMerma,
-      indiceRotacion,
+      porcentajeRotacion,
       necesidadReposicion, reposicionSugerida: 0,
       alertaQuiebre: sinMaestroAlertaQuiebre,
       accionSugerida: sinMaestroAlertaQuiebre ? 'Agregar al Maestro y decidir' : '',
-      valorInv: 0,
-      valorVentas: 0,
-      descTotal: 0, ioaTotal: 0, retailTotal: 0,
+      valorInv: null,
+      valorVentas: null,
+      valorReposicion: null,
+      descTotal: null, ioaTotal: null, retailTotal: null,
     };
   }
 
@@ -242,7 +243,7 @@ export const assembleRecord = ({
     invSeguridadIOCA, deltaInvSeguridad, fuenteInvSeguridad,
     semanasPeriodo, leadTimeAplicado,
     merma, mermaPct, alertaMerma,
-    indiceRotacion,
+    porcentajeRotacion,
     necesidadReposicion, reposicionSugerida, alertaQuiebre, accionSugerida,
     valorInv: multiplyPrice(costo, invFinal),
     valorVentas: multiplyPrice(costo, ventas),

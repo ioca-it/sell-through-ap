@@ -1,5 +1,25 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-19 — PHASE1-094
+
+### Auditoría final de presentación
+
+- Valorización agrega importes calculables por precio/origen sin convertir
+  ausencias a cero; total por records y `% Valor` sobre base válida.
+- EOL total, vencido y futuro quedan diferenciados en KPI, Informe y Excel;
+  matriz bucket/Pareto mantiene no reponer.
+- `Porcentaje de Rotación = Ventas / Inventario Inicial × 100` sustituye la
+  métrica anterior en cálculo, UI, Informe, Excel, CSV y leyendas.
+- Unidades explícitas y fuente común de definiciones/fórmulas para UI y
+  exportaciones.
+- Lightbox, SKU nowrap y hyperlinks seguros HTTP(S); Excel añade links e
+  imagen por hyperlink, más hoja de definiciones. CSV complementario conserva
+  el dataset principal limpio.
+- Sin cambios backend, fuentes, filtros, mappings, autenticación, variables o
+  infraestructura; sin commit, push o deploy.
+- Frontend PASS con 35 archivos/411 pruebas y build Vite de 1,689 módulos;
+  backend no ejecutado por ausencia de cambios.
+
 ## 2026-08-19 — PHASE1-092
 
 ### Imágenes Product y hyperlinks SKU

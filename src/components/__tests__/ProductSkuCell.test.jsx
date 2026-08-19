@@ -1,7 +1,14 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { getSafeProductUrl, ProductSkuCell } from '../ProductSkuCell.jsx';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  closeProductLightbox,
+  closeProductLightboxOnEscape,
+  getSafeProductUrl,
+  openProductLightbox,
+  ProductImageLightbox,
+  ProductSkuCell,
+} from '../ProductSkuCell.jsx';
 
 const renderCell = (props) => renderToStaticMarkup(
   <ProductSkuCell {...props}>{props.sku}</ProductSkuCell>,
@@ -17,6 +24,8 @@ describe('ProductSkuCell', () => {
     expect(markup).toContain('<img');
     expect(markup).toContain('src="https://images.example.test/sku-001.png"');
     expect(markup).toContain('alt="Producto SKU-001"');
+    expect(markup).toContain('aria-label="Ampliar imagen de SKU-001"');
+    expect(markup).toContain('cursor-zoom-in');
     expect(markup).not.toContain('alt="https://');
   });
 
@@ -37,6 +46,7 @@ describe('ProductSkuCell', () => {
     expect(markup).toContain('target="_blank"');
     expect(markup).toContain('rel="noopener noreferrer"');
     expect(markup).toContain('cursor-pointer');
+    expect(markup).toContain('whitespace-nowrap');
   });
 
   it('muestra SKU como texto cuando productUrl está vacía', () => {
@@ -66,5 +76,44 @@ describe('ProductSkuCell', () => {
     expect(markup).toContain('data-product-image-fallback="true"');
     expect(markup).toContain('SKU-UNSAFE');
   });
-});
 
+  it('abre y cierra el estado del lightbox, incluido Escape', () => {
+    const setIsOpen = vi.fn();
+
+    openProductLightbox(setIsOpen);
+    closeProductLightbox(setIsOpen);
+    closeProductLightboxOnEscape({ key: 'Enter' }, setIsOpen);
+    closeProductLightboxOnEscape({ key: 'Escape' }, setIsOpen);
+
+    expect(setIsOpen.mock.calls).toEqual([[true], [false], [false]]);
+  });
+
+  it('renderiza modal accesible, responsive y con imagen object-contain', () => {
+    const onClose = vi.fn();
+    const modal = ProductImageLightbox({
+      imageUrl: 'https://images.example.test/sku-modal.png',
+      skuLabel: 'SKU-MODAL',
+      onClose,
+      onError: () => {},
+    });
+    const markup = renderToStaticMarkup(
+      <ProductImageLightbox
+        imageUrl="https://images.example.test/sku-modal.png"
+        skuLabel="SKU-MODAL"
+        onClose={onClose}
+        onError={() => {}}
+      />,
+    );
+
+    modal.props.onClick();
+    modal.props.children.props.children[0].props.onClick();
+
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
+    expect(markup).toContain('data-product-image-lightbox="true"');
+    expect(markup).toContain('aria-label="Cerrar imagen ampliada"');
+    expect(markup).toContain('object-contain');
+    expect(markup).toContain('max-height:84vh');
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});

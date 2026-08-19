@@ -66,13 +66,15 @@ describe('contrato Product normalizado', () => {
     })).toMatchObject({ priceUSA: 0, priceChina: null });
   });
 
-  it('propaga precio no disponible en operaciones financieras', () => {
+  it('preserva null por SKU y suma los importes válidos del bloque', () => {
     expect(multiplyPrice(null, 5)).toBeNull();
     expect(multiplyPrice(0, 5)).toBe(0);
     expect(subtractPrices(25, null)).toBeNull();
     expect(subtractPrices(25, 0)).toBe(25);
-    expect(sumPriceValues([10, null, 5])).toBeNull();
+    expect(sumPriceValues([10, null, 5])).toBe(15);
     expect(sumPriceValues([10, 0, 5])).toBe(15);
+    expect(sumPriceValues([null, undefined])).toBeNull();
+    expect(sumPriceValues([])).toBe(0);
   });
 
   it('adapta Product al contrato legado sin cambiar reglas de status/costo', () => {

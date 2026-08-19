@@ -6,11 +6,14 @@ import {
   processSellThrough,
 } from '../application/sellThroughApplicationService.js';
 import {
+  calcularInventarioSeguridadIOCA,
   calcularQuiebreYReposicion,
+  obtenerSemanasPeriodo,
 } from '../domain/inventory/inventoryEngine.js';
 import {
   calcularDescuentoYAportes,
   clasificarTemporalmente,
+  obtenerRecomendacionEOL,
   seleccionarFaseEOL,
 } from '../domain/eol/eolEngine.js';
 import { fmtPct } from '../utils/formatters.js';
@@ -104,6 +107,24 @@ describe('reposición, nivel de seguridad y tránsito', () => {
     });
   });
 
+  it('reconcilia Inv. Seguridad IOCA con 4.33 semanas mensuales y 13 trimestrales', () => {
+    const semanasPorPeriodo = { Mensual: 4.33, Trimestral: 13 };
+    const calcular = (periodo) => calcularInventarioSeguridadIOCA({
+      ventas: 13,
+      semanasPeriodo: obtenerSemanasPeriodo(periodo, 0, semanasPorPeriodo),
+      safetyStockSemanas: 16,
+      leadTimeUSA: 4,
+      leadTimeCHINA: 4,
+      origen: 'USA',
+      invSeguridadCliente: 0,
+    }).invSeguridadIOCA;
+
+    expect(obtenerSemanasPeriodo('Mensual', 0, semanasPorPeriodo)).toBe(4.33);
+    expect(obtenerSemanasPeriodo('Trimestral', 0, semanasPorPeriodo)).toBe(13);
+    expect(calcular('Mensual')).toBe(61);
+    expect(calcular('Trimestral')).toBe(20);
+  });
+
   it('conserva Inventario Proyectado negativo y lo usa para nivel de seguridad', () => {
     const resultados = processData({
       maestro: 'SKU\tUSA\nNEGATIVO-1\t10',
@@ -187,6 +208,35 @@ describe('clasificación temporal y EOL Fase 4', () => {
     expect(clasificarTemporalmente({
       estado: 'EOL', fechaDescontinuacion: dateAtOffset(32), fechaProcesamiento: PROCESSING_DATE,
     }).clasificacionTemporal).toBe('VENCIDO');
+  });
+
+  it('separa el KPI de EOL definido de las tablas vencida y futura', () => {
+    const resultados = processData({
+      maestro: [
+        'SKU\tESTADO\tFECHA EOL\tUSA',
+        'EOL-VENCIDO\tEOL\t2025-01-01\t10',
+        'EOL-FUTURO\tEOL\t2026-10-01\t10',
+      ].join('\n'),
+      inventario: 'SKU\tINV FINAL\nEOL-VENCIDO\t2\nEOL-FUTURO\t3',
+    });
+
+    expect(resultados.totales).toMatchObject({ skuEOL: 2, unidEOL: 5 });
+    expect(resultados.eolVencidos.map(({ sku }) => sku)).toEqual(['EOL-VENCIDO']);
+    expect(resultados.eolFuturos.map(({ sku }) => sku)).toEqual(['EOL-FUTURO']);
+    expect(resultados.executiveReport.executiveSummary)
+      .toMatchObject({ skuEOL: 2, unidadesEOL: 5 });
+  });
+
+  it('prioriza EOL y explica rebalancear, reducción o liquidación con Pareto real', () => {
+    expect(obtenerRecomendacionEOL({
+      bucket: 'EOL Vencido', paretoClase: 'A',
+    })).toBe('Liquidar / no reponer');
+    expect(obtenerRecomendacionEOL({
+      bucket: 'EOL Planificado', paretoClase: 'A',
+    })).toBe('Rebalancear / agotar stock · no reponer');
+    expect(obtenerRecomendacionEOL({
+      bucket: 'EOL Próximo', paretoClase: 'B',
+    })).toBe('Reducción / rebalanceo selectivo · no reponer');
   });
 
   it.each(['USA', 'CHINA'])(
@@ -311,16 +361,17 @@ describe('Pareto, Mix Balanceado, KPIs y valorización', () => {
       sinMaestro: 1,
       unidadesSinMaestro: 5,
       valorActivo: 20,
-      valorEOL: 60,
+      skuEOL: 2,
+      unidEOL: 7,
+      valorEOL: 160,
+      valorEOLVencido: 60,
       valorEOLFuturo: 100,
-      valorSinMaestro: 0,
+      valorSinMaestro: null,
       valorTotalInventario: 180,
     });
     expect(resultados.totales.valorTotalInventario).toBe(
       resultados.totales.valorActivo
       + resultados.totales.valorEOL
-      + resultados.totales.valorEOLFuturo
-      + resultados.totales.valorSinMaestro,
     );
     expect(resultados.executiveReport.executiveSummary).toMatchObject({
       skuEOL: 2,
@@ -329,10 +380,55 @@ describe('Pareto, Mix Balanceado, KPIs y valorización', () => {
       unidadesSinMaestro: 5,
       valorTotalInventario: 180,
       valorActivo: 20,
-      valorEOL: 60,
-      valorSinMaestro: 0,
+      valorEOL: 160,
+      valorEOLVencido: 60,
+      valorSinMaestro: null,
     });
     expect(resultados.executiveReport.valorizacion.valorTotalInventario).toBe(180);
+  });
+
+  it('valoriza importes disponibles sin convertir precios ausentes en cero', () => {
+    const resultados = processData({
+      maestro: [
+        'SKU\tCATEGORIA\tUSA',
+        'PRECIO-REAL\tAUDIO\t10',
+        'PRECIO-CERO\tACCESORIOS\t0',
+        'PRECIO-AUSENTE\tCABLES\t',
+      ].join('\n'),
+      inventario: [
+        'SKU\tORIGEN\tVENTAS\tINV FINAL',
+        'PRECIO-REAL\tUSA\t2\t2',
+        'PRECIO-CERO\tUSA\t1\t3',
+        'PRECIO-AUSENTE\tUSA\t4\t5',
+      ].join('\n'),
+    });
+
+    expect(resultados.recs.map(({ sku, costo, valorInv, valorVentas }) => ({
+      sku, costo, valorInv, valorVentas,
+    }))).toEqual([
+      { sku: 'PRECIO-REAL', costo: 10, valorInv: 20, valorVentas: 20 },
+      { sku: 'PRECIO-CERO', costo: 0, valorInv: 0, valorVentas: 0 },
+      { sku: 'PRECIO-AUSENTE', costo: null, valorInv: null, valorVentas: null },
+    ]);
+    expect(resultados.totales.valorTotalInventario).toBe(20);
+    expect(resultados.distribucionCategoria.inventario.totalV).toBe(20);
+    expect(resultados.distribucionCategoria.inventario.categorias.AUDIO)
+      .toMatchObject({ valor: 20, pctValor: 1 });
+    expect(resultados.distribucionCategoria.inventario.categorias.ACCESORIOS)
+      .toMatchObject({ valor: 0, pctValor: 0 });
+    expect(resultados.distribucionCategoria.inventario.categorias.CABLES)
+      .toMatchObject({ valor: null, pctValor: null });
+  });
+
+  it('no inventa % Valor cuando el total válido del bloque es cero', () => {
+    const resultados = processData({
+      maestro: 'SKU\tCATEGORIA\tUSA\nPRECIO-CERO\tAUDIO\t0',
+      inventario: 'SKU\tORIGEN\tVENTAS\tINV FINAL\nPRECIO-CERO\tUSA\t1\t3',
+    });
+
+    expect(resultados.distribucionCategoria.inventario.totalV).toBe(0);
+    expect(resultados.distribucionCategoria.inventario.categorias.AUDIO)
+      .toMatchObject({ valor: 0, pctValor: null });
   });
 
   it('expone pares SKU/unidades para los indicadores del Resumen Dashboard', () => {

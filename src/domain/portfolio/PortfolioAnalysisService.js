@@ -66,6 +66,8 @@ const consolidateRecords = (records) => {
   const eolFuturos = ownedRecords.filter((record) =>
     record.estado === 'EOL' && record.diasDesc !== null && record.diasDesc < 0
   ).sort((a, b) => b.diasDesc - a.diasDesc);
+  const eolTodos = ownedRecords.filter((record) => record.estado === 'EOL');
+  const eolSinFecha = eolTodos.filter((record) => record.diasDesc === null);
   const activos = ownedRecords.filter((record) => record.estado === 'ACTIVO')
     .sort((a, b) => compareNullableMoneyDescending(a.valorInv, b.valorInv));
   const sinMaestro = ownedRecords.filter((record) => record.estado === 'SIN MAESTRO');
@@ -84,6 +86,8 @@ const consolidateRecords = (records) => {
     recs: ownedRecords,
     eolVencidos,
     eolFuturos,
+    eolTodos,
+    eolSinFecha,
     activos,
     sinMaestro,
     skusActivos,
@@ -110,6 +114,8 @@ const analyzePortfolio = ({
     recs,
     eolVencidos,
     eolFuturos,
+    eolTodos,
+    eolSinFecha,
     activos,
     sinMaestro,
     skusActivos,
@@ -125,10 +131,15 @@ const analyzePortfolio = ({
   const ownedAnalisisPareto = cloneStructure(analisisPareto);
   const ownedNewProductsMissingInventory = cloneStructure(newProductsMissingInventory);
 
-  const totalUnidEOL = eolVencidos.reduce((sum, record) => sum + record.invFinal, 0);
-  const totalValorEOL = sumPriceValues(recs.filter((record) =>
-    record.estado === 'EOL' && !(record.diasDesc !== null && record.diasDesc < 0)
-  ).map((record) => record.valorInv));
+  const totalUnidEOL = eolTodos.reduce((sum, record) => sum + record.invFinal, 0);
+  const totalUnidEOLVencido = eolVencidos.reduce(
+    (sum, record) => sum + record.invFinal,
+    0,
+  );
+  const totalValorEOL = sumPriceValues(eolTodos.map((record) => record.valorInv));
+  const totalValorEOLVencido = sumPriceValues(
+    eolVencidos.map((record) => record.valorInv),
+  );
   const totalDescEOL = sumPriceValues(eolVencidos.map((record) => record.descTotal));
   const totalIOAEOL = sumPriceValues(eolVencidos.map((record) => record.ioaTotal));
   const totalRetailEOL = sumPriceValues(eolVencidos.map((record) => record.retailTotal));
@@ -221,13 +232,11 @@ const analyzePortfolio = ({
   const unidadesSinMaestro = sinMaestro.reduce((sum, record) => sum + record.invFinal, 0);
   const valorActivo = sumPriceValues(activos.map((record) => record.valorInv));
   const valorEOLFuturo = sumPriceValues(eolFuturos.map((record) => record.valorInv));
+  const valorEOLSinFecha = sumPriceValues(eolSinFecha.map((record) => record.valorInv));
   const valorSinMaestro = sumPriceValues(sinMaestro.map((record) => record.valorInv));
-  const valorTotalInventario = sumPriceValues([
-    valorActivo,
-    totalValorEOL,
-    valorEOLFuturo,
-    valorSinMaestro,
-  ]);
+  // Opti ChatGPT: totalizar filas evita sumar segmentos derivados que puedan
+  // superponerse y conserva solo los valores SKU realmente calculables.
+  const valorTotalInventario = sumPriceValues(recs.map((record) => record.valorInv));
 
   const semanasPeriodoUsadas = obtenerSemanasPeriodo(
     config.periodoAnalizado,
@@ -240,6 +249,8 @@ const analyzePortfolio = ({
     recs,
     eolVencidos,
     eolFuturos,
+    eolTodos,
+    eolSinFecha,
     activos,
     sinMaestro,
     distribucionTier: ownedDistribucionTier,
@@ -284,6 +295,8 @@ const analyzePortfolio = ({
       activos: activos.length,
       eolVencidos: eolVencidos.length,
       eolFuturos: eolFuturos.length,
+      eolSinFecha: eolSinFecha.length,
+      skuEOL: eolTodos.length,
       sinMaestro: sinMaestro.length,
       skuActivos: skusActivos.length,
       skuVencidos: skusVencidos.length,
@@ -298,15 +311,24 @@ const analyzePortfolio = ({
       unidadesMaestro,
       unidadesSinMaestro,
       unidEOL: totalUnidEOL,
+      unidadesEOLVencidas: totalUnidEOLVencido,
       valorActivo,
       valorEOL: totalValorEOL,
+      valorEOLVencido: totalValorEOLVencido,
       valorEOLFuturo,
+      valorEOLSinFecha,
       valorSinMaestro,
       valorInventarioSinVentas,
       valorTotalInventario,
       pctValorEOL: isAvailablePrice(valorTotalInventario)
         && isAvailablePrice(totalValorEOL)
-        ? (valorTotalInventario > 0 ? (totalValorEOL / valorTotalInventario) * 100 : 0)
+        ? (valorTotalInventario > 0 ? (totalValorEOL / valorTotalInventario) * 100 : null)
+        : null,
+      pctValorEOLVencido: isAvailablePrice(valorTotalInventario)
+        && isAvailablePrice(totalValorEOLVencido)
+        ? (valorTotalInventario > 0
+          ? (totalValorEOLVencido / valorTotalInventario) * 100
+          : null)
         : null,
       descEOL: totalDescEOL,
       ioaEOL: totalIOAEOL,

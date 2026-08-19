@@ -56,7 +56,12 @@ import App from '../App.jsx';
 import * as XLSX from 'xlsx';
 import { processSellThrough } from '../application/sellThroughApplicationService.js';
 import { ProductSkuCell } from '../components/ProductSkuCell.jsx';
+import { DefinitionLegend } from '../components/DefinitionLegend.jsx';
 import { createSellThroughRepository } from '../repositories/sellThroughRepository.js';
+import {
+  buildDefinitionsCsv,
+  buildSellThroughCsv,
+} from '../presentation/csvExport.js';
 
 const CONFIG = {
   periodoAnalizado: 'Mensual',
@@ -270,7 +275,7 @@ describe('AP01 — presentación del Dashboard', () => {
     );
     const content = textContent(executiveSection);
 
-    expect(content).toContain('SKU EOL');
+    expect(content).toContain('SKU con EOL definido');
     expect(content).not.toContain('SKU Vencidos');
     expect(content).toContain('SKU Sin Maestro');
     expect(content).toContain('Valor Inventario Total');
@@ -298,6 +303,29 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(content).toContain('Productos nuevos que aún no están presentes en el inventario del cliente.');
     expect(content).toContain('Vitales');
     expect(content).toContain('Complementarios');
+  });
+
+  it('expone unidades explícitas en alertas y leyendas compactas por sección', () => {
+    const tree = renderDashboard(buildResults(), { showActives: true });
+    const alertCards = findElements(
+      tree,
+      (node) => typeof node.type === 'function' && node.type.name === 'AlertaCard',
+    );
+    const alertsByTitle = Object.fromEntries(alertCards.map(({ props }) => [
+      props.titulo,
+      props.valor,
+    ]));
+    const legends = findElements(tree, (node) => node.type === DefinitionLegend);
+
+    expect(alertsByTitle['Merma > 10%']).toMatch(/SKU$/);
+    expect(alertsByTitle['Bajo Inv. Seguridad']).toMatch(/SKU$/);
+    expect(alertsByTitle['Reposición Sugerida']).toMatch(/unidades$/);
+    expect(legends.length).toBeGreaterThanOrEqual(12);
+    expect(legends.some(({ props }) => (
+      props.title === 'Definiciones y fórmulas de todas las columnas'
+      && props.ids.includes('finalReplenishment')
+      && props.ids.includes('suggestedAction')
+    ))).toBe(true);
   });
 
   it('muestra Mix Balanceado con SKU/unidades y solo reposiciones mayores que cero', () => {
@@ -355,15 +383,15 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(content).toContain('Esta lista no calcula reposición');
   });
 
-  it('explica el índice de rotación, sus colores y los buckets EOL reales', () => {
+  it('explica el Porcentaje de Rotación, sus colores y los buckets EOL reales', () => {
     const tree = renderDashboard(buildResults(), { showActives: true, showKnowledge: true });
     const content = textContent(tree);
 
-    expect(content).toContain('Índice de rotación = Inv. Inicial ÷ Ventas.');
-    expect(content).toContain('Verde: alta, <1');
-    expect(content).toContain('Azul: normal, 1–3');
-    expect(content).toContain('Ámbar: lenta, >3–10');
-    expect(content).toContain('Rojo: muy lenta, >10');
+    expect(content).toContain('Porcentaje de Rotación = Ventas ÷ Inventario Inicial × 100.');
+    expect(content).toContain('Verde: alta, >100%');
+    expect(content).toContain('Azul: normal, 33.33%–100%');
+    expect(content).toContain('Ámbar: lenta, 10%–<33.33%');
+    expect(content).toContain('Rojo: crítica, <10%');
     expect(content).toContain('EOL vencido:');
     expect(content).toContain('EOL crítico: faltan 1–27 días.');
     expect(content).toContain('EOL próximo: faltan 28–83 días.');
@@ -444,7 +472,7 @@ describe('AP01 — presentación del Dashboard', () => {
     exportButton.props.onClick();
 
     expect(xlsxHarness.sheetsByName['Inventario en tránsito']).toContainEqual([
-      'REPONER', 'Modelo recomendado', 'ACTIVO', 'BEST', 1, 10,
+      'REPONER', 'Modelo recomendado', 'ACTIVO', 'BEST', 1, 10, '',
     ]);
     const replenishment = resultados.recs.find(({ sku }) => sku === 'REPONER');
     expect(xlsxHarness.sheetsByName['Reposición sugerida']).toContainEqual([
@@ -454,17 +482,80 @@ describe('AP01 — presentación del Dashboard', () => {
       replenishment.tier,
       replenishment.invProyectado,
       replenishment.compra,
+      replenishment.necesidadReposicion,
       replenishment.reposicionSugerida,
       replenishment.valorReposicion,
+      '',
     ]);
     expect(xlsxHarness.sheetsByName['Nuevos no presentes']).toContainEqual([
-      'NUEVO-AUSENTE', 'Modelo nuevo', 'SKULLCANDY', 'TRUE WIRELESS', '2026-07-01',
+      'NUEVO-AUSENTE', 'Modelo nuevo', 'SKULLCANDY', 'TRUE WIRELESS', '2026-07-01', '',
     ]);
     const completeRows = xlsxHarness.sheetsByName['Datos Completos'];
     const creationDateColumn = completeRows[0].indexOf('Fecha de creación');
     const replenishmentRow = completeRows.find((row) => row[0] === 'REPONER');
     expect(creationDateColumn).toBeGreaterThan(0);
     expect(replenishmentRow[creationDateColumn]).toBe('2026-07-15');
+  });
+
+  it('exporta hyperlinks de producto/imagen y la hoja única de definiciones reales', () => {
+    xlsxHarness.sheetsByName = {};
+    xlsxHarness.workbook = null;
+    const tree = renderDashboard(buildProductMediaResults());
+    const exportButton = findElement(
+      tree,
+      (node) => node.type === 'button' && textContent(node).includes('Exportar Excel'),
+    );
+
+    exportButton.props.onClick();
+
+    const activeRows = xlsxHarness.sheetsByName.Activos;
+    const skuRow = activeRows.findIndex((row) => row[0] === 'MEDIA-ACTIVO');
+    const imageColumn = activeRows[0].indexOf('Imagen');
+    const activeSheet = xlsxHarness.workbook.Sheets.Activos;
+    const skuCell = activeSheet[XLSX.utils.encode_cell({ r: skuRow, c: 0 })];
+    const imageCell = activeSheet[XLSX.utils.encode_cell({ r: skuRow, c: imageColumn })];
+    const definitions = xlsxHarness.sheetsByName['Definiciones y Fórmulas'];
+
+    expect(skuCell.l).toMatchObject({
+      Target: 'https://products.example.test/media-activo',
+    });
+    expect(imageCell.v).toBe('Ver imagen');
+    expect(imageCell.l).toMatchObject({
+      Target: 'https://images.example.test/media-activo.png',
+    });
+    expect(definitions[0]).toEqual([
+      'Indicador/Campo', 'Definición', 'Fórmula', 'Unidad', 'Fuente', 'Interpretación',
+    ]);
+    expect(definitions.some((row) => row[0] === 'Porcentaje de Rotación')).toBe(true);
+    expect(definitions.some((row) => row[0] === 'Reposición Final')).toBe(true);
+  });
+
+  it('mantiene CSV principal procesable y genera definiciones en archivo complementario', () => {
+    const resultados = buildProductMediaResults();
+    const dataCsv = buildSellThroughCsv(resultados);
+    const definitionsCsv = buildDefinitionsCsv();
+    const dataWorkbook = XLSX.read(dataCsv, { type: 'string' });
+    const definitionsWorkbook = XLSX.read(definitionsCsv, { type: 'string' });
+    const dataRows = XLSX.utils.sheet_to_json(dataWorkbook.Sheets.Sheet1, {
+      header: 1,
+      raw: true,
+    });
+    const definitionRows = XLSX.utils.sheet_to_json(definitionsWorkbook.Sheets.Sheet1, {
+      header: 1,
+      raw: true,
+    });
+
+    expect(dataRows[0]).toContain('Porcentaje de Rotación');
+    expect(dataRows[0]).toContain('Producto URL');
+    expect(dataRows[0]).toContain('Imagen URL');
+    const rotationColumn = dataRows[0].indexOf('Porcentaje de Rotación');
+    expect(dataRows.find((row) => row[0] === 'MEDIA-ACTIVO')[rotationColumn]).toBe(0.5);
+    expect(dataCsv).toContain('"50%"');
+    expect(dataCsv).not.toMatch(/Índice de Rotación|Indice Rotacion/);
+    expect(definitionRows[0]).toEqual([
+      'Indicador/Campo', 'Definición', 'Fórmula', 'Unidad', 'Fuente', 'Interpretación',
+    ]);
+    expect(definitionRows.some((row) => row[0] === 'Porcentaje de Rotación')).toBe(true);
   });
 
   it('genera un XLSX que se puede releer preservando hojas, valores y formatos', () => {
@@ -485,7 +576,7 @@ describe('AP01 — presentación del Dashboard', () => {
         invInicial: 4,
         ventas: 1,
         invFinal: 3,
-        indiceRotacion: 0.25,
+        porcentajeRotacion: 25,
         valorInv: 30,
       }],
       alertas: {
@@ -560,6 +651,7 @@ describe('AP01 — presentación del Dashboard', () => {
       'Distribución Tier',
       'Distribución Categoría',
       'Análisis Pareto ABC',
+      'Definiciones y Fórmulas',
       'Ref Bucket EOL',
       'Ref Tabla Fases',
     ]);
