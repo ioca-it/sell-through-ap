@@ -2,6 +2,69 @@
 
 ## Fase actual
 
+PHASE1-105 queda **PASS / IMPLEMENTED LOCALLY / VALIDATED / NOT DEPLOYED**.
+Distribución por Tier sustituye sus dos KPI superiores genéricos por seis KPI
+(SKU y Unidades para Inventario Actual del Cliente, Ventas del Cliente y
+Reposición Sugerida), cada pareja derivada exactamente del dataset canónico que
+alimenta su bloque inferior (`distribucionTier.{inventario,ventas,reposicion}`)
+sin un segundo cálculo independiente. La causa raíz confirmada de la
+divergencia previa UI/Excel (38 SKU en Tier Inventario contra 44 en
+`totales.totalSKUs`, ambos con 442 unidades) fue que Tier excluye seis filas
+con `invFinal=0` mientras el Resumen Excel usaba `recs.length`; las seis filas
+adicionales aportaban cero unidades, por lo que el total de unidades coincidía
+aunque el conteo de SKU no.
+
+Product Master Dataverse incorpora `crbbe_aplicaamasterpack`,
+`crbbe_cantidadenmasterpack`, `crbbe_aplicaainnerpack` y
+`crbbe_cantidadinnerpack` al `$select` de `productpricelevels` y al contrato
+normalizado, propagados sin usarse en Brands. Los flags nullable preservan
+`true`/`false`/`null` explícitos y las cantidades preservan `null` para
+ausente/inválido/`≤0`, sin convertir ninguno de los dos en cero silencioso; el
+motor de conflictos de atributos ahora distingue `false` de "sin valor" para
+evitar que un booleano se descarte como vacío.
+
+El motor conserva íntegra la fórmula histórica de Pedido Sugerido como
+`reposicionSugeridaBase` y aplica después, en `ajustarReposicionPorPack`
+(`inventoryEngine.js`), la precedencia Master Pack válido → Inner Pack válido →
+sin ajuste, con `Pedido Final = CEIL(Base ÷ Cantidad Pack) × Cantidad Pack`.
+Master Pack exige `aplicaMasterPack === true` y una cantidad finita `>0`; una
+cantidad inválida activa el fallback Inner bajo la misma regla. Sin pack válido
+el Pedido Final iguala al Base; el resultado nunca queda por debajo del Base,
+nunca es `NaN`/`Infinity`/negativo y Pack=1 o Base=0 se conservan sin cambio.
+`reposicionSugerida` sigue siendo el valor operativo final consumido por
+alertas, Tier, Excel y CSV; `reposicionSugeridaBase`, `tipoAjustePack` y
+`cantidadPackAplicada` quedan expuestos para trazabilidad en tabla detallada y
+exportaciones.
+
+La tabla "SKU Clasificados EOL" se renombra a "SKU Clasificados EOL que aplican
+regla de descuento" y consume un nuevo subconjunto canónico
+`eolConDescuentoAplicable` (`PortfolioAnalysisService`): `estado=EOL`,
+`invFinal>0` y `descPct>0` sobre el mismo `eolTodos`. El KPI EOL general sigue
+usando `eolTodos` sin reducirse a este subconjunto; ambos universos y su
+diferencia quedan documentados en la definición correspondiente. No se creó
+ningún porcentaje o umbral nuevo; F4 y las tablas de fases/descuentos vigentes
+no cambiaron.
+
+Excel y CSV dejan de recalcular sus propios universos y reutilizan los
+datasets canónicos de dominio: el Resumen usa
+`distribucionTier.inventario/reposicion` para Total SKU/Unidades y SKU/Unidades
+de Reposición, la hoja "EOL Fase Activa" reutiliza `eolConDescuentoAplicable`,
+y "Reposición sugerida" reutiliza el mismo arreglo `productosReposicionSugerida`
+que ya alimentaba la tabla UI equivalente (ahora expuesto directamente por
+`PortfolioAnalysisService`, filtrado por `reposicionSugerida>0`). Las hojas
+Bajo Inv. Seguridad, Activos, Datos Completos y el CSV principal agregan ocho
+columnas de trazabilidad de pack (Base, flags/cantidades Master e Inner, tipo y
+cantidad de ajuste, Final) sin romper columnas existentes ni incrustar
+imágenes.
+
+La validación final cierra con backend 139/139 pruebas y syntax build PASS,
+frontend 37/37 archivos y 434/434 pruebas, y build Vite de 1.689 módulos.
+Configuration Center permanece pendiente y detenido por el usuario;
+`docs/knowledge/CONFIGURATION_CENTER.md` y
+`docs/prompts/Phase1-100-AuditExistingConfigurationParameters.md` no se
+modificaron. No hubo commit, push, deploy ni cambios en Dataverse, Vercel,
+Render, Entra, variables o timeouts.
+
 PHASE1-102 queda **PASS / IMPLEMENTED LOCALLY / VALIDATED / NOT DEPLOYED**.
 Product Price Level Gateway sustituye el campo físico Product `createdon` por
 `crbbe_validodesde` en mapping, `$select`, `$orderby` y precedencia temporal.
@@ -380,7 +443,8 @@ El contrato normalizado frontend es `{ sku, productName, brand, category, discon
 
 ## Último prompt aprobado
 
-PHASE1-102 — Replace Product createdon With crbbe_validodesde.
+PHASE1-105 — Consolidate Tier KPIs, EOL Discount Scope, Pack-Rounded
+Replenishment and Export Reconciliation.
 
 ## Última auditoría aprobada
 
@@ -429,7 +493,26 @@ optimizar `/brands`, desplegar ni activar Product Dataverse.
 - Product Price Level Gateway backend: encapsula `crbbe_nombremarca` → `brand`,
   la consulta Brands `filter/groupby`, `crbbe_urlproducto` → `productUrl`, los
   demás mappings y el filtro compradores + marca aplicado antes de paginar,
-  además de FormattedValue, consolidación y conflictos vigentes.
+  además de FormattedValue, consolidación y conflictos vigentes. Incluye además
+  `crbbe_aplicaamasterpack`, `crbbe_cantidadenmasterpack`,
+  `crbbe_aplicaainnerpack` y `crbbe_cantidadinnerpack` en `$select` y contrato,
+  con conflicto de atributo si el mismo SKU trae valores no vacíos distintos.
+- Pack Adjustment Engine (`ajustarReposicionPorPack`, `inventoryEngine.js`):
+  aplica después del Pedido Sugerido Base la precedencia Master Pack válido →
+  Inner Pack válido → sin ajuste mediante `CEIL(Base ÷ Pack) × Pack`; nunca
+  reduce el Base, nunca produce `NaN`/`Infinity`/negativos y expone
+  `reposicionSugeridaBase`, `tipoAjustePack` y `cantidadPackAplicada` para
+  trazabilidad sin alterar la fórmula base histórica.
+- Distribución por Tier — 6 KPI: Inventario Actual del Cliente, Ventas del
+  Cliente y Reposición Sugerida exponen Cantidad Total SKU/Unidades derivadas
+  exactamente de `distribucionTier.{inventario,ventas,reposicion}`, el mismo
+  dataset que alimenta cada bloque inferior; Excel reutiliza ese mismo dataset
+  en el Resumen.
+- Subconjunto operativo EOL con descuento aplicable
+  (`eolConDescuentoAplicable`, `PortfolioAnalysisService`): `estado=EOL`,
+  `invFinal>0` y `descPct>0` sobre `eolTodos`; el KPI EOL general conserva
+  `eolTodos` sin reducirse a este subconjunto. UI y hoja "EOL Fase Activa"
+  reutilizan el mismo subconjunto.
 - Product Service/API: endpoints funcionales cerrados de marcas y Maestro filtrado, `brand` obligatoria de máximo 100 caracteres, JWT/CORS/rate limiter compartidos y rechazo de parámetros/OData no autorizados.
 - Customer API backend portable: rutas cerradas, CORS por allowlist, Customer Service y composición independiente de hosting.
 - Entra Token Provider y Dataverse Client: client_credentials, scope derivado, cache/expiración, timeout y errores normalizados.
@@ -612,22 +695,40 @@ mediciones.
 - La Tabla de Descuento por Fase y su hoja Excel consumen todas las fases efectivas entregadas por Application Service; F4 se resuelve con la regla de Domain y `datos.json` conserva F0–F3.
 - Executive Report, Recommendation Engine y Configuration Center UI requieren prompts separados.
 - `sell-through-ap` permanece separado de NEXUS.
+- Los seis KPI superiores de Distribución por Tier provienen exclusivamente de
+  `distribucionTier.{inventario,ventas,reposicion}.{totalSKUs,totalU}`; ningún
+  bloque calcula un universo propio distinto del dataset canónico que muestra
+  su tabla inferior.
+- `eolConDescuentoAplicable` es un subconjunto operativo de `eolTodos`
+  (`invFinal>0` y `descPct>0`) exclusivo para la tabla "SKU Clasificados EOL
+  que aplican regla de descuento"; el KPI EOL general sigue reportando
+  `eolTodos` y ambos universos deben documentarse como distintos, nunca
+  unificarse silenciosamente.
+- Master Pack e Inner Pack se evalúan únicamente después de calcular el Pedido
+  Sugerido Base histórico, con precedencia absoluta Master válido → Inner
+  válido → sin ajuste y fórmula `CEIL(Base ÷ Pack) × Pack`; el Pedido Final
+  nunca es menor que el Base y un SKU sin configuración de pack válida
+  conserva el Base sin fallar la corrida.
+- `resultados.productosReposicionSugerida` (activos con `reposicionSugerida>0`
+  ya ajustada por pack) es el dataset canónico único para la tabla UI de
+  Reposición Sugerida y la hoja Excel equivalente; ninguna de las dos
+  superficies recalcula su propio filtro.
 
 ## Métricas actuales
 
 - 160 elementos en el catálogo de parámetros: 82 configurables, 26 constantes técnicas, 38 reglas fijas, 12 textos UI y 2 valores derivados.
 - Tres parámetros piloto visibles en Configuration Center MVP; todos permanecen no editables según el catálogo aprobado.
 - MVP de presentación listo para demo: Dashboard ejecutivo, exportaciones Excel/PDF y metadata/favicons de producción.
-- Treinta y tres archivos de pruebas frontend y diez archivos de pruebas backend.
+- Treinta y siete archivos de pruebas frontend y diez archivos de pruebas backend.
 
 ## Cantidad de pruebas
 
-Frontend: 383/383 aprobadas en 33 archivos. Backend: 124/124 aprobadas en 10
+Frontend: 434/434 aprobadas en 37 archivos. Backend: 139/139 aprobadas en 10
 archivos.
 
 ## Estado del build
 
-Phase1-079: frontend 383/383 en 33 archivos y build PASS con Vite 5.4.21 y
-1.684 módulos transformados. Backend no se ejecutó porque no fue modificado;
-su baseline Phase1-077 permanece en 124/124. Product Dataverse no fue activado
-y Phase1-079 no se desplegó ni ejecutó contra producción.
+Phase1-105: backend 139/139 y syntax build PASS; frontend 434/434 en 37
+archivos y build PASS con Vite 5.4.21 y 1.689 módulos transformados. Product
+Dataverse no fue activado y Phase1-105 no se desplegó ni ejecutó contra
+producción.

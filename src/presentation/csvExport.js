@@ -12,6 +12,10 @@ const nullableFixed = (value, digits = 2) => (
   isAvailablePrice(value) ? value.toFixed(digits) : ''
 );
 
+const nullableBoolean = (value) => (
+  value === true ? 'SI' : (value === false ? 'NO' : '')
+);
+
 export const SELL_THROUGH_CSV_HEADERS = Object.freeze([
   'SKU', 'Tienda', 'Modelo', 'Marca', 'Estado', 'Fecha EOL', 'Dias Desc',
   'Bucket', 'Fase', 'Origen', 'Costo USD', 'Inv Inicial', 'Compra', 'Ventas',
@@ -19,6 +23,9 @@ export const SELL_THROUGH_CSV_HEADERS = Object.freeze([
   'Reposición Final', 'Valor Inventario', 'Valor Ventas', 'Valor Reposición',
   'Desc %', 'Desc Consumi $', 'Aporte IOCA %', 'Aporte IOCA $',
   'Aporte Retail %', 'Aporte Retail $', 'Desc Total $', 'Producto URL', 'Imagen URL',
+  'Pedido Sugerido Base', 'Aplica Master Pack', 'Cantidad Master Pack',
+  'Aplica Inner Pack', 'Cantidad Inner Pack', 'Tipo Ajuste Pack',
+  'Cantidad Pack Aplicada', 'Pedido Sugerido Final',
 ]);
 
 export const buildSellThroughCsv = (resultados) => {
@@ -56,6 +63,14 @@ export const buildSellThroughCsv = (resultados) => {
     nullableFixed(record.descTotal),
     getSafeHttpUrl(record.productUrl) ?? '',
     getSafeHttpUrl(record.imageUrl) ?? '',
+    record.reposicionSugeridaBase,
+    nullableBoolean(record.aplicaMasterPack),
+    record.cantidadMasterPack ?? '',
+    nullableBoolean(record.aplicaInnerPack),
+    record.cantidadInnerPack ?? '',
+    record.tipoAjustePack,
+    record.cantidadPackAplicada ?? '',
+    record.reposicionSugerida,
   ]);
 
   return serializeCsvRows([SELL_THROUGH_CSV_HEADERS, ...rows]);

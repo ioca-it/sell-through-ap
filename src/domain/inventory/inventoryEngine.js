@@ -9,6 +9,56 @@
 
 const FALLBACK_SEMANAS_PERIODO = 4.33;
 
+export const PACK_ADJUSTMENT_TYPES = Object.freeze({
+  MASTER: 'MASTER PACK',
+  INNER: 'INNER PACK',
+  NONE: 'SIN AJUSTE',
+});
+
+const normalizeValidPackQuantity = (value) => {
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const quantity = Number(value);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : null;
+};
+
+// Aplica el múltiplo logístico únicamente después del cálculo base. La bandera
+// debe ser booleana true; una cantidad inválida habilita el fallback siguiente.
+export const ajustarReposicionPorPack = ({
+  pedidoBase,
+  aplicaMasterPack,
+  cantidadMasterPack,
+  aplicaInnerPack,
+  cantidadInnerPack,
+}) => {
+  const base = Number.isFinite(pedidoBase) && pedidoBase > 0 ? pedidoBase : 0;
+  const masterPack = normalizeValidPackQuantity(cantidadMasterPack);
+  const innerPack = normalizeValidPackQuantity(cantidadInnerPack);
+
+  let tipoAjustePack = PACK_ADJUSTMENT_TYPES.NONE;
+  let cantidadPackAplicada = null;
+  if (aplicaMasterPack === true && masterPack !== null) {
+    tipoAjustePack = PACK_ADJUSTMENT_TYPES.MASTER;
+    cantidadPackAplicada = masterPack;
+  } else if (aplicaInnerPack === true && innerPack !== null) {
+    tipoAjustePack = PACK_ADJUSTMENT_TYPES.INNER;
+    cantidadPackAplicada = innerPack;
+  }
+
+  const pedidoFinal = cantidadPackAplicada === null
+    ? base
+    : Math.ceil(base / cantidadPackAplicada) * cantidadPackAplicada;
+
+  return {
+    pedidoSugeridoBase: base,
+    tipoAjustePack,
+    cantidadPackAplicada,
+    pedidoSugeridoFinal: Number.isFinite(pedidoFinal) && pedidoFinal >= base
+      ? pedidoFinal
+      : base,
+  };
+};
+
 // Resuelve las semanas del período y conserva el fallback institucional vigente.
 export const obtenerSemanasPeriodo = (periodo, semanasPersonalizadas, semanasPorPeriodo) => {
   if (periodo === 'Personalizado') {

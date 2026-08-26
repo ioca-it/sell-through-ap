@@ -22,6 +22,10 @@ const rawRow = (overrides = {}) => ({
   [`crbbe_etapa@${FORMATTED}`]: ' Activo ',
   crbbe_imagenproducto: ' https://images.invalid/sku-001.png ',
   crbbe_urlproducto: ' https://products.invalid/sku-001 ',
+  crbbe_aplicaamasterpack: null,
+  crbbe_cantidadenmasterpack: null,
+  crbbe_aplicaainnerpack: null,
+  crbbe_cantidadinnerpack: null,
   amount: 25,
   crbbe_origen: ' USA ',
   crbbe_nombrecompania: 'IOCA USA INC',
@@ -41,6 +45,10 @@ const expectedProduct = {
   status: 'Activo',
   imageUrl: 'https://images.invalid/sku-001.png',
   productUrl: 'https://products.invalid/sku-001',
+  aplicaMasterPack: null,
+  cantidadMasterPack: null,
+  aplicaInnerPack: null,
+  cantidadInnerPack: null,
   priceUSA: 25,
   priceChina: null,
 };
@@ -58,6 +66,10 @@ test('mapea todos los campos y usa FormattedValue para level/status Choice', () 
     status: expectedProduct.status,
     imageUrl: expectedProduct.imageUrl,
     productUrl: expectedProduct.productUrl,
+    aplicaMasterPack: null,
+    cantidadMasterPack: null,
+    aplicaInnerPack: null,
+    cantidadInnerPack: null,
     amount: 25,
     origin: 'USA',
     buyerCompany: 'IOCA USA INC',
@@ -71,6 +83,30 @@ test('origina creationDate exclusivamente desde crbbe_validodesde', () => {
   }));
 
   assert.equal(mapped.creationDate, '2026-08-01T12:00:00.000Z');
+});
+
+test('normaliza flags y cantidades Master/Inner sin convertir ausencia o inválidos en cero', () => {
+  const mapped = mapProductPriceLevelRow(rawRow({
+    crbbe_aplicaamasterpack: true,
+    crbbe_cantidadenmasterpack: '24',
+    crbbe_aplicaainnerpack: false,
+    crbbe_cantidadinnerpack: 12,
+  }));
+  assert.equal(mapped.aplicaMasterPack, true);
+  assert.equal(mapped.cantidadMasterPack, 24);
+  assert.equal(mapped.aplicaInnerPack, false);
+  assert.equal(mapped.cantidadInnerPack, 12);
+
+  const invalid = mapProductPriceLevelRow(rawRow({
+    crbbe_aplicaamasterpack: undefined,
+    crbbe_cantidadenmasterpack: 0,
+    crbbe_aplicaainnerpack: null,
+    crbbe_cantidadinnerpack: 'invalida',
+  }));
+  assert.equal(invalid.aplicaMasterPack, null);
+  assert.equal(invalid.cantidadMasterPack, null);
+  assert.equal(invalid.aplicaInnerPack, null);
+  assert.equal(invalid.cantidadInnerPack, null);
 });
 
 test('normaliza crbbe_urlproducto hacia productUrl con fallback vacío', () => {
@@ -151,6 +187,10 @@ test('gateway consulta productpricelevels con ambas compañías y marca antes de
     'crbbe_etapa',
     'crbbe_imagenproducto',
     'crbbe_urlproducto',
+    'crbbe_aplicaamasterpack',
+    'crbbe_cantidadenmasterpack',
+    'crbbe_aplicaainnerpack',
+    'crbbe_cantidadinnerpack',
     'amount',
     'crbbe_origen',
     'crbbe_nombrecompania',
@@ -693,6 +733,10 @@ test('el contrato final no expone nombres Dataverse ni campos auxiliares', () =>
     'status',
     'imageUrl',
     'productUrl',
+    'aplicaMasterPack',
+    'cantidadMasterPack',
+    'aplicaInnerPack',
+    'cantidadInnerPack',
     'priceUSA',
     'priceChina',
   ]);

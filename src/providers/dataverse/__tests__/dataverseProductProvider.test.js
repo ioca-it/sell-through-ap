@@ -17,6 +17,10 @@ const apiProduct = {
   status: 'ACTIVO',
   imageUrl: '',
   productUrl: '',
+  aplicaMasterPack: true,
+  cantidadMasterPack: 24,
+  aplicaInnerPack: false,
+  cantidadInnerPack: 12,
   priceUSA: 25,
   priceChina: 18,
 };

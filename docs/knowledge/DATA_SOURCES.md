@@ -23,7 +23,7 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 - Ruta Dataverse preparada: `GET /api/products/brands` o `GET /api/products/master?brand=<brand>` -> Product Service -> Product Price Level Gateway -> Dataverse Client -> `productpricelevels`; el frontend solo envía el parámetro funcional `brand`, nunca OData.
 - Selector: `productProviderFactory.js`, cerrado a `local|dataverse`.
 - Repository/Application: `productRepository.js` y `productMasterService.js`.
-- Contrato Product frontend: `{ sku, productName, brand, category, discontinuationDate, fechaStr, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`; la respuesta backend conserva sus campos físicos existentes y el normalizer frontend deriva `fechaStr`.
+- Contrato Product frontend: `{ sku, productName, brand, category, discontinuationDate, fechaStr, creationDate, level, status, imageUrl, productUrl, aplicaMasterPack, cantidadMasterPack, aplicaInnerPack, cantidadInnerPack, priceUSA, priceChina }`; la respuesta backend conserva sus campos físicos existentes y el normalizer frontend deriva `fechaStr`.
 - Adaptación al motor: `sellThroughApplicationService.js` acepta el contrato normalizado como entrada opcional y lo adapta al Master vigente; el texto local conserva su recorrido y errores anteriores.
 - Campo mínimo efectivo: SKU.
 - Uso: estado, atributos, costo por origen, fechas de creación/descontinuación y URLs de producto/imagen disponibles en el detalle SKU.
@@ -42,10 +42,19 @@ La UI y la lógica de negocio no dependen directamente de una fuente. `sellThrou
 | `status` | `crbbe_etapa` / FormattedValue si existe |
 | `imageUrl` | `crbbe_imagenproducto` |
 | `productUrl` | `crbbe_urlproducto` |
+| `aplicaMasterPack` | `crbbe_aplicaamasterpack` |
+| `cantidadMasterPack` | `crbbe_cantidadenmasterpack` |
+| `aplicaInnerPack` | `crbbe_aplicaainnerpack` |
+| `cantidadInnerPack` | `crbbe_cantidadinnerpack` |
 | `priceUSA` | `amount` cuando `crbbe_origen = USA` |
 | `priceChina` | `amount` cuando `crbbe_origen = CHINA` |
 
-El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.`, la comparación de columnas de la misma fila `crbbe_nombrecompania eq crbbe_companiacompradora` y `crbbe_origen ne null and crbbe_origen ne ''`; para Product Master añade obligatoriamente `crbbe_nombremarca eq '<brand escapada>'` antes de `retrieveAll()`. Sin `brand` válida el Product Service responde 400 antes del Gateway; no existe fallback global. Sobre ese universo selecciona `MAX(crbbe_validodesde)` por `SKU + ORIGIN + BUYER COMPANY` antes de detectar conflictos o consolidar. Conserva todos los empates máximos y bloquea sus valores incompatibles; después compara compradores distintos sin precedencia IOCA/SAND. USA y CHINA se resuelven independientemente y luego alimentan `priceUSA`/`priceChina`. `amount = 0` conserva un precio real y `amount null|undefined`, una fila vigente ausente USA o una fila vigente ausente CHINA producen `null`. `Product.creationDate` es el mayor `crbbe_validodesde` entre las filas vigentes del SKU; ausencia o invalidez produce `null` y no consulta `createdon` como fallback. La protección de atributos aplica a divergencias no vacías de `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `imageUrl` o `productUrl` entre filas vigentes. La lista de marcas usa `$apply=filter(...)/groupby((crbbe_nombremarca))` sobre ese mismo universo y no recorre el dataset global mediante `retrieveAll()`. Node conserva defensas por igualdad de compañías y origen normalizado no vacío; las filas inválidas no participan en consolidación ni conflictos. Los nombres físicos permanecen exclusivamente en Product Price Level Gateway.
+Los cuatro campos de pack se incluyen en el `$select` de Product Master y
+participan en la protección de atributos (vacío más valor puede inicializar;
+dos valores no vacíos distintos, incluido `false` frente a `true`, bloquean con
+`PRODUCT_MASTER_CONFLICT`); no se usan en la consulta de marcas.
+
+El gateway aplica en `$filter` el comprador `IOCA USA INC` o `SAND SPORTS, CORP.`, la comparación de columnas de la misma fila `crbbe_nombrecompania eq crbbe_companiacompradora` y `crbbe_origen ne null and crbbe_origen ne ''`; para Product Master añade obligatoriamente `crbbe_nombremarca eq '<brand escapada>'` antes de `retrieveAll()`. Sin `brand` válida el Product Service responde 400 antes del Gateway; no existe fallback global. Sobre ese universo selecciona `MAX(crbbe_validodesde)` por `SKU + ORIGIN + BUYER COMPANY` antes de detectar conflictos o consolidar. Conserva todos los empates máximos y bloquea sus valores incompatibles; después compara compradores distintos sin precedencia IOCA/SAND. USA y CHINA se resuelven independientemente y luego alimentan `priceUSA`/`priceChina`. `amount = 0` conserva un precio real y `amount null|undefined`, una fila vigente ausente USA o una fila vigente ausente CHINA producen `null`. `Product.creationDate` es el mayor `crbbe_validodesde` entre las filas vigentes del SKU; ausencia o invalidez produce `null` y no consulta `createdon` como fallback. La protección de atributos aplica a divergencias no vacías de `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `imageUrl`, `productUrl`, `aplicaMasterPack`, `cantidadMasterPack`, `aplicaInnerPack` o `cantidadInnerPack` entre filas vigentes. La lista de marcas usa `$apply=filter(...)/groupby((crbbe_nombremarca))` sobre ese mismo universo y no recorre el dataset global mediante `retrieveAll()`. Node conserva defensas por igualdad de compañías y origen normalizado no vacío; las filas inválidas no participan en consolidación ni conflictos. Los nombres físicos permanecen exclusivamente en Product Price Level Gateway.
 
 ### Alias reconocidos del Maestro
 

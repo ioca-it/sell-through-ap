@@ -50,6 +50,17 @@ const normalizePrice = (value) => {
   return Number.isFinite(price) ? price : null;
 };
 
+const normalizeNullableBoolean = (value) => (
+  value === true || value === false ? value : null
+);
+
+const normalizePackQuantity = (value) => {
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const quantity = Number(value);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : null;
+};
+
 export const isAvailablePrice = (value) => (
   typeof value === 'number' && Number.isFinite(value)
 );
@@ -95,6 +106,10 @@ export const normalizeProduct = (product = {}) => {
     status: normalizeText(product.status),
     imageUrl: normalizeText(product.imageUrl),
     productUrl: normalizeText(product.productUrl),
+    aplicaMasterPack: normalizeNullableBoolean(product.aplicaMasterPack),
+    cantidadMasterPack: normalizePackQuantity(product.cantidadMasterPack),
+    aplicaInnerPack: normalizeNullableBoolean(product.aplicaInnerPack),
+    cantidadInnerPack: normalizePackQuantity(product.cantidadInnerPack),
     priceUSA: normalizePrice(product.priceUSA),
     priceChina: normalizePrice(product.priceChina),
   });
@@ -116,6 +131,12 @@ export const isProduct = (product) => (
   && typeof product.status === 'string'
   && typeof product.imageUrl === 'string'
   && typeof product.productUrl === 'string'
+  && (product.aplicaMasterPack === null || typeof product.aplicaMasterPack === 'boolean')
+  && (product.cantidadMasterPack === null
+    || (Number.isFinite(product.cantidadMasterPack) && product.cantidadMasterPack > 0))
+  && (product.aplicaInnerPack === null || typeof product.aplicaInnerPack === 'boolean')
+  && (product.cantidadInnerPack === null
+    || (Number.isFinite(product.cantidadInnerPack) && product.cantidadInnerPack > 0))
   && (product.priceUSA === null || isAvailablePrice(product.priceUSA))
   && (product.priceChina === null || isAvailablePrice(product.priceChina))
 );
@@ -137,6 +158,10 @@ export const productToMasterRecord = (product) => {
     level: normalized.level,
     imageUrl: normalized.imageUrl,
     productUrl: normalized.productUrl,
+    aplicaMasterPack: normalized.aplicaMasterPack,
+    cantidadMasterPack: normalized.cantidadMasterPack,
+    aplicaInnerPack: normalized.aplicaInnerPack,
+    cantidadInnerPack: normalized.cantidadInnerPack,
     costoUSA: normalized.priceUSA,
     costoCHINA: normalized.priceChina,
   });
@@ -154,6 +179,10 @@ export const masterRecordToProduct = (masterRecord) => normalizeProduct({
   status: masterRecord.estado,
   imageUrl: masterRecord.imageUrl,
   productUrl: masterRecord.productUrl,
+  aplicaMasterPack: masterRecord.aplicaMasterPack,
+  cantidadMasterPack: masterRecord.cantidadMasterPack,
+  aplicaInnerPack: masterRecord.aplicaInnerPack,
+  cantidadInnerPack: masterRecord.cantidadInnerPack,
   priceUSA: masterRecord.costoUSA,
   priceChina: masterRecord.costoCHINA,
 });

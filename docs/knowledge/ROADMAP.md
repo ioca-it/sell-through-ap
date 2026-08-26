@@ -1,5 +1,35 @@
 # Roadmap aprobado
 
+## Phase1-105 — Consolidate Tier KPIs, EOL Discount Scope, Pack-Rounded Replenishment and Export Reconciliation
+
+Distribución por Tier sustituye sus dos KPI genéricos por seis KPI (SKU y
+Unidades de Inventario Actual del Cliente, Ventas del Cliente y Reposición
+Sugerida), derivados exactamente del dataset canónico de cada bloque. La causa
+raíz confirmada de la divergencia previa UI 38 SKU / Excel 44 SKU (442
+unidades iguales) fue que Tier excluye seis filas con `invFinal=0` que el
+Resumen Excel contaba vía `recs.length`.
+
+Product Master Dataverse incorpora Master Pack e Inner Pack
+(`crbbe_aplicaamasterpack`, `crbbe_cantidadenmasterpack`,
+`crbbe_aplicaainnerpack`, `crbbe_cantidadinnerpack`) sin usarlos en Brands. El
+motor preserva íntegra la fórmula histórica como Pedido Sugerido Base y aplica
+después, con precedencia Master válido → Inner válido → sin ajuste,
+`CEIL(Base ÷ Pack) × Pack`; el valor operativo `reposicionSugerida` sigue
+siendo el Pedido Final, con Base/tipo/cantidad de ajuste expuestos para
+trazabilidad en tabla y exportaciones.
+
+La tabla EOL se renombra a "SKU Clasificados EOL que aplican regla de
+descuento" y consume el subconjunto `estado=EOL`, `invFinal>0`, `descPct>0`
+derivado de `eolTodos`; el KPI EOL general no se reduce a ese subconjunto.
+Excel y CSV reutilizan los mismos datasets canónicos que la UI en vez de
+recalcular sus propios universos, y agregan columnas de trazabilidad de pack.
+
+Configuration Center permanece pendiente y detenido por el usuario; sus dos
+archivos no se modificaron. Backend 139/139, frontend 434/434 en 37 archivos y
+ambos builds PASS. Siguiente acción externa exacta: autorizar por separado
+checkpoint, deploy y cualquier activación de `VITE_PRODUCT_SOURCE=dataverse`
+o de Configuration Center (Phase1-101 sigue fuera de alcance).
+
 ## Phase1-102 — Replace Product createdon With crbbe_validodesde
 
 Product Master sustituye su campo de fecha funcional Dataverse por

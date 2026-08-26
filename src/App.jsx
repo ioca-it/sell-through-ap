@@ -802,10 +802,9 @@ export default function App({
       ? selectedBrand !== ''
       : rawMaestro.trim() !== '')
   ) && rawInventario.trim() !== '';
-  const productosReposicionSugerida = resultados?.recs
-    ?.filter((record) => record.reposicionSugerida > 0) ?? [];
+  const productosReposicionSugerida = resultados?.productosReposicionSugerida ?? [];
   const productosNuevosNoPresentes = resultados?.newProductsMissingInventory ?? [];
-  const eolDetailRows = [...(resultados?.eolTodos ?? [])]
+  const eolDetailRows = [...(resultados?.eolConDescuentoAplicable ?? [])]
     .sort(compareEolManagementPriority);
   const paretoClassBySku = new Map([
     ...(resultados?.analisisPareto?.skusParetoA ?? []),
@@ -885,6 +884,7 @@ export default function App({
     const wb = XLSX.utils.book_new();
     const fechaStr = resultados.fechaCalculo.toISOString().slice(0,10);
     const fechaLegible = resultados.fechaCalculo.toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' });
+    const packFlagLabel = (value) => (value === true ? 'SI' : (value === false ? 'NO' : 'N/D'));
     
     const aplicarFormato = (ws, formatosPorCol) => {
       if (!ws['!ref']) return;
@@ -949,8 +949,8 @@ export default function App({
       [],
       ['DISTRIBUCIÓN DEL PORTAFOLIO', ''],
       ['Métrica', 'Valor'],
-      ['Total SKUs en inventario', resultados.totales.totalSKUs],
-      ['Total Unidades', resultados.totales.totalUnidades],
+      ['Total SKUs en inventario', resultados.distribucionTier.inventario.totalSKUs],
+      ['Total Unidades', resultados.distribucionTier.inventario.totalU],
       ['SKUs Activos', resultados.totales.skuActivos],
       ['Total Unidades Activas', resultados.totales.unidadesActivas],
       ['SKU clasificados EOL', resultados.totales.skuEOL],
@@ -985,8 +985,9 @@ export default function App({
       ['Total unidades de Merma', resultados.alertas.totalMermaUnid],
       ['Valor total de Merma (USD)', resultados.alertas.totalMermaValor],
       ['SKUs Activos bajo Inv. Seguridad', resultados.alertas.skusEnQuiebre.length],
-      ['Total unidades de Reposición Sugerida', resultados.alertas.totalReposicionUnid],
-      ['Valor total Reposición (USD)', resultados.alertas.totalReposicionValor],
+      ['SKUs con Pedido Sugerido Final', resultados.distribucionTier.reposicion.totalSKUs],
+      ['Total unidades de Pedido Sugerido Final', resultados.distribucionTier.reposicion.totalU],
+      ['Valor total Pedido Sugerido Final (USD)', resultados.alertas.totalReposicionValor],
       ['Unidades en Tránsito', resultados.alertas.totalUnidadesTransito],
     ];
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
@@ -995,7 +996,7 @@ export default function App({
       'Valor Total Inventario', 'Valor Activo', 'Valor EOL', 'Valor EOL Vencido', 'Valor EOL Futuro',
       'Valor Sin Maestro', 'Valor del Inventario EOL vencido', 'Descuento Total al Consumidor',
       'Absorbe IOCA', 'Absorbe Retail', 'Valor total de Merma (USD)',
-      'Valor total Reposición (USD)', 'Valor inventario sin ventas',
+      'Valor total Pedido Sugerido Final (USD)', 'Valor inventario sin ventas',
     ]);
     resumenData.forEach((row, r) => {
       if (!etiquetasMoneda.has(row[0])) return;
@@ -1005,9 +1006,9 @@ export default function App({
     XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
     
     // ===== HOJA 2: EOL CON FASE ACTIVA =====
-    if (resultados.eolVencidos.length > 0) {
+    if (resultados.eolConDescuentoAplicable.length > 0) {
       const hdr = ['SKU', 'Modelo', 'Marca', 'Fecha EOL', 'Días Desc.', 'Fase', 'Origen', 'Costo', 'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $', 'Inv. Inicial', 'Ventas', 'Inv. Final', 'Porcentaje de Rotación', 'Desc. Total $', 'Valor Inv.', 'Imagen'];
-      const rows = resultados.eolVencidos.map(r => [
+      const rows = resultados.eolConDescuentoAplicable.map(r => [
         r.sku, r.modelo, r.marca, r.fechaStr, r.diasDesc,
         r.fase !== null ? `F${r.fase}` : '—', r.origen,
         r.costo, r.descPct, r.descUSD,
@@ -1017,11 +1018,11 @@ export default function App({
         r.descTotal, r.valorInv, getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : ''
       ]);
       // Fila de totales
-      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', resultados.totales.unidadesEOLVencidas, '', resultados.totales.descEOL, resultados.totales.valorEOLVencido, '']);
+      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', resultados.totales.unidadesEOLConDescuento, '', resultados.totales.descEOLAplicable, resultados.totales.valorEOLConDescuento, '']);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
       ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 7 }, { wch: 9 }, { wch: 11 }, { wch: 9 }, { wch: 15 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 15 }, { wch: 11 }, { wch: 8 }, { wch: 10 }, { wch: 22 }, { wch: 14 }, { wch: 13 }, { wch: 14 }];
       aplicarFormato(ws, { 7: '$#,##0.00', 8: '0%', 9: '$#,##0.00', 10: '0%', 11: '$#,##0.00', 12: '0%', 13: '$#,##0.00', 17: '0%', 18: '$#,##0.00', 19: '$#,##0.00' });
-      aplicarEnlacesProducto(ws, resultados.eolVencidos, { imageColumn: 20 });
+      aplicarEnlacesProducto(ws, resultados.eolConDescuentoAplicable, { imageColumn: 20 });
       XLSX.utils.book_append_sheet(wb, ws, 'EOL Fase Activa');
     }
     
@@ -1051,22 +1052,32 @@ export default function App({
         ['Condiciones: Si Ventas > 0 → aplica fórmula IOCA (Fuente: IOCA). Si Ventas = 0 → se mantiene valor del cliente (Fuente: Cliente).', '', '', '', '', '', '', '', '', '', '', '', '', ''],
         ['', '', '', '', '', '', '', '', '', '', '', '', '', ''],
       ];
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Estado', 'Bucket EOL', 'Origen', 'Ventas', 'Inv. Seg. Cliente', 'Inv. Seg. IOCA', 'Δ IOCA-Cliente', 'Fuente', 'Inv. Proyectado', 'Inv. Final', 'Compra / Tránsito', 'Necesidad', 'Reposición Final', 'Acción Sugerida', 'Imagen'];
+      const hdr = [
+        'SKU', 'Modelo', 'Marca', 'Estado', 'Bucket EOL', 'Origen', 'Ventas',
+        'Inv. Seg. Cliente', 'Inv. Seg. IOCA', 'Δ IOCA-Cliente', 'Fuente',
+        'Inv. Proyectado', 'Inv. Final', 'Compra / Tránsito', 'Necesidad',
+        'Pedido Sugerido Base', 'Aplica Master Pack', 'Cantidad Master Pack',
+        'Aplica Inner Pack', 'Cantidad Inner Pack', 'Tipo Ajuste Pack',
+        'Cantidad Pack Aplicada', 'Pedido Sugerido Final', 'Acción Sugerida', 'Imagen',
+      ];
       const rows = resultados.alertas.skusEnQuiebre.map(r => [
         r.sku, r.modelo, r.marca, r.estado, r.bucket || '—', r.origen, r.ventas,
         r.invSeguridad, r.invSeguridadIOCA, r.deltaInvSeguridad, r.fuenteInvSeguridad,
         r.invProyectado, r.invFinal, r.compra, r.necesidadReposicion,
-        r.reposicionSugerida,
+        r.reposicionSugeridaBase,
+        packFlagLabel(r.aplicaMasterPack), r.cantidadMasterPack,
+        packFlagLabel(r.aplicaInnerPack), r.cantidadInnerPack,
+        r.tipoAjustePack, r.cantidadPackAplicada, r.reposicionSugerida,
         r.accionSugerida,
         getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
       ]);
       const totalRepoActivos = resultados.alertas.skusEnQuiebre
         .filter(r => r.estado === 'ACTIVO')
         .reduce((s, r) => s + r.reposicionSugerida, 0);
-      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', 'TOTAL Reposición (solo Activos)', totalRepoActivos, '', '']);
+      rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'TOTAL Reposición (solo Activos)', totalRepoActivos, '', '']);
       const ws = XLSX.utils.aoa_to_sheet([...notaInfo, hdr, ...rows]);
-      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 11 }, { wch: 18 }, { wch: 9 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 10 }, { wch: 15 }, { wch: 11 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 42 }, { wch: 14 }];
-      aplicarEnlacesProducto(ws, resultados.alertas.skusEnQuiebre, { startRow: 6, imageColumn: 17 });
+      ws['!cols'] = hdr.map((header) => ({ wch: Math.max(12, Math.min(42, header.length + 3)) }));
+      aplicarEnlacesProducto(ws, resultados.alertas.skusEnQuiebre, { startRow: 6, imageColumn: 24 });
       XLSX.utils.book_append_sheet(wb, ws, 'Bajo Inv Seguridad V1');
     }
     
@@ -1089,18 +1100,29 @@ export default function App({
     
     // ===== HOJA 6: ACTIVOS COMPLETOS =====
     if (resultados.activos.length > 0) {
-      const hdr = ['SKU', 'Modelo', 'Marca', 'Tier', 'Origen', 'Inv. Seguridad', 'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Porcentaje de Rotación', 'Costo', 'Valor Inv.', 'Reposición Sugerida', 'Valor Reposición', 'Imagen'];
+      const hdr = [
+        'SKU', 'Modelo', 'Marca', 'Tier', 'Origen', 'Inv. Seguridad', 'Inv. Inicial',
+        'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final', 'Porcentaje de Rotación',
+        'Costo', 'Valor Inv.', 'Pedido Sugerido Base', 'Aplica Master Pack',
+        'Cantidad Master Pack', 'Aplica Inner Pack', 'Cantidad Inner Pack',
+        'Tipo Ajuste Pack', 'Cantidad Pack Aplicada', 'Pedido Sugerido Final',
+        'Valor Reposición', 'Imagen',
+      ];
       const rows = resultados.activos.map(r => [
         r.sku, r.modelo, r.marca, r.tier, r.origen,
         r.invSeguridad, r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
         r.porcentajeRotacion !== null ? r.porcentajeRotacion / 100 : null,
-        r.costo, r.valorInv, r.reposicionSugerida, r.valorReposicion,
+        r.costo, r.valorInv, r.reposicionSugeridaBase,
+        packFlagLabel(r.aplicaMasterPack), r.cantidadMasterPack,
+        packFlagLabel(r.aplicaInnerPack), r.cantidadInnerPack,
+        r.tipoAjustePack, r.cantidadPackAplicada, r.reposicionSugerida,
+        r.valorReposicion,
         getSafeProductUrl(r.imageUrl) ? 'Ver imagen' : '',
       ]);
       const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows]);
-      ws['!cols'] = [{ wch: 18 }, { wch: 42 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 15 }, { wch: 11 }, { wch: 22 }, { wch: 11 }, { wch: 14 }, { wch: 20 }, { wch: 17 }, { wch: 14 }];
-      aplicarFormato(ws, { 11: '0%', 12: '$#,##0.00', 13: '$#,##0.00', 15: '$#,##0.00' });
-      aplicarEnlacesProducto(ws, resultados.activos, { imageColumn: 16 });
+      ws['!cols'] = hdr.map((header) => ({ wch: Math.max(12, Math.min(42, header.length + 3)) }));
+      aplicarFormato(ws, { 11: '0%', 12: '$#,##0.00', 13: '$#,##0.00', 22: '$#,##0.00' });
+      aplicarEnlacesProducto(ws, resultados.activos, { imageColumn: 23 });
       XLSX.utils.book_append_sheet(wb, ws, 'Activos');
     }
     
@@ -1152,7 +1174,10 @@ export default function App({
 
     const replenishmentHeader = [
       'SKU', 'Modelo', 'Marca', 'Nivel', 'Inv. Proyectado', 'Compra / Tránsito',
-      'Necesidad', 'Reposición Sugerida', 'Valor Reposición', 'Imagen',
+      'Necesidad', 'Pedido Sugerido Base', 'Aplica Master Pack',
+      'Cantidad Master Pack', 'Aplica Inner Pack', 'Cantidad Inner Pack',
+      'Tipo Ajuste Pack', 'Cantidad Pack Aplicada', 'Pedido Sugerido Final',
+      'Valor Reposición', 'Imagen',
     ];
     const replenishmentRows = productosReposicionSugerida.map((record) => [
       record.sku,
@@ -1162,6 +1187,13 @@ export default function App({
       record.invProyectado,
       record.compra,
       record.necesidadReposicion,
+      record.reposicionSugeridaBase,
+      packFlagLabel(record.aplicaMasterPack),
+      record.cantidadMasterPack,
+      packFlagLabel(record.aplicaInnerPack),
+      record.cantidadInnerPack,
+      record.tipoAjustePack,
+      record.cantidadPackAplicada,
       record.reposicionSugerida,
       record.valorReposicion,
       getSafeProductUrl(record.imageUrl) ? 'Ver imagen' : '',
@@ -1172,10 +1204,12 @@ export default function App({
     ]);
     wsReplenishment['!cols'] = [
       { wch: 18 }, { wch: 42 }, { wch: 14 }, { wch: 12 },
-      { wch: 17 }, { wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 14 },
+      { wch: 17 }, { wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 20 },
+      { wch: 22 }, { wch: 19 }, { wch: 20 }, { wch: 22 }, { wch: 24 },
+      { wch: 22 }, { wch: 18 }, { wch: 14 },
     ];
-    aplicarFormato(wsReplenishment, { 8: '$#,##0.00' });
-    aplicarEnlacesProducto(wsReplenishment, productosReposicionSugerida, { imageColumn: 9 });
+    aplicarFormato(wsReplenishment, { 15: '$#,##0.00' });
+    aplicarEnlacesProducto(wsReplenishment, productosReposicionSugerida, { imageColumn: 16 });
     XLSX.utils.book_append_sheet(wb, wsReplenishment, 'Reposición sugerida');
 
     const newProductHeader = ['SKU', 'Producto / Modelo', 'Marca', 'Categoría', 'Fecha de creación', 'Imagen'];
@@ -1204,7 +1238,10 @@ export default function App({
       'Inv. Inicial', 'Compra', 'Ventas', 'Inv. Proyectado', 'Inv. Final',
       'Porcentaje de Rotación',
       'Merma', 'Merma %', 'Alerta Merma',
-      'Necesidad Reposición', 'Reposición Final', 'Alerta Quiebre', 'Acción Sugerida',
+      'Necesidad Reposición', 'Pedido Sugerido Base', 'Aplica Master Pack',
+      'Cantidad Master Pack', 'Aplica Inner Pack', 'Cantidad Inner Pack',
+      'Tipo Ajuste Pack', 'Cantidad Pack Aplicada', 'Pedido Sugerido Final',
+      'Alerta Quiebre', 'Acción Sugerida',
       'Costo USA', 'Costo CHINA', 'Costo Aplicado',
       'Desc. %', 'Desc. Consumi $', 'Aporte IOCA %', 'Aporte IOCA $', 'Aporte Retail %', 'Aporte Retail $',
       'Inv. Mínimo Reconocido', 'Liquidación Solo Retail',
@@ -1219,7 +1256,10 @@ export default function App({
       r.invInicial, r.compra, r.ventas, r.invProyectado, r.invFinal,
       r.porcentajeRotacion !== null ? r.porcentajeRotacion / 100 : null,
       r.merma, r.mermaPct, r.alertaMerma ? 'SI' : 'NO',
-      r.necesidadReposicion, r.reposicionSugerida,
+      r.necesidadReposicion, r.reposicionSugeridaBase,
+      packFlagLabel(r.aplicaMasterPack), r.cantidadMasterPack,
+      packFlagLabel(r.aplicaInnerPack), r.cantidadInnerPack,
+      r.tipoAjustePack, r.cantidadPackAplicada, r.reposicionSugerida,
       r.alertaQuiebre ? 'SI' : 'NO', r.accionSugerida || '',
       r.costoUSA, r.costoCHINA, r.costo,
       r.descPct, r.descUSD, r.ioaPct, r.ioaUSD, r.retailPct, r.retailUSD,
@@ -2169,7 +2209,7 @@ export default function App({
                 </div>
               </div>
               <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <KPIUnitPair label="Total SKU" value={resultados.totales.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.totales.totalUnidades} moneyLabel="Valor Inventario Total" moneyValue={fmtUSD(resultados.totales.valorTotalInventario)} />
+                <KPIUnitPair label="SKU en inventario" value={resultados.distribucionTier.inventario.totalSKUs} unitLabel="Total Unidades" unitValue={resultados.distribucionTier.inventario.totalU} moneyLabel="Valor Inventario Total" moneyValue={fmtUSD(resultados.totales.valorTotalInventario)} />
                 <KPIUnitPair label="SKU Activos" value={resultados.totales.skuActivos} unitLabel="Unidades Activas" unitValue={resultados.totales.unidadesActivas} moneyLabel="Valor Inventario SKU Activos" moneyValue={fmtUSD(resultados.totales.valorActivo)} color="#065f46" bg="#d1fae5" />
                 <KPIUnitPair label="SKU clasificados EOL" value={resultados.totales.skuEOL} unitLabel="Unidades clasificadas EOL" unitValue={resultados.totales.unidEOL} moneyLabel="Valor Inventario EOL" moneyValue={fmtUSD(resultados.totales.valorEOL)} color="#7f1d1d" bg="#fee2e2" />
                 <KPIUnitPair label="SKU sin ventas" value={resultados.totales.skuSinVentas} unitLabel="Unidades sin ventas" unitValue={resultados.totales.unidadesSinVentas} moneyLabel="Valor inventario sin ventas" moneyValue={fmtUSD(resultados.totales.valorInventarioSinVentas)} color="#92400e" bg="#fef3c7" />
@@ -2516,17 +2556,20 @@ export default function App({
                 </div>
               </div>
 
-              <div className="px-6 pt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <KPIBig
-                  label="Cantidad de SKU"
-                  value={resultados.distribucionTier.inventario.totalSKUs}
-                  sub="GOOD + BETTER + BEST + EOL"
-                />
-                <KPIBig
-                  label="Cantidad de Unidades"
-                  value={resultados.distribucionTier.inventario.totalU}
-                  sub="GOOD + BETTER + BEST + EOL"
-                />
+              <div className="px-6 pt-6 grid grid-cols-1 lg:grid-cols-3 gap-3">
+                {[
+                  ['Inventario Actual del Cliente', resultados.distribucionTier.inventario],
+                  ['Ventas del Cliente', resultados.distribucionTier.ventas],
+                  ['Reposición Sugerida', resultados.distribucionTier.reposicion],
+                ].map(([groupLabel, dataset]) => (
+                  <div key={groupLabel} className="border p-3" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
+                    <div className="text-[10px] uppercase tracking-wider text-stone-500 mb-2">{groupLabel}</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <KPIBig label="Cantidad Total SKU" value={dataset.totalSKUs} sub="Mismo universo del bloque" />
+                      <KPIBig label="Cantidad Total Unidades" value={dataset.totalU} sub="Mismo universo del bloque" />
+                    </div>
+                  </div>
+                ))}
               </div>
 
               <div className="px-6 pt-3">
@@ -2763,12 +2806,15 @@ export default function App({
                       <Th align="center">Nivel</Th>
                       <Th align="center">Inv. Proyectado</Th>
                       <Th align="center">Compra / Tránsito</Th>
-                      <Th align="center">Reposición Sugerida</Th>
+                      <Th align="center">Pedido Base</Th>
+                      <Th align="center">Tipo Ajuste Pack</Th>
+                      <Th align="center">Cantidad Pack</Th>
+                      <Th align="center">Pedido Final</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {productosReposicionSugerida.length === 0 && (
-                      <tr><td colSpan={6} className="p-6 text-center text-stone-500">No hay productos con reposición sugerida.</td></tr>
+                      <tr><td colSpan={9} className="p-6 text-center text-stone-500">No hay productos con reposición sugerida.</td></tr>
                     )}
                     {productosReposicionSugerida.map((record, index) => (
                       <tr key={`${record.sku}-${index}`} className="border-t hover:bg-stone-50" style={{ borderColor: '#e5e0d5' }}>
@@ -2777,6 +2823,9 @@ export default function App({
                         <Td align="center">{record.tier}</Td>
                         <Td align="center">{record.invProyectado}</Td>
                         <Td align="center">{record.compra}</Td>
+                        <Td align="center">{record.reposicionSugeridaBase}</Td>
+                        <Td align="center">{record.tipoAjustePack}</Td>
+                        <Td align="center">{record.cantidadPackAplicada ?? '—'}</Td>
                         <Td align="center" bold style={{ color: '#1e40af', background: '#dbeafe' }}>{record.reposicionSugerida}</Td>
                       </tr>
                     ))}
@@ -2786,24 +2835,24 @@ export default function App({
                     <tr className="border-t-2 font-bold" style={{ borderColor: '#0a2540', background: '#faf8f3' }}>
                       <td colSpan={3} className="p-3 text-right">TOTAL</td>
                       <td className="p-3 text-center">Total SKU incluidos: {productosReposicionSugerida.length}</td>
-                      <td className="p-3 text-center">—</td>
-                      <td className="p-3 text-center" style={{ color: '#1e40af' }}>Total unidades de Reposición Sugerida: {renderServiceValue(resultados.alertas.totalReposicionUnid)}</td>
+                      <td colSpan={4} className="p-3 text-center">—</td>
+                      <td className="p-3 text-center" style={{ color: '#1e40af' }}>Total unidades de Pedido Sugerido Final: {renderServiceValue(resultados.alertas.totalReposicionUnid)}</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </div>
 
-            {/* DETALLE DEL MISMO UNIVERSO DEL KPI EOL */}
+            {/* SUBCONJUNTO OPERATIVO EOL CON DESCUENTO APLICABLE */}
             <div className="bg-white border shadow-sm" style={{ borderColor: '#e5e0d5' }}>
               <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e0d5', background: '#faf8f3' }}>
                 <div>
                   <h2 className="text-lg flex items-center gap-2" style={{ fontFamily: '"Times New Roman", serif', color: '#0a2540' }}>
                     <Package className="w-5 h-5" style={{ color: '#7f1d1d' }} />
-                    SKU clasificados EOL
+                    SKU Clasificados EOL que aplican regla de descuento
                   </h2>
                   <div className="text-xs text-stone-500 mt-1">
-                    Mismo universo del KPI: <strong>{resultados.totales.skuEOL} SKU clasificados EOL</strong> · <strong>{resultados.totales.unidEOL} unidades clasificadas EOL</strong> · <strong>{fmtUSD(resultados.totales.valorEOL)}</strong>. La Fecha EOL puede ser N/D; Días y Fase EOL solo se calculan con una fecha válida.
+                    Subconjunto operativo de <strong>{resultados.totales.skuEOLConDescuento} SKU</strong> con Inventario Final mayor que cero y descuento vigente mayor que 0%. El KPI general conserva <strong>{resultados.totales.skuEOL} SKU clasificados EOL</strong> y no se reduce a esta tabla.
                   </div>
                 </div>
               </div>
@@ -2826,7 +2875,7 @@ export default function App({
                   </thead>
                   <tbody>
                     {eolDetailRows.length === 0 && (
-                      <tr><td colSpan={18} className="p-6 text-center text-stone-500">No hay SKU clasificados EOL en este inventario.</td></tr>
+                      <tr><td colSpan={18} className="p-6 text-center text-stone-500">No hay SKU EOL con inventario y descuento aplicable.</td></tr>
                     )}
                     {eolDetailRows.map((r, i) => {
                       const colorRot = colorPorcentajeRotacion(r.porcentajeRotacion);
@@ -2899,11 +2948,11 @@ export default function App({
                   {eolDetailRows.length > 0 && (
                     <tfoot>
                       <tr style={{ background: '#0a2540', color: '#faf8f3' }}>
-                        <td colSpan={13} className="px-3 py-2 text-right font-bold">TOTALES: {resultados.totales.skuEOL} SKU</td>
-                        <td className="px-3 py-2 text-center font-bold">{renderServiceValue(resultados.totales.unidEOL)}</td>
-                        <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.valorEOL)}</td>
+                        <td colSpan={13} className="px-3 py-2 text-right font-bold">TOTALES: {resultados.totales.skuEOLConDescuento} SKU</td>
+                        <td className="px-3 py-2 text-center font-bold">{renderServiceValue(resultados.totales.unidadesEOLConDescuento)}</td>
+                        <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.valorEOLConDescuento)}</td>
                         <td className="px-3 py-2 text-center font-bold">—</td>
-                        <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.descEOL)}</td>
+                        <td className="px-3 py-2 text-right font-bold" style={{ color: '#d4af37' }}>{fmtUSD(resultados.totales.descEOLAplicable)}</td>
                         <td className="px-3 py-2">—</td>
                       </tr>
                     </tfoot>
@@ -3180,7 +3229,7 @@ export default function App({
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: '16px' }}>
                     {[
-                      ['Total SKU', resultados.totales.totalSKUs, 'Total Unidades', resultados.totales.totalUnidades],
+                      ['SKU en inventario', resultados.distribucionTier.inventario.totalSKUs, 'Total Unidades', resultados.distribucionTier.inventario.totalU],
                       ['SKU Activos', resultados.totales.skuActivos, 'Total Unidades Activas', resultados.totales.unidadesActivas],
                       ['SKU clasificados EOL', resultados.totales.skuEOL, 'Unidades clasificadas EOL', resultados.totales.unidEOL],
                       ['SKU sin ventas', resultados.totales.skuSinVentas, 'Unidades sin ventas', resultados.totales.unidadesSinVentas, 'Valor inventario sin ventas', resultados.totales.valorInventarioSinVentas],

@@ -20,6 +20,10 @@ const sourceProduct = {
   status: ' Activo ',
   imageUrl: ' https://images.invalid/sku-1.png ',
   productUrl: ' https://products.invalid/sku-1 ',
+  aplicaMasterPack: true,
+  cantidadMasterPack: '24',
+  aplicaInnerPack: false,
+  cantidadInnerPack: 12,
   priceUSA: '25',
   priceChina: 18,
 };
@@ -39,6 +43,10 @@ describe('contrato Product normalizado', () => {
       status: 'Activo',
       imageUrl: 'https://images.invalid/sku-1.png',
       productUrl: 'https://products.invalid/sku-1',
+      aplicaMasterPack: true,
+      cantidadMasterPack: 24,
+      aplicaInnerPack: false,
+      cantidadInnerPack: 12,
       priceUSA: 25,
       priceChina: 18,
     });
@@ -66,6 +74,33 @@ describe('contrato Product normalizado', () => {
     })).toMatchObject({ priceUSA: 0, priceChina: null });
   });
 
+  it('preserva flags booleanos y normaliza cantidades de pack inválidas sin usar cero', () => {
+    expect(normalizeProduct({
+      sku: 'SKU-1',
+      aplicaMasterPack: false,
+      cantidadMasterPack: 0,
+      aplicaInnerPack: true,
+      cantidadInnerPack: '6',
+    })).toMatchObject({
+      aplicaMasterPack: false,
+      cantidadMasterPack: null,
+      aplicaInnerPack: true,
+      cantidadInnerPack: 6,
+    });
+    expect(normalizeProduct({
+      sku: 'SKU-1',
+      aplicaMasterPack: undefined,
+      cantidadMasterPack: 'invalida',
+      aplicaInnerPack: null,
+      cantidadInnerPack: '',
+    })).toMatchObject({
+      aplicaMasterPack: null,
+      cantidadMasterPack: null,
+      aplicaInnerPack: null,
+      cantidadInnerPack: null,
+    });
+  });
+
   it('preserva null por SKU y suma los importes válidos del bloque', () => {
     expect(multiplyPrice(null, 5)).toBeNull();
     expect(multiplyPrice(0, 5)).toBe(0);
@@ -90,6 +125,10 @@ describe('contrato Product normalizado', () => {
       level: 'Better',
       imageUrl: 'https://images.invalid/sku-1.png',
       productUrl: 'https://products.invalid/sku-1',
+      aplicaMasterPack: true,
+      cantidadMasterPack: 24,
+      aplicaInnerPack: false,
+      cantidadInnerPack: 12,
       costoUSA: 25,
       costoCHINA: 18,
     });

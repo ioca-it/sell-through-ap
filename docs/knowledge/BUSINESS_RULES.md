@@ -63,6 +63,7 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - `Product.creationDate` se origina exclusivamente en `crbbe_validodesde` y representa su mayor valor entre los registros vigentes seleccionados para el SKU, aunque USA y CHINA tengan máximos diferentes. `null`, `undefined`, texto vacío o fecha inválida producen `null`; `createdon` no se usa como fallback. Producto Nuevo usa esa fecha y conserva su umbral estricto `<90 días`.
 - Para detectar esas divergencias, strings, URLs y FormattedValue usan `trim()` y las fechas una representación canónica equivalente. Una fecha no vacía inválida conserva su texto trimmed solo para comparación interna y no se vuelve equivalente artificialmente a otra fecha.
 - Precio y atributo reutilizan `PRODUCT_MASTER_CONFLICT` y se distinguen únicamente en metadata interna; el error público conserva código/mensaje sanitizados y no publica valores, campos físicos ni contexto Dataverse.
+- El contrato Product incorpora `crbbe_aplicaamasterpack` → `aplicaMasterPack`, `crbbe_cantidadenmasterpack` → `cantidadMasterPack`, `crbbe_aplicaainnerpack` → `aplicaInnerPack` y `crbbe_cantidadinnerpack` → `cantidadInnerPack` al `$select` de `productpricelevels`, sin usarse en la consulta de marcas. Los flags preservan `true`, `false` o `null` explícitos; las cantidades preservan `null` para ausente, vacío, no numérico o `≤0`, sin convertir ninguno de los dos casos en cero o texto silencioso. Ambos participan en el conflicto de atributo por SKU descrito arriba, incluido cuando el valor divergente es `false`.
 - Phase1-038 establece `0 = precio real` y `null = precio no disponible` en
   gateway, contrato Product, parser/adaptación y consumidores financieros. Los
   importes derivados y totales que dependen de un precio no disponible conservan
@@ -157,7 +158,7 @@ ceil((Ventas / Semanas del período) × (Safety Stock en semanas + Lead Time del
 
 - `necesidad de reposición = max(0, Inv. Seguridad IOCA - Inv. Final)`.
 - `Compra` representa Inventario en Tránsito y cae en `0` cuando la columna/celda está ausente, vacía o es nula.
-- `reposición final = max(0, necesidad de reposición - Compra)` únicamente para productos `ACTIVO` con correspondencia en Maestro.
+- `reposición final = max(0, necesidad de reposición - Compra)` únicamente para productos `ACTIVO` con correspondencia en Maestro. Este resultado histórico se conserva como `reposicionSugeridaBase` y no cambia con este catálogo; ver BR-028 para el ajuste posterior por múltiplo logístico que produce el `reposicionSugerida` operativo.
 - EOL, F4 y SKU sin Maestro generan reposición final `0`.
 - La alerta de nivel de seguridad ocurre si el Inventario de Seguridad IOCA es mayor que cero y el Inventario Proyectado es menor. No usa Inventario Final para esa comparación.
 - Inventario Proyectado conserva valores negativos.
@@ -221,6 +222,13 @@ Distribution y Pareto no forman parte de este Business Service. Application Serv
 - El valor agrega únicamente filas con precio aplicable; una categoría con
   filas pero sin ningún valor calculable conserva `null`. `% Valor` usa el total
   válido del mismo bloque y no suma categorías superpuestas.
+- Los seis KPI superiores de Distribución por Tier (Cantidad Total SKU y
+  Cantidad Total Unidades de Inventario Actual del Cliente, Ventas del Cliente
+  y Reposición Sugerida) provienen exactamente del dataset de este mismo
+  bloque (`distribucionTier.inventario`, `.ventas` y `.reposicion`
+  respectivamente); ningún KPI recalcula un universo independiente. El bloque
+  de Reposición usa `reposicionSugerida` ya ajustada por pack (BR-028), nunca
+  el Pedido Base.
 
 ### BR-017 — Pareto A/B/C
 
@@ -296,13 +304,35 @@ Las recomendaciones narrativas se generan con reglas fijas en `App.jsx`; no son 
 - `customerType` admite cadena vacía como fallback controlado y se muestra en Configuración al seleccionar un cliente.
 - El nombre lógico y mapping real de Dataverse permanecen pendientes; no se aprobó ninguna fórmula basada en Tipo de Cliente.
 
+### BR-028 — Ajuste de Pedido Sugerido por Master Pack / Inner Pack
+
+- El motor conserva sin cambios la fórmula histórica de BR-012 como `reposicionSugeridaBase` (Pedido Sugerido Base).
+- Después del cálculo base, `ajustarReposicionPorPack` evalúa Master Pack: si `aplicaMasterPack === true` y `cantidadMasterPack` es numérica, finita y `>0`, `Pedido Final = CEIL(Base ÷ Cantidad Master Pack) × Cantidad Master Pack`.
+- Si Master Pack no aplica (`aplicaMasterPack !== true`) o su cantidad es `null`, vacía, no numérica, cero o negativa, se evalúa Inner Pack con la misma fórmula usando `cantidadInnerPack`.
+- Si ninguno de los dos aplica, `Pedido Sugerido Final = Pedido Sugerido Base`, sin fallar la corrida por falta de configuración de pack.
+- Master Pack tiene precedencia absoluta sobre Inner Pack cuando ambos son válidos; nunca se suman ni se aplican los dos.
+- `aplicaInnerPack` es booleano y nunca actúa como divisor; el divisor y múltiplo es siempre `cantidadInnerPack`.
+- Invariantes: `Pedido Final ≥ Pedido Base`; Base múltiplo exacto del pack conserva el mismo valor; pack `=1` conserva el Base; Base `=0` produce Final `=0`; el resultado nunca es `NaN`, `Infinity` ni negativo; nunca se redondea hacia abajo.
+- `reposicionSugerida` (el valor operativo usado por alertas, Tier, Excel y CSV) es siempre el Pedido Sugerido Final; `reposicionSugeridaBase`, `tipoAjustePack` (`MASTER PACK`, `INNER PACK` o `SIN AJUSTE`) y `cantidadPackAplicada` quedan expuestos en el record para trazabilidad.
+
+### BR-029 — SKU Clasificados EOL que aplican regla de descuento
+
+- Es un subconjunto operativo de `eolTodos` (BR-024), no un universo nuevo: incluye únicamente registros con `estado = EOL`, `Inventario Final > 0` y `Desc. % > 0` según la fase/tabla de descuentos vigente.
+- Un SKU EOL con Inventario Final en `0` o `null`, o sin ninguna fase/marca/origen con descuento aplicable (`Desc. % = 0`), no aparece en esta tabla.
+- El KPI EOL general (`SKU con EOL definido`, BR-024) continúa contando `eolTodos` sin reducirse a este subconjunto; ambos universos, sus unidades y su valor se documentan y presentan por separado.
+- No se define ni se infiere ningún porcentaje de descuento nuevo; las tablas de buckets/fases (BR-008, BR-009) y sus porcentajes permanecen sin cambio.
+
 ## Salidas
 
 ### BR-019 — CSV
 
 Genera un CSV principal procesable con detalle general y `Porcentaje de
 Rotación`. Un segundo CSV complementario contiene definiciones y fórmulas, sin
-insertar narrativa dentro de las filas del dataset.
+insertar narrativa dentro de las filas del dataset. El CSV principal agrega
+ocho columnas de trazabilidad de pack al final (Pedido Sugerido Base, Aplica
+Master Pack, Cantidad Master Pack, Aplica Inner Pack, Cantidad Inner Pack,
+Tipo Ajuste Pack, Cantidad Pack Aplicada, Pedido Sugerido Final) sin romper
+columnas existentes.
 
 ### BR-020 — Excel
 
@@ -310,6 +340,11 @@ Genera un libro local con resumen, hojas condicionales de alertas y segmentos,
 datos completos, distribuciones, Pareto, referencias EOL/fases y la hoja
 `Definiciones y Fórmulas`. El SKU enlaza `productUrl` y `Ver imagen` enlaza
 `imageUrl` cuando son HTTP(S) válidas. SheetJS CE 0.20.3 no incrusta imágenes.
+El Resumen, "EOL Fase Activa" y "Reposición sugerida" reutilizan los mismos
+datasets canónicos que la UI (`distribucionTier`, `eolConDescuentoAplicable` y
+`productosReposicionSugerida`) en vez de recalcular sus propios universos; las
+hojas de Reposición, Bajo Inv. Seguridad, Activos y Datos Completos agregan
+las mismas ocho columnas de trazabilidad de pack que el CSV.
 
 ### BR-021 — Informe imprimible
 

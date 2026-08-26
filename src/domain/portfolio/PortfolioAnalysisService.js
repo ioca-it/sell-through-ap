@@ -67,6 +67,12 @@ const consolidateRecords = (records) => {
     record.estado === 'EOL' && record.diasDesc !== null && record.diasDesc < 0
   ).sort((a, b) => b.diasDesc - a.diasDesc);
   const eolTodos = ownedRecords.filter((record) => record.estado === 'EOL');
+  const eolConDescuentoAplicable = eolTodos.filter((record) => (
+    Number.isFinite(record.invFinal)
+    && record.invFinal > 0
+    && Number.isFinite(record.descPct)
+    && record.descPct > 0
+  ));
   const eolSinFecha = eolTodos.filter((record) => record.diasDesc === null);
   const activos = ownedRecords.filter((record) => record.estado === 'ACTIVO')
     .sort((a, b) => compareNullableMoneyDescending(a.valorInv, b.valorInv));
@@ -87,6 +93,7 @@ const consolidateRecords = (records) => {
     eolVencidos,
     eolFuturos,
     eolTodos,
+    eolConDescuentoAplicable,
     eolSinFecha,
     activos,
     sinMaestro,
@@ -115,6 +122,7 @@ const analyzePortfolio = ({
     eolVencidos,
     eolFuturos,
     eolTodos,
+    eolConDescuentoAplicable,
     eolSinFecha,
     activos,
     sinMaestro,
@@ -137,6 +145,16 @@ const analyzePortfolio = ({
     0,
   );
   const totalValorEOL = sumPriceValues(eolTodos.map((record) => record.valorInv));
+  const totalUnidEOLConDescuento = eolConDescuentoAplicable.reduce(
+    (sum, record) => sum + record.invFinal,
+    0,
+  );
+  const totalValorEOLConDescuento = sumPriceValues(
+    eolConDescuentoAplicable.map((record) => record.valorInv),
+  );
+  const totalDescuentoEOLAplicable = sumPriceValues(
+    eolConDescuentoAplicable.map((record) => record.descTotal),
+  );
   const totalValorEOLVencido = sumPriceValues(
     eolVencidos.map((record) => record.valorInv),
   );
@@ -217,12 +235,15 @@ const analyzePortfolio = ({
   const totalValorTransito = sumPriceValues(
     productosEnTransito.map((record) => record.valorEnTransito),
   );
-  const totalReposicionUnid = activos.reduce(
+  const productosReposicionSugerida = activos.filter(
+    (record) => record.reposicionSugerida > 0,
+  );
+  const totalReposicionUnid = productosReposicionSugerida.reduce(
     (sum, record) => sum + record.reposicionSugerida,
     0,
   );
   const totalReposicionValor = sumPriceValues(
-    activos.map((record) => record.valorReposicion),
+    productosReposicionSugerida.map((record) => record.valorReposicion),
   );
   const totalUnidades = recs.reduce((sum, record) => sum + record.invFinal, 0);
   const unidadesActivas = skusActivos.reduce((sum, record) => sum + record.invFinal, 0);
@@ -250,6 +271,7 @@ const analyzePortfolio = ({
     eolVencidos,
     eolFuturos,
     eolTodos,
+    eolConDescuentoAplicable,
     eolSinFecha,
     activos,
     sinMaestro,
@@ -257,6 +279,7 @@ const analyzePortfolio = ({
     distribucionCategoria: ownedDistribucionCategoria,
     analisisPareto: ownedAnalisisPareto,
     newProductsMissingInventory: ownedNewProductsMissingInventory,
+    productosReposicionSugerida,
     semanasPeriodoUsadas,
     configSnapshot: {
       periodoAnalizado: config.periodoAnalizado,
@@ -297,6 +320,7 @@ const analyzePortfolio = ({
       eolFuturos: eolFuturos.length,
       eolSinFecha: eolSinFecha.length,
       skuEOL: eolTodos.length,
+      skuEOLConDescuento: eolConDescuentoAplicable.length,
       sinMaestro: sinMaestro.length,
       skuActivos: skusActivos.length,
       skuVencidos: skusVencidos.length,
@@ -311,9 +335,11 @@ const analyzePortfolio = ({
       unidadesMaestro,
       unidadesSinMaestro,
       unidEOL: totalUnidEOL,
+      unidadesEOLConDescuento: totalUnidEOLConDescuento,
       unidadesEOLVencidas: totalUnidEOLVencido,
       valorActivo,
       valorEOL: totalValorEOL,
+      valorEOLConDescuento: totalValorEOLConDescuento,
       valorEOLVencido: totalValorEOLVencido,
       valorEOLFuturo,
       valorEOLSinFecha,
@@ -331,6 +357,7 @@ const analyzePortfolio = ({
           : null)
         : null,
       descEOL: totalDescEOL,
+      descEOLAplicable: totalDescuentoEOLAplicable,
       ioaEOL: totalIOAEOL,
       retailEOL: totalRetailEOL,
     },

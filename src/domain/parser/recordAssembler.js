@@ -16,6 +16,7 @@ import {
   seleccionarCostoPorOrigen,
   calcularInventarioSeguridadIOCA,
   calcularQuiebreYReposicion,
+  ajustarReposicionPorPack,
   obtenerAccionQuiebreActivo,
 } from '../inventory/inventoryEngine.js';
 import {
@@ -94,6 +95,8 @@ export const assembleRecord = ({
       origen: origenInv || '—', sinOrigenInv: !origenInv,
       costo: null, costoUSA: null, costoCHINA: null,
       level: '', imageUrl: '', productUrl: '',
+      aplicaMasterPack: null, cantidadMasterPack: null,
+      aplicaInnerPack: null, cantidadInnerPack: null,
       descPct: 0, descUSD: null, ioaUSD: null, retailUSD: null,
       inventarioMinimoReconocido: 0, liquidacionSoloRetail: false,
       invSeguridad, invInicial, compra, ventas, invProyectado, invFinal,
@@ -106,7 +109,9 @@ export const assembleRecord = ({
       leadTimeAplicado: 0,
       merma, mermaPct, alertaMerma,
       porcentajeRotacion,
-      necesidadReposicion, reposicionSugerida: 0,
+      necesidadReposicion, reposicionSugeridaBase: 0,
+      tipoAjustePack: 'SIN AJUSTE', cantidadPackAplicada: null,
+      reposicionSugerida: 0,
       alertaQuiebre: sinMaestroAlertaQuiebre,
       accionSugerida: sinMaestroAlertaQuiebre ? 'Agregar al Maestro y decidir' : '',
       valorInv: null,
@@ -188,7 +193,7 @@ export const assembleRecord = ({
   });
   const {
     necesidadReposicion,
-    reposicionSugerida,
+    reposicionSugerida: reposicionSugeridaBase,
     alertaQuiebre,
   } = calcularQuiebreYReposicion({
     estado: masterRecord.estado,
@@ -197,6 +202,17 @@ export const assembleRecord = ({
     invProyectado,
     compra,
     existeEnMaestro: true,
+  });
+  const {
+    tipoAjustePack,
+    cantidadPackAplicada,
+    pedidoSugeridoFinal: reposicionSugerida,
+  } = ajustarReposicionPorPack({
+    pedidoBase: reposicionSugeridaBase,
+    aplicaMasterPack: masterRecord.aplicaMasterPack,
+    cantidadMasterPack: masterRecord.cantidadMasterPack,
+    aplicaInnerPack: masterRecord.aplicaInnerPack,
+    cantidadInnerPack: masterRecord.cantidadInnerPack,
   });
 
   let accionSugerida = '';
@@ -235,6 +251,10 @@ export const assembleRecord = ({
     level: masterRecord.level || '',
     imageUrl: masterRecord.imageUrl || '',
     productUrl: masterRecord.productUrl || '',
+    aplicaMasterPack: masterRecord.aplicaMasterPack ?? null,
+    cantidadMasterPack: masterRecord.cantidadMasterPack ?? null,
+    aplicaInnerPack: masterRecord.aplicaInnerPack ?? null,
+    cantidadInnerPack: masterRecord.cantidadInnerPack ?? null,
     descPct, descUSD,
     ioaPct, ioaUSD,
     retailPct, retailUSD,
@@ -244,7 +264,9 @@ export const assembleRecord = ({
     semanasPeriodo, leadTimeAplicado,
     merma, mermaPct, alertaMerma,
     porcentajeRotacion,
-    necesidadReposicion, reposicionSugerida, alertaQuiebre, accionSugerida,
+    necesidadReposicion, reposicionSugeridaBase,
+    tipoAjustePack, cantidadPackAplicada,
+    reposicionSugerida, alertaQuiebre, accionSugerida,
     valorInv: multiplyPrice(costo, invFinal),
     valorVentas: multiplyPrice(costo, ventas),
     valorReposicion: multiplyPrice(costo, reposicionSugerida),

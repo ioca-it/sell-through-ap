@@ -176,7 +176,10 @@ const buildProductMediaResults = () => {
 };
 
 const buildEolUniverseResults = () => {
-  const phaseDates = ['2026-07-31', '2026-08-28', '2026-08-29', '2026-10-24'];
+  const phaseDates = [
+    '2025-01-01', '2026-04-01', '2026-07-31',
+    '2026-08-28', '2026-08-29', '2026-10-24',
+  ];
   const skus = Array.from({ length: 43 }, (_, index) => `EOL-${String(index + 1).padStart(2, '0')}`);
   const repository = createSellThroughRepository({
     rawInventario: [
@@ -237,12 +240,12 @@ describe('AP01 — presentación del Dashboard', () => {
     const tableCases = [
       ['Costo USA aplicado', 'MEDIA-ACTIVO'],
       ['Merma (u)', 'MEDIA-ACTIVO'],
-      ['Reposición Final', 'MEDIA-ACTIVO'],
+      ['Pedido Sugerido Final', 'MEDIA-ACTIVO'],
       ['Fecha de creación', 'NUEVO-AUSENTE'],
       ['Valor en tránsito', 'MEDIA-ACTIVO'],
       ['% Acum.', 'MEDIA-ACTIVO'],
       ['Compra / Tránsito', 'MEDIA-ACTIVO'],
-      ['FASE EOL', 'EOL-FUTURO'],
+      ['FASE EOL', 'EOL-VENCIDO'],
       ['Modelo (del inventario)', 'SIN-MAESTRO'],
     ];
 
@@ -340,14 +343,14 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(content).toContain('Complementarios');
   });
 
-  it('reconcilia el universo EOL y presenta N/D/Sin fecha EOL sin alterar sus cuatro buckets', () => {
+  it('preserva el KPI EOL general y presenta solo el subconjunto con descuento aplicable', () => {
     const resultados = buildEolUniverseResults();
     const tree = renderDashboard(resultados);
     const section = findElement(
       tree,
       (node) => node.type === 'div'
         && node.props.className === 'bg-white border shadow-sm'
-        && textContent(node).includes('SKU clasificados EOL'),
+        && textContent(node).includes('SKU Clasificados EOL que aplican regla de descuento'),
     );
     const table = findElement(section, (node) => node.type === 'table');
     const skuCells = findElements(
@@ -358,27 +361,21 @@ describe('AP01 — presentación del Dashboard', () => {
       table,
       (node) => node.type === 'span' && node.props['data-eol-phase'],
     ).map(textContent);
-    const eolWithoutDateRow = findElement(
-      table,
-      (node) => node.type === 'tr' && textContent(node).includes('EOL-01'),
-    );
-
     expect(resultados.totales).toMatchObject({ skuEOL: 43, unidEOL: 43, valorEOL: 430 });
     expect(resultados.eolTodos).toHaveLength(43);
     expect(resultados.eolSinFecha.map(({ sku }) => sku)).toEqual(['EOL-01']);
     expect(resultados.eolTodos.find(({ sku }) => sku === 'EOL-01')).toMatchObject({
       estado: 'EOL', fechaStr: '', diasDesc: null, bucket: null, porcentajeRotacion: null,
     });
-    expect(skuCells).toHaveLength(resultados.totales.skuEOL);
+    expect(resultados.eolConDescuentoAplicable.every((record) => (
+      record.invFinal > 0 && record.descPct > 0
+    ))).toBe(true);
+    expect(skuCells).toHaveLength(resultados.totales.skuEOLConDescuento);
+    expect(textContent(section)).toContain(`${resultados.totales.skuEOLConDescuento} SKU`);
     expect(textContent(section)).toContain('43 SKU clasificados EOL');
-    expect(textContent(section)).toContain('43 unidades clasificadas EOL');
-    expect(textContent(section)).toContain('$430');
-    expect(textContent(eolWithoutDateRow)).toContain('N/DN/DSin fecha EOL');
-    expect(textContent(eolWithoutDateRow).match(/N\/D/g)).toHaveLength(3);
-    expect(phases).toHaveLength(43);
-    expect([...new Set(phases)]).toEqual([
-      'VENCIDO', 'CRÍTICO', 'PRÓXIMO', 'PLANIFICADO', 'Sin fecha EOL',
-    ]);
+    expect(textContent(table)).not.toContain('EOL-01');
+    expect(phases).toHaveLength(resultados.totales.skuEOLConDescuento);
+    expect([...new Set(phases)]).toEqual(['VENCIDO']);
     expect(textContent(table)).toContain('Liquidar / no reponer');
   });
 
@@ -420,8 +417,8 @@ describe('AP01 — presentación del Dashboard', () => {
     const tree = renderDashboard(resultados);
     const mixCards = findElements(
       tree,
-      (node) => node.props?.label === 'Cantidad de SKU'
-        || node.props?.label === 'Cantidad de Unidades',
+      (node) => node.props?.label === 'Cantidad Total SKU'
+        || node.props?.label === 'Cantidad Total Unidades',
     );
     const replenishmentSection = findElement(
       tree,
@@ -432,18 +429,22 @@ describe('AP01 — presentación del Dashboard', () => {
     const replenishmentContent = textContent(replenishmentSection);
     const dashboardContent = textContent(tree);
     const replenishmentPosition = dashboardContent.indexOf('Productos de Reposición Sugerida');
-    const eolPosition = dashboardContent.indexOf('SKU clasificados EOL', replenishmentPosition);
+    const eolPosition = dashboardContent.indexOf('SKU Clasificados EOL', replenishmentPosition);
 
     expect(mixCards.map(({ props }) => [props.label, props.value])).toEqual([
-      ['Cantidad de SKU', resultados.distribucionTier.inventario.totalSKUs],
-      ['Cantidad de Unidades', resultados.distribucionTier.inventario.totalU],
+      ['Cantidad Total SKU', resultados.distribucionTier.inventario.totalSKUs],
+      ['Cantidad Total Unidades', resultados.distribucionTier.inventario.totalU],
+      ['Cantidad Total SKU', resultados.distribucionTier.ventas.totalSKUs],
+      ['Cantidad Total Unidades', resultados.distribucionTier.ventas.totalU],
+      ['Cantidad Total SKU', resultados.distribucionTier.reposicion.totalSKUs],
+      ['Cantidad Total Unidades', resultados.distribucionTier.reposicion.totalU],
     ]);
     expect(replenishmentContent).toContain('REPONER');
     expect(replenishmentContent).toContain('Modelo recomendado');
     expect(replenishmentContent).not.toContain('SIN-REPOSICION');
     expect(replenishmentContent).not.toContain('EOL-SIN-REPOSICION');
     expect(replenishmentContent).toContain('Total SKU incluidos: 1');
-    expect(replenishmentContent).toContain(`Total unidades de Reposición Sugerida: ${resultados.alertas.totalReposicionUnid}`);
+    expect(replenishmentContent).toContain(`Total unidades de Pedido Sugerido Final: ${resultados.alertas.totalReposicionUnid}`);
     expect(replenishmentPosition).toBeGreaterThanOrEqual(0);
     expect(eolPosition).toBeGreaterThan(replenishmentPosition);
     expect(dashboardContent).not.toContain('SKUs EOL ya descontinuados — con fase activa');
@@ -572,6 +573,13 @@ describe('AP01 — presentación del Dashboard', () => {
       replenishment.invProyectado,
       replenishment.compra,
       replenishment.necesidadReposicion,
+      replenishment.reposicionSugeridaBase,
+      'N/D',
+      null,
+      'N/D',
+      null,
+      'SIN AJUSTE',
+      null,
       replenishment.reposicionSugerida,
       replenishment.valorReposicion,
       '',
@@ -616,7 +624,48 @@ describe('AP01 — presentación del Dashboard', () => {
       'Indicador/Campo', 'Definición', 'Fórmula', 'Unidad', 'Fuente', 'Interpretación',
     ]);
     expect(definitions.some((row) => row[0] === 'Porcentaje de Rotación')).toBe(true);
-    expect(definitions.some((row) => row[0] === 'Reposición Final')).toBe(true);
+    expect(definitions.some((row) => row[0] === 'Pedido Sugerido Final')).toBe(true);
+  });
+
+  it('reconcilia Resumen Excel con los mismos KPI y valores canónicos de UI', () => {
+    xlsxHarness.sheetsByName = {};
+    const resultados = buildResults();
+    const tree = renderDashboard(resultados);
+    const exportButton = findElement(
+      tree,
+      (node) => node.type === 'button' && textContent(node).includes('Exportar Excel'),
+    );
+
+    exportButton.props.onClick();
+    const summary = new Map(
+      xlsxHarness.sheetsByName.Resumen
+        .filter((row) => row.length >= 2)
+        .map((row) => [row[0], row[1]]),
+    );
+
+    expect(summary.get('Total SKUs en inventario'))
+      .toBe(resultados.distribucionTier.inventario.totalSKUs);
+    expect(summary.get('Total Unidades')).toBe(resultados.distribucionTier.inventario.totalU);
+    expect(summary.get('SKUs Activos')).toBe(resultados.totales.skuActivos);
+    expect(summary.get('Total Unidades Activas')).toBe(resultados.totales.unidadesActivas);
+    expect(summary.get('SKU clasificados EOL')).toBe(resultados.totales.skuEOL);
+    expect(summary.get('Unidades clasificadas EOL')).toBe(resultados.totales.unidEOL);
+    expect(summary.get('SKUs sin ventas')).toBe(resultados.totales.skuSinVentas);
+    expect(summary.get('Total Unidades sin ventas')).toBe(resultados.totales.unidadesSinVentas);
+    expect(summary.get('SKUs Maestro')).toBe(resultados.totales.skuMaestro);
+    expect(summary.get('Total Unidades Maestro')).toBe(resultados.totales.unidadesMaestro);
+    expect(summary.get('Valor Total Inventario')).toBe(resultados.totales.valorTotalInventario);
+    expect(summary.get('Valor Activo')).toBe(resultados.totales.valorActivo);
+    expect(summary.get('Valor EOL')).toBe(resultados.totales.valorEOL);
+    expect(summary.get('Valor EOL Vencido')).toBe(resultados.totales.valorEOLVencido);
+    expect(summary.get('Valor EOL Futuro')).toBe(resultados.totales.valorEOLFuturo);
+    expect(summary.get('Valor Sin Maestro')).toBe(resultados.totales.valorSinMaestro);
+    expect(summary.get('SKUs con Pedido Sugerido Final'))
+      .toBe(resultados.distribucionTier.reposicion.totalSKUs);
+    expect(summary.get('Total unidades de Pedido Sugerido Final'))
+      .toBe(resultados.distribucionTier.reposicion.totalU);
+    expect(summary.get('Valor total Pedido Sugerido Final (USD)'))
+      .toBe(resultados.alertas.totalReposicionValor);
   });
 
   it('mantiene CSV principal procesable y genera definiciones en archivo complementario', () => {
@@ -637,6 +686,11 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(dataRows[0]).toContain('Porcentaje de Rotación');
     expect(dataRows[0]).toContain('Producto URL');
     expect(dataRows[0]).toContain('Imagen URL');
+    [
+      'Pedido Sugerido Base', 'Aplica Master Pack', 'Cantidad Master Pack',
+      'Aplica Inner Pack', 'Cantidad Inner Pack', 'Tipo Ajuste Pack',
+      'Cantidad Pack Aplicada', 'Pedido Sugerido Final',
+    ].forEach((header) => expect(dataRows[0]).toContain(header));
     const rotationColumn = dataRows[0].indexOf('Porcentaje de Rotación');
     expect(dataRows.find((row) => row[0] === 'MEDIA-ACTIVO')[rotationColumn]).toBe(0.5);
     expect(dataCsv).toContain('"50%"');
@@ -645,6 +699,8 @@ describe('AP01 — presentación del Dashboard', () => {
       'Indicador/Campo', 'Definición', 'Fórmula', 'Unidad', 'Fuente', 'Interpretación',
     ]);
     expect(definitionRows.some((row) => row[0] === 'Porcentaje de Rotación')).toBe(true);
+    expect(definitionRows.some((row) => row[0] === 'Pedido Sugerido Base')).toBe(true);
+    expect(definitionRows.some((row) => row[0] === 'Pedido Sugerido Final')).toBe(true);
   });
 
   it('genera un XLSX que se puede releer preservando hojas, valores y formatos', () => {

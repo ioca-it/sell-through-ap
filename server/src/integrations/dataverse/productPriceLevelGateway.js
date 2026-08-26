@@ -17,6 +17,10 @@ const PRODUCT_SOURCE = Object.freeze({
     status: 'crbbe_etapa',
     imageUrl: 'crbbe_imagenproducto',
     productUrl: 'crbbe_urlproducto',
+    aplicaMasterPack: 'crbbe_aplicaamasterpack',
+    cantidadMasterPack: 'crbbe_cantidadenmasterpack',
+    aplicaInnerPack: 'crbbe_aplicaainnerpack',
+    cantidadInnerPack: 'crbbe_cantidadinnerpack',
     amount: 'amount',
     origin: 'crbbe_origen',
     companyName: 'crbbe_nombrecompania',
@@ -66,6 +70,17 @@ const normalizeAmount = (value) => {
   return Number.isFinite(amount) ? amount : null;
 };
 
+const normalizeNullableBoolean = (value) => (
+  value === true || value === false ? value : null
+);
+
+const normalizePackQuantity = (value) => {
+  if (value === null || value === undefined || typeof value === 'boolean') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  const quantity = Number(value);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : null;
+};
+
 // Si el campo es Choice solo se publica la etiqueta formateada. El valor fuente
 // se usa como fallback únicamente cuando ya es texto, nunca como código numérico.
 const readableValue = (row, field) => {
@@ -88,6 +103,10 @@ export const mapProductPriceLevelRow = (row = {}) => Object.freeze({
   status: readableValue(row, 'status'),
   imageUrl: normalizeText(row[PRODUCT_SOURCE.fields.imageUrl]),
   productUrl: normalizeText(row[PRODUCT_SOURCE.fields.productUrl]),
+  aplicaMasterPack: normalizeNullableBoolean(row[PRODUCT_SOURCE.fields.aplicaMasterPack]),
+  cantidadMasterPack: normalizePackQuantity(row[PRODUCT_SOURCE.fields.cantidadMasterPack]),
+  aplicaInnerPack: normalizeNullableBoolean(row[PRODUCT_SOURCE.fields.aplicaInnerPack]),
+  cantidadInnerPack: normalizePackQuantity(row[PRODUCT_SOURCE.fields.cantidadInnerPack]),
   amount: normalizeAmount(row[PRODUCT_SOURCE.fields.amount]),
   origin: normalizeText(row[PRODUCT_SOURCE.fields.origin]).toUpperCase(),
   buyerCompany: normalizeText(row[PRODUCT_SOURCE.fields.buyerCompany]),
@@ -112,6 +131,10 @@ const PRODUCT_ATTRIBUTE_FIELDS = Object.freeze([
   'status',
   'imageUrl',
   'productUrl',
+  'aplicaMasterPack',
+  'cantidadMasterPack',
+  'aplicaInnerPack',
+  'cantidadInnerPack',
 ]);
 
 const createProduct = (row) => ({
@@ -125,6 +148,10 @@ const createProduct = (row) => ({
   status: row.status,
   imageUrl: row.imageUrl,
   productUrl: row.productUrl,
+  aplicaMasterPack: row.aplicaMasterPack,
+  cantidadMasterPack: row.cantidadMasterPack,
+  aplicaInnerPack: row.aplicaInnerPack,
+  cantidadInnerPack: row.cantidadInnerPack,
   priceUSA: null,
   priceChina: null,
 });
@@ -206,7 +233,7 @@ const addAttributeValues = (attributesBySku, rawRow, row) => {
   const attributes = attributesBySku.get(row.sku);
   PRODUCT_ATTRIBUTE_FIELDS.forEach((field) => {
     const value = comparableAttributeValue(rawRow, row, field);
-    if (!value) return;
+    if (value === null || value === undefined || value === '') return;
     if (!attributes.has(field)) attributes.set(field, new Set());
     attributes.get(field).add(value);
   });
@@ -223,7 +250,7 @@ const findAttributeConflicts = (attributesBySku) => (
           sku,
           field,
           values: Object.freeze([...values].sort((left, right) => (
-            left.localeCompare(right)
+            String(left).localeCompare(String(right))
           ))),
         }))
     ))
@@ -254,7 +281,11 @@ export const consolidateProductPriceLevelRows = (rows) => {
 
     const product = products.get(row.sku);
     PRODUCT_ATTRIBUTE_FIELDS.forEach((field) => {
-      if (!product[field] && row[field]) product[field] = row[field];
+      const productHasValue = product[field] !== null
+        && product[field] !== undefined
+        && product[field] !== '';
+      const rowHasValue = row[field] !== null && row[field] !== undefined && row[field] !== '';
+      if (!productHasValue && rowHasValue) product[field] = row[field];
     });
 
     if (!['USA', 'CHINA'].includes(row.origin)) return;

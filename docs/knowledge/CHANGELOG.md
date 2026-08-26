@@ -1,5 +1,39 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-26 — PHASE1-105
+
+### Consolidar KPI Tier, alcance de descuento EOL, reposición con pack y reconciliación de exportaciones
+
+- Causa raíz confirmada de UI 38 SKU / Excel 44 SKU (442 unidades iguales):
+  Tier Inventario excluye seis filas con `invFinal=0` que Resumen Excel sí
+  contaba vía `recs.length`; esas filas aportaban cero unidades.
+- Distribución por Tier sustituye sus dos KPI genéricos por seis KPI (SKU y
+  Unidades de Inventario Actual del Cliente, Ventas del Cliente y Reposición
+  Sugerida), cada pareja derivada exactamente del dataset canónico de su
+  bloque (`distribucionTier.{inventario,ventas,reposicion}`).
+- Product Master Dataverse incorpora `crbbe_aplicaamasterpack`,
+  `crbbe_cantidadenmasterpack`, `crbbe_aplicaainnerpack` y
+  `crbbe_cantidadinnerpack` al `$select` y al contrato normalizado, sin
+  usarlos en Brands; flags y cantidades preservan `null` explícito y participan
+  en el conflicto de atributo por SKU.
+- El motor conserva íntegra la fórmula histórica como `reposicionSugeridaBase`
+  y aplica después, con precedencia Master válido → Inner válido → sin ajuste,
+  `Pedido Final = CEIL(Base ÷ Pack) × Pack`; `reposicionSugerida` sigue siendo
+  el valor operativo y Base/tipo/cantidad de ajuste quedan expuestos para
+  trazabilidad.
+- La tabla EOL se renombra a "SKU Clasificados EOL que aplican regla de
+  descuento" y consume el subconjunto canónico `eolConDescuentoAplicable`
+  (`estado=EOL`, `invFinal>0`, `descPct>0`); el KPI EOL general conserva
+  `eolTodos` sin reducirse a este subconjunto.
+- Excel y CSV reutilizan los datasets canónicos anteriores en vez de
+  recalcular sus propios universos y agregan ocho columnas de trazabilidad de
+  pack sin romper columnas existentes ni incrustar imágenes.
+- Configuration Center permanece pendiente y detenido; sus dos archivos no se
+  modificaron.
+- Backend PASS con 139/139 pruebas y syntax build; frontend PASS con 37
+  archivos/434 pruebas y build Vite de 1.689 módulos. Sin commit, push, deploy
+  ni cambios en Dataverse, Vercel, Render, Entra, variables o timeouts.
+
 ## 2026-08-25 — PHASE1-102
 
 ### Fuente funcional de fecha Product

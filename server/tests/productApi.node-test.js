@@ -23,6 +23,10 @@ const product = Object.freeze({
   status: 'ACTIVO',
   imageUrl: '',
   productUrl: '',
+  aplicaMasterPack: null,
+  cantidadMasterPack: null,
+  aplicaInnerPack: null,
+  cantidadInnerPack: null,
   priceUSA: 25,
   priceChina: 18,
 });

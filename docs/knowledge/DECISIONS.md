@@ -211,6 +211,46 @@
 - Reversibilidad: retirar componentes/helpers y restaurar etiquetas/consumidores
   anteriores; no hay migración, persistencia o estado externo que recuperar.
 
+## D-026 — Tier de un solo dataset, ajuste de pack posterior al Pedido Base y subconjunto EOL de descuento
+
+- Estado: aprobado e implementado localmente por Phase1-105; no desplegado.
+- Causa raíz confirmada: la divergencia previa UI 38 SKU / Excel 44 SKU con las
+  mismas 442 unidades venía de que Tier Inventario excluye seis filas con
+  `invFinal=0` mientras el Resumen Excel usaba `recs.length`; esas seis filas
+  aportaban cero unidades, por lo que las unidades coincidían y el conteo de
+  SKU no.
+- Tier: los seis KPI superiores de Distribución por Tier (SKU y Unidades de
+  Inventario Actual del Cliente, Ventas del Cliente y Reposición Sugerida) se
+  derivan exclusivamente de `distribucionTier.{inventario,ventas,reposicion}`,
+  el mismo dataset que alimenta cada bloque inferior; Excel reutiliza ese mismo
+  dataset en el Resumen en vez de `totales.totalSKUs`/`totales.totalUnidades`.
+- Pack: Product Master incorpora `aplicaMasterPack`, `cantidadMasterPack`,
+  `aplicaInnerPack` y `cantidadInnerPack` sin usarlos en Brands. El motor
+  conserva íntegra la fórmula histórica de reposición como
+  `reposicionSugeridaBase` y aplica después, con precedencia absoluta Master
+  válido → Inner válido → sin ajuste, `Pedido Final = CEIL(Base ÷ Pack) × Pack`;
+  el resultado nunca baja del Base, nunca es `NaN`/`Infinity`/negativo y un SKU
+  sin pack válido conserva el Base. `reposicionSugerida` sigue siendo el valor
+  operativo; Base, tipo y cantidad de ajuste quedan expuestos para
+  trazabilidad.
+- EOL: la tabla "SKU Clasificados EOL que aplican regla de descuento" consume
+  el subconjunto canónico `eolConDescuentoAplicable` (`estado=EOL`,
+  `invFinal>0`, `descPct>0`) derivado de `eolTodos`; el KPI EOL general
+  continúa usando `eolTodos` sin reducirse a este subconjunto. No se creó
+  ningún porcentaje o umbral de descuento nuevo.
+- Exportaciones: Excel y CSV reutilizan los datasets canónicos anteriores
+  (`distribucionTier`, `eolConDescuentoAplicable`,
+  `resultados.productosReposicionSugerida`) en vez de recalcular sus propios
+  universos, y agregan ocho columnas de trazabilidad de pack sin romper
+  columnas existentes ni incrustar imágenes.
+- Configuration Center: `docs/knowledge/CONFIGURATION_CENTER.md` y
+  `docs/prompts/Phase1-100-AuditExistingConfigurationParameters.md` permanecen
+  sin modificar; Phase1-101 no se implementó.
+- Reversibilidad: restaurar los KPI Tier a `totales.totalSKUs`/`totalUnidades`,
+  retirar `ajustarReposicionPorPack` y el subconjunto `eolConDescuentoAplicable`,
+  y revertir las columnas de pack en Excel/CSV; no existe migración de datos ni
+  estado externo que recuperar.
+
 ## Asuntos observados sin decisión de cambio
 
 - La fecha de corte no controla el cálculo EOL.
