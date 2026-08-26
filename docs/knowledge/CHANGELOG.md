@@ -1,5 +1,44 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-26 — PHASE1-107
+
+### Reconciliar KPI de Inventario Actual del Executive Dashboard y exigir umbral mínimo de inventario para el descuento EOL
+
+- Causa raíz confirmada de Executive Dashboard 44 SKU / Resumen Ejecutivo 38
+  SKU (442 unidades y $12.171 iguales por coincidencia): Phase1-105 ya había
+  reconciliado el Resumen Excel y los seis KPI de Distribución por Tier contra
+  `distribucionTier`, pero `ExecutiveReportService.buildExecutiveReport` seguía
+  derivando `executiveSummary.totalSKUs`/`totalUnidades`/`valorTotalInventario`
+  de `totales.*` (universo completo de 44 registros, incluyendo seis con
+  `Inventario Final = 0`).
+- `ExecutiveReportService` deriva ahora esos tres campos de
+  `distribucionTier.inventario.{totalSKUs,totalU,totalV}`, el mismo dataset
+  canónico "Inventario Actual" (`Inventario Final > 0`) que ya usaban Resumen
+  Ejecutivo, Distribución por Tier, Excel y CSV; `totales.*` conserva su
+  significado distinto de "todos los registros analizados" donde ya se usaba.
+- El KPI del Executive Dashboard se renombra de "Total SKU" a "SKU en
+  inventario" para reflejar el universo correcto sin ambigüedad frente a
+  Resumen Ejecutivo.
+- La tabla "SKU Clasificados EOL que aplican regla de descuento" exige ahora
+  `Inventario Final ≥ EOL_DISCOUNT_MIN_INVENTORY` (constante nueva exportada
+  por `eolEngine.js`, default vigente `12` unidades) además de `descPct > 0`;
+  antes bastaba `Inventario Final > 0`. El KPI EOL general (`eolTodos`) no se
+  reduce por este cambio. El nuevo umbral es distinto del
+  `inventarioMinimoReconocido` de Fase 4 (reparto de aportes IOCA/Retail),
+  aunque ambos valgan `12` hoy.
+- `metricDefinitions.js` documenta el nuevo parámetro de negocio "EOL —
+  Inventario mínimo para aplicar descuento" (default `12`, candidato futuro a
+  Configuration Center, sin edición implementada) y actualiza la fórmula de
+  "SKU EOL que aplica regla de descuento".
+- Excel y CSV no requirieron cambios de código: ya consumían
+  `eolConDescuentoAplicable` y `distribucionTier.inventario` directamente
+  (Phase1-105), por lo que el ajuste de filtro en Domain se propaga solo.
+- Configuration Center permanece pendiente y detenido; sus dos archivos no se
+  modificaron.
+- Backend PASS con 139/139 pruebas y syntax build; frontend PASS con 37
+  archivos/435 pruebas y build Vite de 1.689 módulos. Sin commit, push, deploy
+  ni cambios en Dataverse, Vercel, Render, Entra, variables o timeouts.
+
 ## 2026-08-26 — PHASE1-105
 
 ### Consolidar KPI Tier, alcance de descuento EOL, reposición con pack y reconciliación de exportaciones

@@ -14,6 +14,15 @@ const FASE_4_DIAS_LIMITE = 365;
 const FASE_4_DIAS_MIN = FASE_4_DIAS_LIMITE + 1;
 const FASE_4_DESCUENTO_CONSUMIDOR = 0.15;
 
+// Parámetro de negocio "EOL — Inventario mínimo para aplicar descuento": umbral
+// operativo de PortfolioAnalysisService para eolConDescuentoAplicable. Es un
+// concepto distinto del inventarioMinimoReconocido de F4 (que solo ajusta el
+// reparto de aportes IOCA/Retail); ambos comparten hoy el valor 12 por
+// coincidencia de negocio, no por ser la misma regla. Default vigente sin
+// edición; candidato futuro a Configuration Center (Phase1-101, sin
+// implementar).
+export const EOL_DISCOUNT_MIN_INVENTORY = 12;
+
 const crearFase4 = ({ marca, origen, candidatos }) => {
   const ultimaFase = [...candidatos].sort((a, b) => b.diasMin - a.diasMin)[0];
   return {

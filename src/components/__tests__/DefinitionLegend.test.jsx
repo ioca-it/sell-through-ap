@@ -36,6 +36,7 @@ describe('DefinitionLegend', () => {
     expect(Object.values(definitions).map(({ name }) => name)).toEqual([
       'SKU EOL',
       'SKU EOL que aplica regla de descuento',
+      'EOL — Inventario mínimo para aplicar descuento',
       'Fecha EOL',
       'Días EOL',
       'Fase EOL',
@@ -50,7 +51,12 @@ describe('DefinitionLegend', () => {
     });
     expect(definitions.eolDefined.interpretation).toContain('puede incluir SKU sin Fecha EOL válida');
     expect(definitions.eolDiscountApplicable.formula)
-      .toBe('Estado = EOL e Inventario Final > 0 y Descuento consumidor > 0%.');
+      .toBe('Estado = EOL e Inventario Final ≥ EOL_DISCOUNT_MIN_INVENTORY (12 unidades) y Descuento consumidor > 0%.');
+    expect(definitions.eolDiscountMinInventory).toMatchObject({
+      unit: 'unidades',
+      source: 'Regla de negocio EOL',
+    });
+    expect(definitions.eolDiscountMinInventory.interpretation).toContain('Candidato futuro a Configuration Center');
     expect(definitions.eolDate.interpretation).toContain('permite calcular Días EOL y Fase EOL');
     expect(definitions.eolDays.formula).toBe('Fecha EOL − Fecha base EOL.');
     expect(definitions.eolDays.interpretation).toContain('≤ 0 = vencido; > 0 = días restantes');

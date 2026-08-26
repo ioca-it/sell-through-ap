@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { obtenerSemanasPeriodo } from '../inventory/inventoryEngine.js';
+import { EOL_DISCOUNT_MIN_INVENTORY } from '../eol/eolEngine.js';
 import {
   isAvailablePrice,
   multiplyPrice,
@@ -67,9 +68,12 @@ const consolidateRecords = (records) => {
     record.estado === 'EOL' && record.diasDesc !== null && record.diasDesc < 0
   ).sort((a, b) => b.diasDesc - a.diasDesc);
   const eolTodos = ownedRecords.filter((record) => record.estado === 'EOL');
+  // Regla FINAL Phase1-107: el subconjunto operativo exige Inventario Final
+  // >= EOL_DISCOUNT_MIN_INVENTORY (hoy 12 unidades), no solo > 0. eolTodos, el
+  // KPI EOL general y las fases/porcentajes vigentes no cambian por este filtro.
   const eolConDescuentoAplicable = eolTodos.filter((record) => (
     Number.isFinite(record.invFinal)
-    && record.invFinal > 0
+    && record.invFinal >= EOL_DISCOUNT_MIN_INVENTORY
     && Number.isFinite(record.descPct)
     && record.descPct > 0
   ));

@@ -62,6 +62,7 @@ import {
   buildDefinitionsCsv,
   buildSellThroughCsv,
 } from '../presentation/csvExport.js';
+import { EOL_DISCOUNT_MIN_INVENTORY } from '../domain/eol/eolEngine.js';
 
 const CONFIG = {
   periodoAnalizado: 'Mensual',
@@ -117,7 +118,7 @@ const buildResults = () => {
       'SKU\tTIER\tORIGEN\tINV SEGURIDAD\tINV PROYECTADO\tINV FINAL\tCOMPRA\tVENTAS',
       'REPONER\tBEST\tUSA\t10\t2\t2\t1\t80',
       'SIN-REPOSICION\tGOOD\tUSA\t1\t20\t20\t0\t10',
-      'EOL-SIN-REPOSICION\tBEST\tUSA\t10\t1\t1\t2\t0',
+      'EOL-SIN-REPOSICION\tBEST\tUSA\t10\t1\t12\t2\t0',
       'SIN-MAESTRO\tGOOD\tUSA\t1\t1\t3\t0\t3',
     ].join('\n'),
     config: CONFIG,
@@ -133,7 +134,7 @@ const buildProductMediaResults = () => {
       'SKU\tTIER\tORIGEN\tINV SEGURIDAD\tINV INICIAL\tCOMPRA\tVENTAS\tINV PROYECTADO\tINV FINAL',
       'MEDIA-ACTIVO\tBEST\t\t10\t20\t2\t10\t12\t2',
       'SIN-MOVIMIENTO\tGOOD\tUSA\t1\t20\t0\t0\t20\t20',
-      'EOL-VENCIDO\tEOL\tUSA\t1\t10\t0\t0\t10\t10',
+      'EOL-VENCIDO\tEOL\tUSA\t1\t10\t0\t0\t10\t12',
       'EOL-FUTURO\tEOL\tCHINA\t1\t5\t0\t1\t4\t4',
       'SIN-MAESTRO\tGOOD\tUSA\t1\t3\t0\t1\t2\t2',
     ].join('\n'),
@@ -186,8 +187,8 @@ const buildEolUniverseResults = () => {
       'SKU\tTIER\tORIGEN\tINV INICIAL\tVENTAS\tINV FINAL',
       ...skus.map((sku, index) => (
         index === 0
-          ? `${sku}\tEOL\tUSA\t0\t0\t1`
-          : `${sku}\tEOL\tUSA\t2\t1\t1`
+          ? `${sku}\tEOL\tUSA\t0\t0\t20`
+          : `${sku}\tEOL\tUSA\t2\t1\t20`
       )),
     ].join('\n'),
     config: CONFIG,
@@ -361,18 +362,18 @@ describe('AP01 — presentación del Dashboard', () => {
       table,
       (node) => node.type === 'span' && node.props['data-eol-phase'],
     ).map(textContent);
-    expect(resultados.totales).toMatchObject({ skuEOL: 43, unidEOL: 43, valorEOL: 430 });
+    expect(resultados.totales).toMatchObject({ skuEOL: 43, unidEOL: 860, valorEOL: 8600 });
     expect(resultados.eolTodos).toHaveLength(43);
     expect(resultados.eolSinFecha.map(({ sku }) => sku)).toEqual(['EOL-01']);
     expect(resultados.eolTodos.find(({ sku }) => sku === 'EOL-01')).toMatchObject({
       estado: 'EOL', fechaStr: '', diasDesc: null, bucket: null, porcentajeRotacion: null,
     });
     expect(resultados.eolConDescuentoAplicable.every((record) => (
-      record.invFinal > 0 && record.descPct > 0
+      record.invFinal >= EOL_DISCOUNT_MIN_INVENTORY && record.descPct > 0
     ))).toBe(true);
     expect(skuCells).toHaveLength(resultados.totales.skuEOLConDescuento);
     expect(textContent(section)).toContain(`${resultados.totales.skuEOLConDescuento} SKU`);
-    expect(textContent(section)).toContain('43 SKU clasificados EOL');
+    expect(textContent(section)).toContain('SKU clasificados EOL conserva 43 SKU');
     expect(textContent(table)).not.toContain('EOL-01');
     expect(phases).toHaveLength(resultados.totales.skuEOLConDescuento);
     expect([...new Set(phases)]).toEqual(['VENCIDO']);
@@ -807,9 +808,9 @@ describe('AP01 — presentación del Dashboard', () => {
     expect(phase4RowIndexes.map((index) => phaseSheet[`E${index + 1}`].z)).toEqual(['0%', '0%']);
     expect(phaseSheet['!cols'].map(({ wch }) => wch)).toEqual([14, 8, 11, 9, 18, 14, 14]);
     expect(summaryRows.find((row) => row[0] === 'Fórmula aplicada')?.[1]).toBeTruthy();
-    expect(summaryRows.find((row) => row[0] === 'Total Unidades')?.[1]).toBe(26);
+    expect(summaryRows.find((row) => row[0] === 'Total Unidades')?.[1]).toBe(37);
     expect(summaryRows.find((row) => row[0] === 'SKU clasificados EOL')?.[1]).toBe(1);
-    expect(summaryRows.find((row) => row[0] === 'Unidades clasificadas EOL')?.[1]).toBe(1);
+    expect(summaryRows.find((row) => row[0] === 'Unidades clasificadas EOL')?.[1]).toBe(12);
     expect(activeEolRows.find((row) => row[0] === 'EOL-SIN-REPOSICION')?.[3])
       .toBe('2025-01-01');
   });

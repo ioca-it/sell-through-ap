@@ -26,18 +26,25 @@ const buildExecutiveReport = (portfolioAnalysis) => {
     analisisPareto,
     alertas,
     totales,
+    distribucionTier,
     semanasPeriodoUsadas,
   } = portfolioAnalysis;
+
+  // Inventario Actual del Cliente es un único universo canónico (Inventario
+  // Final > 0) ya calculado por distribucionTier.inventario. Reutilizarlo aquí
+  // evita que Executive Summary muestre un SKU/valor distinto del que ya
+  // presenta Resumen Ejecutivo y Distribución por Tier para el mismo concepto.
+  const inventarioActual = distribucionTier.inventario;
 
   const executiveSummary = {
     fechaCalculo,
     periodoAnalizado: configSnapshot.periodoAnalizado,
-    totalSKUs: totales.totalSKUs,
+    totalSKUs: inventarioActual.totalSKUs,
     activos: totales.activos,
     eolVencidos: totales.eolVencidos,
     eolFuturos: totales.eolFuturos,
     sinMaestro: totales.sinMaestro,
-    totalUnidades: totales.totalUnidades,
+    totalUnidades: inventarioActual.totalU,
     skuActivos: totales.skuActivos,
     unidadesActivas: totales.unidadesActivas,
     skuVencidos: totales.skuVencidos,
@@ -53,7 +60,11 @@ const buildExecutiveReport = (portfolioAnalysis) => {
     unidadesMaestro: totales.unidadesMaestro,
     skuSinMaestro: totales.sinMaestro,
     unidadesSinMaestro: totales.unidadesSinMaestro,
-    valorTotalInventario: totales.valorTotalInventario,
+    // Inventario Actual del Cliente (mismo universo/dataset que Resumen
+    // Ejecutivo y Distribución por Tier); no confundir con BR-015 "Valor Total
+    // Inventario" (suma sobre todos los registros analizados), que
+    // `valorizacion.valorTotalInventario` conserva sin cambios más abajo.
+    valorTotalInventario: inventarioActual.totalV,
     valorActivo: totales.valorActivo,
     valorEOL: totales.valorEOL,
     valorEOLVencido: totales.valorEOLVencido,

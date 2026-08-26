@@ -317,10 +317,18 @@ Las recomendaciones narrativas se generan con reglas fijas en `App.jsx`; no son 
 
 ### BR-029 — SKU Clasificados EOL que aplican regla de descuento
 
-- Es un subconjunto operativo de `eolTodos` (BR-024), no un universo nuevo: incluye únicamente registros con `estado = EOL`, `Inventario Final > 0` y `Desc. % > 0` según la fase/tabla de descuentos vigente.
-- Un SKU EOL con Inventario Final en `0` o `null`, o sin ninguna fase/marca/origen con descuento aplicable (`Desc. % = 0`), no aparece en esta tabla.
+- Es un subconjunto operativo de `eolTodos` (BR-024), no un universo nuevo: incluye únicamente registros con `estado = EOL`, `Inventario Final ≥ EOL_DISCOUNT_MIN_INVENTORY` (Phase1-107; constante exportada por `eolEngine.js`, default vigente `12` unidades) y `Desc. % > 0` según la fase/tabla de descuentos vigente.
+- Un SKU EOL con Inventario Final por debajo del umbral (incluyendo `0` o `null`), o sin ninguna fase/marca/origen con descuento aplicable (`Desc. % = 0`), no aparece en esta tabla aunque siga clasificado como EOL.
 - El KPI EOL general (`SKU con EOL definido`, BR-024) continúa contando `eolTodos` sin reducirse a este subconjunto; ambos universos, sus unidades y su valor se documentan y presentan por separado.
 - No se define ni se infiere ningún porcentaje de descuento nuevo; las tablas de buckets/fases (BR-008, BR-009) y sus porcentajes permanecen sin cambio.
+- `EOL_DISCOUNT_MIN_INVENTORY` es un parámetro de negocio distinto del `inventarioMinimoReconocido` de Fase 4 (BR-009, reparto de aportes IOCA/Retail): ambos valen `12` hoy por coincidencia de negocio, no por ser la misma regla, y cambiar uno no debe alterar el otro. Es candidato futuro a Configuration Center; esta fase no implementa edición.
+
+### BR-030 — Reconciliación de Inventario Actual entre Executive Dashboard, Resumen Ejecutivo y exportaciones
+
+- "Inventario Actual" es un único dataset canónico (`distribucionTier.inventario`, BR-016): SKU, unidades y valor de registros con `Inventario Final > 0` únicamente, con valorización null-safe (precio ausente nunca se convierte en `$0`).
+- `ExecutiveReportService.buildExecutiveReport` deriva `executiveSummary.{totalSKUs, totalUnidades, valorTotalInventario}` de `distribucionTier.inventario.{totalSKUs, totalU, totalV}`, no de `totales.*` (que cuenta todos los registros analizados, incluyendo Inventario Final `= 0`).
+- Executive Dashboard, Resumen Ejecutivo, Distribución por Tier, Informe Ejecutivo, Excel y CSV muestran el mismo universo e igual cifra para este concepto; ningún bloque recalcula un universo propio.
+- `totales.totalSKUs`/`totales.totalUnidades`/`totales.valorTotalInventario` (BR-015) conservan su significado distinto de "total de registros analizados" y permanecen disponibles con nombre explícito donde ya se usaban; no se presentan junto a las cifras de Inventario Actual bajo una etiqueta que sugiera el mismo universo.
 
 ## Salidas
 

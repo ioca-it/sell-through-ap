@@ -700,10 +700,23 @@ mediciones.
   bloque calcula un universo propio distinto del dataset canónico que muestra
   su tabla inferior.
 - `eolConDescuentoAplicable` es un subconjunto operativo de `eolTodos`
-  (`invFinal>0` y `descPct>0`) exclusivo para la tabla "SKU Clasificados EOL
-  que aplican regla de descuento"; el KPI EOL general sigue reportando
-  `eolTodos` y ambos universos deben documentarse como distintos, nunca
-  unificarse silenciosamente.
+  (Phase1-107: `invFinal >= EOL_DISCOUNT_MIN_INVENTORY` —constante exportada
+  por `eolEngine.js`, default vigente 12 unidades— y `descPct>0`) exclusivo
+  para la tabla "SKU Clasificados EOL que aplican regla de descuento"; el KPI
+  EOL general sigue reportando `eolTodos` sin reducirse y ambos universos
+  deben documentarse como distintos, nunca unificarse silenciosamente.
+  `EOL_DISCOUNT_MIN_INVENTORY` es un parámetro de negocio distinto del
+  `inventarioMinimoReconocido` de Fase 4 (reparto de aportes IOCA/Retail);
+  coinciden hoy en el valor 12 por coincidencia de negocio, no por ser la
+  misma regla, y es candidato futuro a Configuration Center sin
+  implementación de edición todavía.
+- `ExecutiveReportService.buildExecutiveReport` deriva
+  `executiveSummary.{totalSKUs,totalUnidades,valorTotalInventario}`
+  exclusivamente de `distribucionTier.inventario.{totalSKUs,totalU,totalV}`
+  (el mismo dataset canónico "Inventario Actual" —`invFinal>0`— que ya
+  alimentaba Resumen Ejecutivo y Distribución por Tier), evitando que el
+  Executive Dashboard muestre un universo de SKU/unidades/valor distinto al
+  del resto de la UI, Excel y CSV para el mismo concepto.
 - Master Pack e Inner Pack se evalúan únicamente después de calcular el Pedido
   Sugerido Base histórico, con precedencia absoluta Master válido → Inner
   válido → sin ajuste y fórmula `CEIL(Base ÷ Pack) × Pack`; el Pedido Final
@@ -723,12 +736,12 @@ mediciones.
 
 ## Cantidad de pruebas
 
-Frontend: 434/434 aprobadas en 37 archivos. Backend: 139/139 aprobadas en 10
+Frontend: 435/435 aprobadas en 37 archivos. Backend: 139/139 aprobadas en 10
 archivos.
 
 ## Estado del build
 
-Phase1-105: backend 139/139 y syntax build PASS; frontend 434/434 en 37
+Phase1-107: backend 139/139 y syntax build PASS; frontend 435/435 en 37
 archivos y build PASS con Vite 5.4.21 y 1.689 módulos transformados. Product
-Dataverse no fue activado y Phase1-105 no se desplegó ni ejecutó contra
+Dataverse no fue activado y Phase1-107 no se desplegó ni ejecutó contra
 producción.

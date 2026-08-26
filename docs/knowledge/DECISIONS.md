@@ -251,6 +251,47 @@
   y revertir las columnas de pack en Excel/CSV; no existe migración de datos ni
   estado externo que recuperar.
 
+## D-027 — Reconciliación Executive Dashboard/Inventario Actual y umbral mínimo EOL de descuento
+
+- Estado: aprobado e implementado localmente por Phase1-107; no desplegado.
+- Causa raíz confirmada: Phase1-105 (D-026) reconcilió el Resumen Excel y los
+  seis KPI superiores de Distribución por Tier contra `distribucionTier`, pero
+  `ExecutiveReportService.buildExecutiveReport` seguía derivando
+  `executiveSummary.totalSKUs`/`totalUnidades`/`valorTotalInventario` de
+  `totales.*` (universo completo, `44` registros); eso dejaba el bloque
+  superior del Executive Dashboard mostrando `44` mientras Resumen Ejecutivo ya
+  mostraba `38` (las mismas seis filas con `Inventario Final = 0` de D-026).
+  Unidades (`442`) y valor (`$12.171`) coincidían por casualidad porque esas
+  seis filas aportan cero unidades y cero valor.
+- Inventario Actual: dataset canónico único = `distribucionTier.inventario`
+  (`Inventario Final > 0`); `ExecutiveReportService` ahora deriva sus tres
+  campos de ese mismo dataset en vez de `totales.*`. Executive Dashboard,
+  Resumen Ejecutivo, Distribución por Tier, Informe Ejecutivo, Excel y CSV
+  quedan reconciliados sobre el mismo universo, sin recalcular cada uno el
+  suyo. `totales.totalSKUs`/`totalUnidades`/`valorTotalInventario` conservan su
+  significado distinto (todos los registros analizados) donde ya se usaban,
+  sin exhibirse junto a Inventario Actual bajo una etiqueta ambigua.
+- EOL: la tabla "SKU Clasificados EOL que aplican regla de descuento" exige
+  ahora `Inventario Final ≥ EOL_DISCOUNT_MIN_INVENTORY` (constante nueva en
+  `eolEngine.js`, default vigente `12` unidades) además de `descPct > 0`; antes
+  bastaba `Inventario Final > 0`. El KPI EOL general (`eolTodos`) no se reduce
+  por este cambio; un SKU EOL bajo el umbral permanece clasificado como EOL
+  pero sale de esta tabla operativa. `EOL_DISCOUNT_MIN_INVENTORY` es distinto
+  del `inventarioMinimoReconocido` de Fase 4 (reparto de aportes IOCA/Retail);
+  ambos valen `12` hoy por coincidencia de negocio, no por ser la misma regla.
+- Parámetro futuro: `EOL_DISCOUNT_MIN_INVENTORY` queda documentado en
+  `metricDefinitions.js` como parámetro de negocio con default vigente `12` y
+  candidato futuro a Configuration Center; esta fase no implementa edición ni
+  toca `CONFIGURATION_CENTER.md`/`Phase1-100-AuditExistingConfigurationParameters.md`.
+- Exportaciones: Excel y CSV no recalculan el umbral ni el universo de
+  Inventario Actual; ambos ya consumían `eolConDescuentoAplicable` y
+  `distribucionTier.inventario` directamente (D-026), por lo que el cambio de
+  filtro en Domain se propaga sin tocar código de exportación.
+- Reversibilidad: restaurar `executiveSummary.*` a `totales.*` y el filtro de
+  `eolConDescuentoAplicable` a `invFinal>0`; retirar `EOL_DISCOUNT_MIN_INVENTORY`
+  y su entrada en `metricDefinitions.js`. No existe migración de datos ni
+  estado externo que recuperar.
+
 ## Asuntos observados sin decisión de cambio
 
 - La fecha de corte no controla el cálculo EOL.

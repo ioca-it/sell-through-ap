@@ -91,7 +91,7 @@ describe('Phase1-105 — datasets canónicos Tier, EOL y reposición', () => {
 
   it('deriva la tabla EOL de descuento sin reducir el universo EOL general', () => {
     const records = [
-      { sku: 'APLICA', estado: 'EOL', invFinal: 5, descPct: 0.15 },
+      { sku: 'APLICA', estado: 'EOL', invFinal: 12, descPct: 0.15 },
       { sku: 'CERO', estado: 'EOL', invFinal: 0, descPct: 0.15 },
       { sku: 'NULL', estado: 'EOL', invFinal: null, descPct: 0.15 },
       { sku: 'SIN-REGLA', estado: 'EOL', invFinal: 5, descPct: 0 },
@@ -105,5 +105,38 @@ describe('Phase1-105 — datasets canónicos Tier, EOL y reposición', () => {
     ]);
     expect(consolidation.eolConDescuentoAplicable.map(({ sku }) => sku))
       .toEqual(['APLICA']);
+  });
+
+  it('Phase1-107 — aplica el umbral EOL_DISCOUNT_MIN_INVENTORY (12) en los límites A-H', () => {
+    const records = [
+      // A: justo por debajo del umbral (11) con descuento vigente -> excluido de la tabla.
+      { sku: 'CASO-A-11', estado: 'EOL', invFinal: 11, descPct: 0.15 },
+      // B: exactamente en el umbral (12) con descuento vigente -> incluido (límite inferior).
+      { sku: 'CASO-B-12', estado: 'EOL', invFinal: 12, descPct: 0.15 },
+      // C: justo por encima del umbral (13) con descuento vigente -> incluido.
+      { sku: 'CASO-C-13', estado: 'EOL', invFinal: 13, descPct: 0.15 },
+      // D: cumple el umbral pero sin descuento vigente (0%) -> excluido.
+      { sku: 'CASO-D-sindesc', estado: 'EOL', invFinal: 12, descPct: 0 },
+      // E: cumple el umbral pero descPct no es un número -> excluido.
+      { sku: 'CASO-E-descnull', estado: 'EOL', invFinal: 12, descPct: null },
+      // F: inventario en cero con descuento vigente -> excluido.
+      { sku: 'CASO-F-cero', estado: 'EOL', invFinal: 0, descPct: 0.15 },
+      // G: invFinal no es un número -> excluido.
+      { sku: 'CASO-G-invnull', estado: 'EOL', invFinal: null, descPct: 0.15 },
+      // H: SKU activo, fuera del universo EOL por completo.
+      { sku: 'CASO-H-activo', estado: 'ACTIVO', invFinal: 20, descPct: 0.15 },
+    ];
+
+    const consolidation = PortfolioAnalysisService.consolidateRecords(records);
+
+    // El KPI general de SKU EOL conserva TODOS los registros EOL, sin importar
+    // si superan o no el umbral de descuento (A-G, excluyendo el ACTIVO H).
+    expect(consolidation.eolTodos.map(({ sku }) => sku)).toEqual([
+      'CASO-A-11', 'CASO-B-12', 'CASO-C-13', 'CASO-D-sindesc',
+      'CASO-E-descnull', 'CASO-F-cero', 'CASO-G-invnull',
+    ]);
+    // Solo B y C cumplen simultáneamente invFinal >= 12 y descPct > 0.
+    expect(consolidation.eolConDescuentoAplicable.map(({ sku }) => sku))
+      .toEqual(['CASO-B-12', 'CASO-C-13']);
   });
 });

@@ -1,5 +1,34 @@
 # Roadmap aprobado
 
+## Phase1-107 — Reconcile Executive Inventory KPIs and Enforce EOL Discount Minimum Inventory
+
+El bloque superior del Executive Dashboard mostraba 44 SKU mientras Resumen
+Ejecutivo ya mostraba 38 (mismas seis filas con `Inventario Final = 0` de
+Phase1-105/D-026): `ExecutiveReportService.buildExecutiveReport` seguía
+derivando `executiveSummary.totalSKUs`/`totalUnidades`/`valorTotalInventario`
+de `totales.*` en vez de `distribucionTier.inventario`, pese a que Phase1-105
+ya había reconciliado el Resumen Excel y los seis KPI de Tier con ese mismo
+dataset. Ahora los tres campos derivan de `distribucionTier.inventario`, y el
+KPI se renombra de "Total SKU" a "SKU en inventario" en el Executive Dashboard.
+
+La tabla "SKU Clasificados EOL que aplican regla de descuento" exige ahora
+`Inventario Final ≥ EOL_DISCOUNT_MIN_INVENTORY` (constante nueva en
+`eolEngine.js`, default vigente 12 unidades) además de `descPct > 0`, en vez de
+solo `Inventario Final > 0`. El KPI EOL general (`eolTodos`) no se reduce por
+este cambio; un SKU EOL bajo el umbral permanece clasificado como EOL pero
+sale de la tabla operativa. El parámetro queda documentado en
+`metricDefinitions.js` como candidato futuro a Configuration Center, sin
+edición implementada en esta fase.
+
+Excel y CSV no requirieron cambios de código: ya consumían
+`eolConDescuentoAplicable` y `distribucionTier.inventario` directamente desde
+Phase1-105. Configuration Center permanece pendiente y detenido por el
+usuario; sus dos archivos no se modificaron. Backend 139/139, frontend 435/435
+en 37 archivos y ambos builds PASS. Siguiente acción externa exacta: autorizar
+por separado checkpoint, deploy y cualquier activación de
+`VITE_PRODUCT_SOURCE=dataverse` o de Configuration Center (Phase1-101 sigue
+fuera de alcance).
+
 ## Phase1-105 — Consolidate Tier KPIs, EOL Discount Scope, Pack-Rounded Replenishment and Export Reconciliation
 
 Distribución por Tier sustituye sus dos KPI genéricos por seis KPI (SKU y

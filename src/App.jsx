@@ -40,7 +40,7 @@ import {
   subtractPrices,
   sumPriceValues,
 } from './domain/product/product.js';
-import { obtenerRecomendacionEOL } from './domain/eol/eolEngine.js';
+import { obtenerRecomendacionEOL, EOL_DISCOUNT_MIN_INVENTORY } from './domain/eol/eolEngine.js';
 import { ProductSkuCell, getSafeProductUrl } from './components/ProductSkuCell.jsx';
 import { DefinitionLegend } from './components/DefinitionLegend.jsx';
 import {
@@ -2053,7 +2053,7 @@ export default function App({
                   <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3">Executive Summary</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {[
-                      ['Total SKU', summary.totalSKUs, 'Total Unidades', summary.totalUnidades, 'Valor Inventario Total', summary.valorTotalInventario],
+                      ['SKU en inventario', summary.totalSKUs, 'Total Unidades', summary.totalUnidades, 'Valor Inventario Total', summary.valorTotalInventario],
                       ['SKU Activos', summary.skuActivos, 'Unidades Activas', summary.unidadesActivas, 'Valor Inventario SKU Activos', summary.valorActivo],
                       ['SKU clasificados EOL', summary.skuEOL, 'Unidades clasificadas EOL', summary.unidadesEOL, 'Valor Inventario EOL', summary.valorEOL],
                       ['SKU sin ventas', summary.skuSinVentas, 'Unidades sin ventas', summary.unidadesSinVentas, 'Valor inventario sin ventas', summary.valorInventarioSinVentas],
@@ -2852,7 +2852,8 @@ export default function App({
                     SKU Clasificados EOL que aplican regla de descuento
                   </h2>
                   <div className="text-xs text-stone-500 mt-1">
-                    Subconjunto operativo de <strong>{resultados.totales.skuEOLConDescuento} SKU</strong> con Inventario Final mayor que cero y descuento vigente mayor que 0%. El KPI general conserva <strong>{resultados.totales.skuEOL} SKU clasificados EOL</strong> y no se reduce a esta tabla.
+                    Subconjunto operativo de <strong>{resultados.totales.skuEOLConDescuento} SKU</strong> EOL que cumplen la regla de descuento vigente. Se incluyen únicamente SKU con Inventario Final mayor o igual a {EOL_DISCOUNT_MIN_INVENTORY} unidades y descuento vigente mayor que 0%. El KPI general de SKU clasificados EOL conserva <strong>{resultados.totales.skuEOL} SKU</strong> con el universo EOL completo.
+                    <div className="mt-1">Parámetro vigente: Inventario mínimo para descuento = {EOL_DISCOUNT_MIN_INVENTORY} unidades.</div>
                   </div>
                 </div>
               </div>
