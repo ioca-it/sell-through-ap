@@ -76,7 +76,7 @@ test('flujo Product procesa el contrato estándar Dataverse 200 hasta la API', a
     crbbe_nombreproducto: product.productName,
     crbbe_nombrecategoria: product.category,
     crbbe_validohasta: product.discontinuationDate,
-    createdon: product.creationDate,
+    crbbe_validodesde: product.creationDate,
     crbbe_clasificacioncomercial: product.level,
     crbbe_etapa: product.status,
     crbbe_imagenproducto: product.imageUrl,
@@ -127,7 +127,7 @@ test('rechaza OData y cualquier parámetro arbitrario del frontend', async () =>
     for (const query of [
       'brand=Marca&%24filter=crbbe_origen%20eq%20USA',
       'brand=Marca&%24select=amount',
-      'brand=Marca&%24orderby=createdon',
+      'brand=Marca&%24orderby=crbbe_validodesde',
       'brand=Marca&%24top=10',
       'brand=Marca&company=IOCA',
     ]) {

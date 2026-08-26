@@ -1,5 +1,22 @@
 # Changelog de la Knowledge Base
 
+## 2026-08-25 — PHASE1-102
+
+### Fuente funcional de fecha Product
+
+- Product Price Level Gateway sustituye `createdon` por `crbbe_validodesde` en
+  mapping, `$select`, `$orderby` y `MAX` por grupo comercial.
+- `Product.creationDate` conserva su contrato y se origina exclusivamente en
+  `crbbe_validodesde`; ausencia, vacío o fecha inválida queda en `null` sin
+  fallback.
+- USA, CHINA y compradores continúan resolviéndose independientemente; los
+  empates incompatibles conservan `PRODUCT_MASTER_CONFLICT` sin otro desempate.
+- Producto Nuevo mantiene `<90 días`; UI, Datos Completos, Nuevos no presentes,
+  Informe y Excel/CSV continúan consumiendo `creationDate`.
+- Se preserva el label `Fecha de creación`; su ajuste semántico queda pendiente
+  de una definición explícita. Sin cambios en filtros, Brands, Customer,
+  infraestructura, variables o sistemas externos.
+
 ## 2026-08-19 — PHASE1-098
 
 ### Semántica visible del universo EOL
@@ -77,13 +94,13 @@
 
 ### Latest Product record por grupo comercial
 
-- Product selecciona `MAX(createdon)` por
+- Product selecciona `MAX(crbbe_validodesde)` por
   `SKU + ORIGIN + BUYER COMPANY` antes de conflictos y consolidación.
 - USA y CHINA se resuelven independientemente; cada comprador se resuelve antes
   de conservar la comparación cross-buyer vigente.
 - Los empates máximos equivalentes consolidan; los incompatibles mantienen
   `PRODUCT_MASTER_CONFLICT` sin segunda precedencia.
-- `Product.creationDate` usa el mayor `createdon` entre registros vigentes del
+- `Product.creationDate` usa el mayor `crbbe_validodesde` entre registros vigentes del
   SKU y Producto Nuevo conserva `<90 días`.
 - La muestra SKULLCANDY Phase1-089 queda con 0 conflictos y 362 productos.
 - Sin cambio de query, filtros, Brands, contratos, Customer, seguridad,

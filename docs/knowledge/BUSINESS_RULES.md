@@ -41,7 +41,7 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
   vacío o solo espacios. Esas filas no crean productos ni conflictos; no se
   limita el origen válido a USA/CHINA, aunque solo esos dos valores alimentan
   el pivot de precios vigente.
-- Latest Product record se define como `MAX(createdon)` por
+- Latest Product record se define como `MAX(crbbe_validodesde)` por
   `SKU + ORIGIN + BUYER COMPANY`, después de los filtros vigentes y antes de
   detectar conflictos o consolidar atributos/precios. Las filas históricas
   anteriores quedan fuera. Todos los registros empatados exactamente en el
@@ -60,7 +60,7 @@ Este catálogo describe el comportamiento observable actual. No convierte recome
 - `level` y `status` usan FormattedValue cuando existe. Sin anotación solo se acepta un valor fuente textual; códigos numéricos Choice no se convierten ni se exponen como etiquetas.
 - `imageUrl` y `productUrl` se conservan como atributos del Product y del detalle SKU sin introducir lógica Dataverse en UI.
 - `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `imageUrl` y `productUrl` deben ser únicos por SKU entre registros vigentes. Vacío más valor puede inicializar el atributo; dos valores no vacíos distintos después de normalizar bloquean la consolidación sin elegir otra precedencia.
-- `Product.creationDate` representa el mayor `createdon` entre los registros vigentes seleccionados para el SKU, aunque USA y CHINA tengan máximos diferentes. Producto Nuevo usa esa fecha y conserva su umbral estricto `<90 días`.
+- `Product.creationDate` se origina exclusivamente en `crbbe_validodesde` y representa su mayor valor entre los registros vigentes seleccionados para el SKU, aunque USA y CHINA tengan máximos diferentes. `null`, `undefined`, texto vacío o fecha inválida producen `null`; `createdon` no se usa como fallback. Producto Nuevo usa esa fecha y conserva su umbral estricto `<90 días`.
 - Para detectar esas divergencias, strings, URLs y FormattedValue usan `trim()` y las fechas una representación canónica equivalente. Una fecha no vacía inválida conserva su texto trimmed solo para comparación interna y no se vuelve equivalente artificialmente a otra fecha.
 - Precio y atributo reutilizan `PRODUCT_MASTER_CONFLICT` y se distinguen únicamente en metadata interna; el error público conserva código/mensaje sanitizados y no publica valores, campos físicos ni contexto Dataverse.
 - Phase1-038 establece `0 = precio real` y `null = precio no disponible` en

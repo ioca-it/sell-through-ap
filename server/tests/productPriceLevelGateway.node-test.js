@@ -15,7 +15,7 @@ const rawRow = (overrides = {}) => ({
   crbbe_nombreproducto: ' Crusher Evo ',
   crbbe_nombrecategoria: ' Audífonos ',
   crbbe_validohasta: '2027-06-30T00:00:00Z',
-  createdon: '2026-08-01T12:00:00Z',
+  crbbe_validodesde: '2026-08-01T12:00:00Z',
   crbbe_clasificacioncomercial: 100000001,
   [`crbbe_clasificacioncomercial@${FORMATTED}`]: ' Better ',
   crbbe_etapa: 100000000,
@@ -62,6 +62,15 @@ test('mapea todos los campos y usa FormattedValue para level/status Choice', () 
     origin: 'USA',
     buyerCompany: 'IOCA USA INC',
   });
+});
+
+test('origina creationDate exclusivamente desde crbbe_validodesde', () => {
+  const mapped = mapProductPriceLevelRow(rawRow({
+    crbbe_validodesde: '2026-08-01T12:00:00Z',
+    createdon: '2020-01-01T00:00:00Z',
+  }));
+
+  assert.equal(mapped.creationDate, '2026-08-01T12:00:00.000Z');
 });
 
 test('normaliza crbbe_urlproducto hacia productUrl con fallback vacío', () => {
@@ -137,7 +146,7 @@ test('gateway consulta productpricelevels con ambas compañías y marca antes de
     'crbbe_nombreproducto',
     'crbbe_nombrecategoria',
     'crbbe_validohasta',
-    'createdon',
+    'crbbe_validodesde',
     'crbbe_clasificacioncomercial',
     'crbbe_etapa',
     'crbbe_imagenproducto',
@@ -149,8 +158,9 @@ test('gateway consulta productpricelevels con ambas compañías y marca antes de
   ]);
   assert.equal(
     calls[0].orderBy,
-    'crbbe_sku asc,crbbe_origen asc,crbbe_companiacompradora asc,createdon asc',
+    'crbbe_sku asc,crbbe_origen asc,crbbe_companiacompradora asc,crbbe_validodesde asc',
   );
+  assert.equal(calls[0].select.includes('createdon'), false);
   assert.equal(Object.hasOwn(calls[0], 'top'), false);
   assert.equal(Object.hasOwn(calls[0], 'maxPageSize'), false);
   assert.equal(calls[0].select.includes('producturl'), false);
@@ -413,12 +423,26 @@ test('omite SKU vacío/inválido y conserva URLs vacías', () => {
   assert.equal(products[0].productUrl, '');
 });
 
-test('normaliza fechas válidas y usa null para fechas ausentes o inválidas', () => {
-  const product = consolidateProductPriceLevelRows([
-    rawRow({ crbbe_validohasta: null, createdon: 'fecha-inválida' }),
-  ])[0];
-  assert.equal(product.discontinuationDate, null);
-  assert.equal(product.creationDate, null);
+test('fecha válida, null, undefined, vacío o inválido no usan createdon como fallback', () => {
+  assert.equal(
+    mapProductPriceLevelRow(rawRow({
+      crbbe_validodesde: '2026-08-01T12:00:00Z',
+      createdon: '2020-01-01T00:00:00Z',
+    })).creationDate,
+    '2026-08-01T12:00:00.000Z',
+  );
+
+  [null, undefined, '', 'fecha-inválida'].forEach((crbbeValidFrom) => {
+    const product = consolidateProductPriceLevelRows([
+      rawRow({
+        crbbe_validohasta: null,
+        crbbe_validodesde: crbbeValidFrom,
+        createdon: '2026-08-01T12:00:00Z',
+      }),
+    ])[0];
+    assert.equal(product.discontinuationDate, null);
+    assert.equal(product.creationDate, null);
+  });
 });
 
 test('mismo SKU y atributos equivalentes normalizados no generan conflicto', () => {
@@ -427,7 +451,7 @@ test('mismo SKU y atributos equivalentes normalizados no generan conflicto', () 
     rawRow({
       crbbe_nombreproducto: 'Crusher Evo',
       crbbe_validohasta: '2027-06-29T20:00:00-04:00',
-      createdon: '2026-08-01T08:00:00-04:00',
+      crbbe_validodesde: '2026-08-01T08:00:00-04:00',
       [`crbbe_clasificacioncomercial@${FORMATTED}`]: 'Better',
       [`crbbe_etapa@${FORMATTED}`]: 'Activo',
     }),
@@ -533,32 +557,32 @@ test('también bloquea precios distintos entre compradores sin precedencia autor
   );
 });
 
-test('selecciona MAX(createdon) para el mismo SKU+USA+buyer sin conflicto histórico', () => {
+test('selecciona MAX(crbbe_validodesde) para el mismo SKU+USA+buyer sin conflicto histórico', () => {
   const product = consolidateProductPriceLevelRows([
-    rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
-    rawRow({ amount: 30, createdon: '2026-05-01T00:00:00Z' }),
+    rawRow({ amount: 25, crbbe_validodesde: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 30, crbbe_validodesde: '2026-05-01T00:00:00Z' }),
   ])[0];
 
   assert.equal(product.priceUSA, 30);
   assert.equal(product.creationDate, '2026-05-01T00:00:00.000Z');
 });
 
-test('selecciona MAX(createdon) para el mismo SKU+CHINA+buyer', () => {
+test('selecciona MAX(crbbe_validodesde) para el mismo SKU+CHINA+buyer', () => {
   const product = consolidateProductPriceLevelRows([
-    rawRow({ amount: 18, crbbe_origen: 'CHINA', createdon: '2025-02-01T00:00:00Z' }),
-    rawRow({ amount: 20, crbbe_origen: 'CHINA', createdon: '2026-04-01T00:00:00Z' }),
+    rawRow({ amount: 18, crbbe_origen: 'CHINA', crbbe_validodesde: '2025-02-01T00:00:00Z' }),
+    rawRow({ amount: 20, crbbe_origen: 'CHINA', crbbe_validodesde: '2026-04-01T00:00:00Z' }),
   ])[0];
 
   assert.equal(product.priceChina, 20);
   assert.equal(product.creationDate, '2026-04-01T00:00:00.000Z');
 });
 
-test('resuelve USA y CHINA independientemente y usa su mayor createdon vigente', () => {
+test('resuelve USA y CHINA independientemente y usa su mayor crbbe_validodesde vigente', () => {
   const product = consolidateProductPriceLevelRows([
-    rawRow({ amount: 25, crbbe_origen: 'USA', createdon: '2025-01-01T00:00:00Z' }),
-    rawRow({ amount: 30, crbbe_origen: 'USA', createdon: '2026-05-01T00:00:00Z' }),
-    rawRow({ amount: 18, crbbe_origen: 'CHINA', createdon: '2025-02-01T00:00:00Z' }),
-    rawRow({ amount: 20, crbbe_origen: 'CHINA', createdon: '2026-04-01T00:00:00Z' }),
+    rawRow({ amount: 25, crbbe_origen: 'USA', crbbe_validodesde: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 30, crbbe_origen: 'USA', crbbe_validodesde: '2026-05-01T00:00:00Z' }),
+    rawRow({ amount: 18, crbbe_origen: 'CHINA', crbbe_validodesde: '2025-02-01T00:00:00Z' }),
+    rawRow({ amount: 20, crbbe_origen: 'CHINA', crbbe_validodesde: '2026-04-01T00:00:00Z' }),
   ])[0];
 
   assert.equal(product.priceUSA, 30);
@@ -566,12 +590,12 @@ test('resuelve USA y CHINA independientemente y usa su mayor createdon vigente',
   assert.equal(product.creationDate, '2026-05-01T00:00:00.000Z');
 });
 
-test('el orden de entrada no altera MAX(createdon) ni el producto consolidado', () => {
+test('el orden de entrada no altera MAX(crbbe_validodesde) ni el producto consolidado', () => {
   const rows = [
-    rawRow({ amount: 25, crbbe_origen: 'USA', createdon: '2025-01-01T00:00:00Z' }),
-    rawRow({ amount: 30, crbbe_origen: 'USA', createdon: '2026-05-01T00:00:00Z' }),
-    rawRow({ amount: 18, crbbe_origen: 'CHINA', createdon: '2025-02-01T00:00:00Z' }),
-    rawRow({ amount: 20, crbbe_origen: 'CHINA', createdon: '2026-04-01T00:00:00Z' }),
+    rawRow({ amount: 25, crbbe_origen: 'USA', crbbe_validodesde: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 30, crbbe_origen: 'USA', crbbe_validodesde: '2026-05-01T00:00:00Z' }),
+    rawRow({ amount: 18, crbbe_origen: 'CHINA', crbbe_validodesde: '2025-02-01T00:00:00Z' }),
+    rawRow({ amount: 20, crbbe_origen: 'CHINA', crbbe_validodesde: '2026-04-01T00:00:00Z' }),
   ];
 
   assert.deepEqual(
@@ -584,23 +608,23 @@ test('un atributo incompatible histórico queda fuera de la consolidación', () 
   const product = consolidateProductPriceLevelRows([
     rawRow({
       crbbe_nombreproducto: 'Nombre histórico',
-      createdon: '2025-01-01T00:00:00Z',
+      crbbe_validodesde: '2025-01-01T00:00:00Z',
     }),
     rawRow({
       crbbe_nombreproducto: 'Nombre vigente',
-      createdon: '2026-05-01T00:00:00Z',
+      crbbe_validodesde: '2026-05-01T00:00:00Z',
     }),
   ])[0];
 
   assert.equal(product.productName, 'Nombre vigente');
 });
 
-test('empate exacto en MAX(createdon) con precios incompatibles mantiene conflicto', () => {
+test('empate exacto en MAX(crbbe_validodesde) con precios incompatibles mantiene conflicto', () => {
   assert.throws(
     () => consolidateProductPriceLevelRows([
-      rawRow({ amount: 20, createdon: '2025-01-01T00:00:00Z' }),
-      rawRow({ amount: 25, createdon: '2026-05-01T00:00:00Z' }),
-      rawRow({ amount: 30, createdon: '2026-05-01T00:00:00Z' }),
+      rawRow({ amount: 20, crbbe_validodesde: '2025-01-01T00:00:00Z' }),
+      rawRow({ amount: 25, crbbe_validodesde: '2026-05-01T00:00:00Z' }),
+      rawRow({ amount: 30, crbbe_validodesde: '2026-05-01T00:00:00Z' }),
     ]),
     (error) => error instanceof ProductMasterConflictError
       && error.conflicts.some((conflict) => (
@@ -611,20 +635,20 @@ test('empate exacto en MAX(createdon) con precios incompatibles mantiene conflic
   );
 });
 
-test('resuelve cada buyer por MAX(createdon) y preserva conflicto cross-buyer', () => {
+test('resuelve cada buyer por MAX(crbbe_validodesde) y preserva conflicto cross-buyer', () => {
   assert.throws(
     () => consolidateProductPriceLevelRows([
-      rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
-      rawRow({ amount: 30, createdon: '2026-05-01T00:00:00Z' }),
+      rawRow({ amount: 25, crbbe_validodesde: '2025-01-01T00:00:00Z' }),
+      rawRow({ amount: 30, crbbe_validodesde: '2026-05-01T00:00:00Z' }),
       rawRow({
         amount: 28,
-        createdon: '2025-02-01T00:00:00Z',
+        crbbe_validodesde: '2025-02-01T00:00:00Z',
         crbbe_nombrecompania: 'SAND SPORTS, CORP.',
         crbbe_companiacompradora: 'SAND SPORTS, CORP.',
       }),
       rawRow({
         amount: 31,
-        createdon: '2026-04-01T00:00:00Z',
+        crbbe_validodesde: '2026-04-01T00:00:00Z',
         crbbe_nombrecompania: 'SAND SPORTS, CORP.',
         crbbe_companiacompradora: 'SAND SPORTS, CORP.',
       }),
@@ -638,19 +662,19 @@ test('resuelve cada buyer por MAX(createdon) y preserva conflicto cross-buyer', 
   );
 });
 
-test('MAX(createdon) conserva amount cero como precio real', () => {
+test('MAX(crbbe_validodesde) conserva amount cero como precio real', () => {
   const product = consolidateProductPriceLevelRows([
-    rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
-    rawRow({ amount: 0, createdon: '2026-05-01T00:00:00Z' }),
+    rawRow({ amount: 25, crbbe_validodesde: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: 0, crbbe_validodesde: '2026-05-01T00:00:00Z' }),
   ])[0];
 
   assert.equal(product.priceUSA, 0);
 });
 
-test('MAX(createdon) conserva amount null como precio no disponible', () => {
+test('MAX(crbbe_validodesde) conserva amount null como precio no disponible', () => {
   const product = consolidateProductPriceLevelRows([
-    rawRow({ amount: 25, createdon: '2025-01-01T00:00:00Z' }),
-    rawRow({ amount: null, createdon: '2026-05-01T00:00:00Z' }),
+    rawRow({ amount: 25, crbbe_validodesde: '2025-01-01T00:00:00Z' }),
+    rawRow({ amount: null, crbbe_validodesde: '2026-05-01T00:00:00Z' }),
   ])[0];
 
   assert.equal(product.priceUSA, null);

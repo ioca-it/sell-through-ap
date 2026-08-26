@@ -1,5 +1,20 @@
 # Roadmap aprobado
 
+## Phase1-102 — Replace Product createdon With crbbe_validodesde
+
+Product Master sustituye su campo de fecha funcional Dataverse por
+`crbbe_validodesde` en `$select`, `$orderby`, mapping y precedencia
+`MAX(crbbe_validodesde)` por `SKU + ORIGIN + BUYER COMPANY`. Se preservan
+filtros, resolución independiente USA/CHINA/comprador, conflictos en empates,
+Brands y contratos; `Product.creationDate` no cambia de nombre y no usa
+`createdon` como fallback.
+
+Producto Nuevo continúa con edad estricta `<90 días` y todas las superficies
+consumen el mismo `creationDate`. Siguiente acción externa exacta: desplegar
+backend y frontend solo con autorización separada, activar Product Dataverse si
+corresponde al entorno y validar una vez Marca → Product Master → Producto
+Nuevo contra un registro real con `crbbe_validodesde` conocido.
+
 ## Phase1-098 — Align EOL Definitions With Real Runtime Semantics
 
 La presentación usa `SKU clasificados EOL` para el universo Product Master
@@ -63,12 +78,12 @@ hito no cambia backend, variables, Dataverse, Entra, Render o Vercel.
 ## Phase1-090 — Resolve Product Duplicates by Latest Record
 
 Product Master aplica la precedencia funcional aprobada después de sus filtros
-vigentes: `MAX(createdon)` por `SKU + ORIGIN + BUYER COMPANY`. USA y CHINA se
+vigentes: `MAX(crbbe_validodesde)` por `SKU + ORIGIN + BUYER COMPANY`. USA y CHINA se
 resuelven independientemente; los compradores también, antes de aplicar el
 conflicto cross-buyer existente. Los empates exactos en el máximo conservan
 todas las filas y siguen bloqueando cuando contienen valores incompatibles.
 
-`Product.creationDate` queda en el mayor `createdon` entre las filas vigentes
+`Product.creationDate` queda en el mayor `crbbe_validodesde` entre las filas vigentes
 del SKU. Producto Nuevo conserva la regla estricta `<90 días`. La muestra local
 SKULLCANDY Phase1-089 queda con 0 conflictos y 362 productos; no se cambian la
 query, los filtros, Brands, contratos, seguridad, fuentes o timeouts.

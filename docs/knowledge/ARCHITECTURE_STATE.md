@@ -2,6 +2,26 @@
 
 ## Fase actual
 
+PHASE1-102 queda **PASS / IMPLEMENTED LOCALLY / VALIDATED / NOT DEPLOYED**.
+Product Price Level Gateway sustituye el campo físico Product `createdon` por
+`crbbe_validodesde` en mapping, `$select`, `$orderby` y precedencia temporal.
+Después de los filtros comerciales y de marca vigentes, Product conserva
+`MAX(crbbe_validodesde)` por `SKU + ORIGIN + BUYER COMPANY`; USA, CHINA y cada
+comprador se resuelven independientemente, y todos los empates máximos
+incompatibles mantienen `PRODUCT_MASTER_CONFLICT` sin segundo desempate.
+
+El contrato público permanece `Product.creationDate`, ahora originado
+exclusivamente en `crbbe_validodesde`. Ausencia, vacío o fecha inválida
+continúan como `null` y no usan `createdon` como fallback. Producto Nuevo
+conserva el umbral estricto `<90 días`; Dashboard, Datos Completos, Nuevos no
+presentes, Informe y exportaciones siguen consumiendo `creationDate`. El label
+visible `Fecha de creación` se preserva por falta de autorización para
+renombrarlo y queda como posible revisión semántica posterior.
+
+La validación final única cierra con backend 138/138 y syntax build PASS,
+frontend 35/35 archivos y 415/415 pruebas, y build Vite de 1.689 módulos.
+Product Dataverse real no se consultó ni modificó.
+
 PHASE1-098 queda **PASS / IMPLEMENTED LOCALLY / NOT DEPLOYED**.
 La presentación denomina `SKU clasificados EOL` al universo `eolTodos`, que
 depende de la clasificación Product Master y puede contener Fecha EOL
@@ -79,7 +99,7 @@ externa separada. Phase1-092 no modifica backend ni sistemas externos.
 PHASE1-090 queda **IMPLEMENTED LOCALLY / NOT DEPLOYED**. Después de los filtros
 comerciales y de marca vigentes, Product Price Level Gateway agrupa por
 `SKU + ORIGIN + BUYER COMPANY` y conserva únicamente las filas empatadas en
-`MAX(createdon)`. La selección precede a conflictos PRICE, conflictos de
+`MAX(crbbe_validodesde)`. La selección precede a conflictos PRICE, conflictos de
 atributos y consolidación Product; una fila histórica ya no compite con la
 vigente. Un empate incompatible en el máximo conserva
 `PRODUCT_MASTER_CONFLICT`, sin segunda precedencia.
@@ -87,7 +107,7 @@ vigente. Un empate incompatible en el máximo conserva
 USA y CHINA se resuelven independientemente antes del pivot. Compradores
 distintos también se resuelven por separado y luego conservan el conflicto
 cross-buyer vigente si sus filas actuales son incompatibles. `creationDate`
-representa el mayor `createdon` entre todas las filas vigentes del SKU y
+representa el mayor `crbbe_validodesde` entre todas las filas vigentes del SKU y
 Producto Nuevo mantiene su comparación estricta `<90 días` sobre esa fecha.
 
 La muestra local SKULLCANDY Phase1-089 consolida 426 filas en 362 productos con
@@ -356,11 +376,11 @@ Phase1-046 y Phase1-048/050/052 quedaron retirados del runtime: se eliminaron lo
 
 Maestro Producto dispone de una ruta intercambiable `local|dataverse` mediante `VITE_PRODUCT_SOURCE`, con `local` como default vigente. El backend portable incorpora `GET /api/products/master`; Product Price Level Gateway consulta exclusivamente `productpricelevels`, aplica en backend el filtro de compradores `IOCA USA INC` o `SAND SPORTS, CORP.`, pagina mediante Dataverse Client y consolida por SKU el pivot `USA -> priceUSA` / `CHINA -> priceChina`. La UI no envía OData y los LogicalNames permanecen exclusivamente en la integración backend.
 
-El contrato normalizado frontend es `{ sku, productName, brand, category, discontinuationDate, fechaStr, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`. `fechaStr` se deriva con la única función `normalizeFechaStr`: fecha válida local/ISO/con hora produce `YYYY-MM-DD`, y ausencia o invalidez produce `""`, sin desplazar el día escrito por timezone. `discontinuationDate` y `creationDate` conservan `Date|null`. `level` y `status` solicitan FormattedValue; si falta, solo aceptan como fallback un valor fuente que ya sea texto y nunca publican códigos Choice numéricos. Antes de consolidar, Dataverse Product conserva `MAX(createdon)` por `SKU + ORIGIN + BUYER COMPANY`; los empates máximos permanecen para detectar incompatibilidades. Después, la consolidación ignora valores descriptivos vacíos, compara strings/URLs trimmed, `discontinuationDate` canónica y etiquetas FormattedValue trimmed, e impide que valores no vacíos divergentes de los ocho atributos Product restantes se consoliden silenciosamente. `creationDate` es el mayor `createdon` entre las filas vigentes del SKU. Tanto los conflictos de precio como los de atributo reutilizan `409 / PRODUCT_MASTER_CONFLICT`, se distinguen solo en metadata interna y mantienen el contrato público sanitizado. Phase1-038 fija `0 = precio real` y `null = precio no disponible`: `amount null|undefined` y un origen sin fila quedan en `null`, mientras las valorizaciones dependientes propagan `null` sin fallback. Render continúa transitorio, Azure sigue siendo el destino definitivo y no se activó Product Dataverse en producción.
+El contrato normalizado frontend es `{ sku, productName, brand, category, discontinuationDate, fechaStr, creationDate, level, status, imageUrl, productUrl, priceUSA, priceChina }`. `fechaStr` se deriva con la única función `normalizeFechaStr`: fecha válida local/ISO/con hora produce `YYYY-MM-DD`, y ausencia o invalidez produce `""`, sin desplazar el día escrito por timezone. `discontinuationDate` y `creationDate` conservan `Date|null`. `level` y `status` solicitan FormattedValue; si falta, solo aceptan como fallback un valor fuente que ya sea texto y nunca publican códigos Choice numéricos. Antes de consolidar, Dataverse Product conserva `MAX(crbbe_validodesde)` por `SKU + ORIGIN + BUYER COMPANY`; los empates máximos permanecen para detectar incompatibilidades. Después, la consolidación ignora valores descriptivos vacíos, compara strings/URLs trimmed, `discontinuationDate` canónica y etiquetas FormattedValue trimmed, e impide que valores no vacíos divergentes de los ocho atributos Product restantes se consoliden silenciosamente. `creationDate` es el mayor `crbbe_validodesde` entre las filas vigentes del SKU y nunca usa `createdon` como fallback. Tanto los conflictos de precio como los de atributo reutilizan `409 / PRODUCT_MASTER_CONFLICT`, se distinguen solo en metadata interna y mantienen el contrato público sanitizado. Phase1-038 fija `0 = precio real` y `null = precio no disponible`: `amount null|undefined` y un origen sin fila quedan en `null`, mientras las valorizaciones dependientes propagan `null` sin fallback. Render continúa transitorio, Azure sigue siendo el destino definitivo y no se activó Product Dataverse en producción.
 
 ## Último prompt aprobado
 
-PHASE1-090 — Resolve Product Duplicates by Latest Record.
+PHASE1-102 — Replace Product createdon With crbbe_validodesde.
 
 ## Última auditoría aprobada
 
@@ -544,8 +564,8 @@ mediciones.
 - `CONFIGURATION_SCHEMA` es la fuente única de IDs, keys y metadatos migrados; defaults se declaran una sola vez.
 - Repository/Provider son la frontera obligatoria de fuentes. Customer y Product son contratos Dataverse normalizados aprobados; los LogicalNames permanecen exclusivamente en la integración Dataverse backend.
 - Toda consulta Product usa `productpricelevels`, selecciona `crbbe_urlproducto` para exponer únicamente `productUrl` y filtra en Product Price Level Gateway `crbbe_companiacompradora` por `IOCA USA INC` o `SAND SPORTS, CORP.`. El frontend no puede enviar filtros, selects, órdenes ni parámetros OData.
-- Product selecciona primero `MAX(createdon)` por `SKU + ORIGIN + BUYER COMPANY`, conserva todos los empates máximos y solo entonces consolida por SKU y pivota `USA -> priceUSA` / `CHINA -> priceChina`. `0` es precio real y un precio/origen ausente queda en `null`; null/ausente no compite con un valor real. No existe fallback entre orígenes ni precedencia entre compradores.
-- `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `imageUrl` y `productUrl` son únicos por SKU entre las filas vigentes: vacío más valor puede inicializar, pero dos valores no vacíos distintos después de normalizar bloquean con `PRODUCT_MASTER_CONFLICT`. `creationDate` es el mayor `createdon` de las filas vigentes del SKU.
+- Product selecciona primero `MAX(crbbe_validodesde)` por `SKU + ORIGIN + BUYER COMPANY`, conserva todos los empates máximos y solo entonces consolida por SKU y pivota `USA -> priceUSA` / `CHINA -> priceChina`. `0` es precio real y un precio/origen ausente queda en `null`; null/ausente no compite con un valor real. No existe fallback entre orígenes ni precedencia entre compradores.
+- `productName`, `brand`, `category`, `level`, `status`, `discontinuationDate`, `imageUrl` y `productUrl` son únicos por SKU entre las filas vigentes: vacío más valor puede inicializar, pero dos valores no vacíos distintos después de normalizar bloquean con `PRODUCT_MASTER_CONFLICT`. `creationDate` es el mayor `crbbe_validodesde` de las filas vigentes del SKU y no usa `createdon` como fallback.
 - `level` y `status` Product usan FormattedValue cuando está presente. Sin anotación, solo un valor fuente textual puede usarse como fallback; un Choice numérico nunca se publica como etiqueta.
 - `VITE_PRODUCT_SOURCE` selecciona `local|dataverse`; `local` es el default vigente y Product Dataverse no está activado en producción.
 - El smoke-test Phase1-042 solo puede ejecutarse con

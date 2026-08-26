@@ -12,7 +12,7 @@ const PRODUCT_SOURCE = Object.freeze({
     productName: 'crbbe_nombreproducto',
     category: 'crbbe_nombrecategoria',
     discontinuationDate: 'crbbe_validohasta',
-    creationDate: 'createdon',
+    creationDate: 'crbbe_validodesde',
     level: 'crbbe_clasificacioncomercial',
     status: 'crbbe_etapa',
     imageUrl: 'crbbe_imagenproducto',
@@ -142,7 +142,7 @@ const isCommercialRow = (rawRow, row) => (
   && row.sku
 );
 
-// Latest Product record = MAX(createdon) por SKU + origen + comprador. Todos
+// Latest Product record = MAX(crbbe_validodesde) por SKU + origen + comprador. Todos
 // los registros empatados en el máximo permanecen para que los conflictos
 // incompatibles sigan visibles sin inventar una segunda precedencia.
 const selectLatestRowsBySkuOriginBuyer = (rows) => {
@@ -154,21 +154,21 @@ const selectLatestRowsBySkuOriginBuyer = (rows) => {
     const key = `${row.sku}|${row.origin}|${row.buyerCompany}`;
     const current = groups.get(key);
     if (!current) {
-      groups.set(key, { latestCreatedOn: row.creationDate, rows: [{ rawRow, row }] });
+      groups.set(key, { latestValidFrom: row.creationDate, rows: [{ rawRow, row }] });
       return;
     }
 
-    if (current.latestCreatedOn === null) {
+    if (current.latestValidFrom === null) {
       if (row.creationDate === null) current.rows.push({ rawRow, row });
-      else groups.set(key, { latestCreatedOn: row.creationDate, rows: [{ rawRow, row }] });
+      else groups.set(key, { latestValidFrom: row.creationDate, rows: [{ rawRow, row }] });
       return;
     }
     if (row.creationDate === null) return;
-    if (row.creationDate > current.latestCreatedOn) {
-      groups.set(key, { latestCreatedOn: row.creationDate, rows: [{ rawRow, row }] });
+    if (row.creationDate > current.latestValidFrom) {
+      groups.set(key, { latestValidFrom: row.creationDate, rows: [{ rawRow, row }] });
       return;
     }
-    if (row.creationDate === current.latestCreatedOn) current.rows.push({ rawRow, row });
+    if (row.creationDate === current.latestValidFrom) current.rows.push({ rawRow, row });
   });
   return [...groups.values()].flatMap((group) => group.rows);
 };
